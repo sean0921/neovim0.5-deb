@@ -18,5 +18,8 @@ override_dh_auto_build:
 override_dh_auto_install:
 	dh_auto_install --parallel -- VERBOSE=1 USE_BUNDLED_DEPS=OFF
 
+override_dh_install:
+	dh_install --fail-missing
+
 # Need busted packaged first
 override_dh_auto_test:
