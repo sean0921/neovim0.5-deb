@@ -1,0 +1,43 @@
+Source: neovim
+Section: editors
+Priority: extra
+Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
+Uploaders: James McCoy <jamessan@debian.org>
+Build-Depends: autoconf,
+               automake,
+               cmake,
+               debhelper (>= 9),
+               libacl1-dev,
+               libjemalloc-dev,
+               libluajit-5.1-dev,
+               libmsgpack-dev (>= 1.0.0),
+               libselinux1-dev [linux-any],
+               libtermkey-dev,
+               libunibilium-dev,
+               libuv1-dev,
+               libvterm-dev,
+               luarocks,
+               lua-bitop,
+               lua-lpeg,
+               lua-messagepack,
+               ninja-build,
+               pkg-config
+Standards-Version: 3.9.6
+Homepage: https://neovim.io/
+Vcs-Git: https://anonscm.debian.org/git/pkg-vim/neovim.git
+Vcs-Browser: https://anonscm.debian.org/cgit/pkg-vim/neovim.git
+
+Package: neovim
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Suggests: ctags, vim-scripts
+Description: heavily refactored vim fork
+ Neovim is a fork of Vim focused on modern code and features, rather than
+ running in legacy environments.
+ .
+ msgpack API enables structured communication to/from any programming language.
+ Remote plugins run as co-processes that communicate with Neovim safely and
+ asynchronously.
+ .
+ GUIs (or TUIs) can easily embed Neovim or communicate via TCP sockets using
+ the discoverable msgpack API.
