@@ -39,6 +39,10 @@ Files: src/nvim/api/*
        runtime/autoload/shada.vim
        runtime/autoload/vimexpect.vim
        runtime/autoload/msgpack.vim
+       runtime/doc/job_control.txt
+       runtime/doc/msgpack_rpc.txt
+       runtime/doc/nvim*
+       runtime/doc/remote_plugin.txt
 Copyright: Neovim contributors
 License: Apache
 
