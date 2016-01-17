@@ -28,7 +28,7 @@ Vcs-Browser: https://anonscm.debian.org/cgit/pkg-vim/neovim.git
 
 Package: neovim
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}, neovim-runtime (= ${source:Version})
 Recommends: xsel | xclip
 Suggests: ctags, vim-scripts
 Description: heavily refactored vim fork
@@ -41,3 +41,18 @@ Description: heavily refactored vim fork
  .
  GUIs (or TUIs) can easily embed Neovim or communicate via TCP sockets using
  the discoverable msgpack API.
+
+Package: neovim-runtime
+Architecture: all
+Depends: ${misc:Depends}
+Multi-Arch: foreign
+Breaks: neovim (<< 0.1.1-2~)
+Replaces: neovim (<< 0.1.1-2~)
+Description: heavily refactored vim fork (runtime files)
+ Neovim is a fork of Vim focused on modern code and features, rather than
+ running in legacy environments.
+ .
+ This package contains the architecture independent runtime files used by
+ neovim.  Examples of such files are: documentation, rules for
+ language-specific highlighting and indentation, color schemes, and standard
+ plugins.
