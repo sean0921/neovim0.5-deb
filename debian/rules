@@ -4,7 +4,7 @@ DEB_BUILD_MAINT_OPTIONS = hardening=+all
 include /usr/share/dpkg/buildflags.mk
 
 # cmake doesn't honor CPPFLAGS
-CFLAGS += $(CPPFLAGS)
+CFLAGS += $(CPPFLAGS) -DDISABLE_LOG
 CXXFLAGS += $(CPPFLAGS)
 
 export CFLAGS CXXFLAGS LDFLAGS
