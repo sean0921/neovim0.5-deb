@@ -31,6 +31,8 @@ Files: src/nvim/api/*
        src/nvim/rbuffer.*
        src/nvim/shada.*
        src/nvim/state.*
+       src/nvim/terminal.*
+       src/nvim/tui*
        src/nvim/ui*
        src/nvim/ugrid.*
        src/nvim/*.lua
