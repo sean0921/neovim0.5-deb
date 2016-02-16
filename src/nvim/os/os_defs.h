@@ -13,24 +13,7 @@
 # include "nvim/os/unix_defs.h"
 #endif
 
-#if defined(DIRSIZ) && !defined(MAXNAMLEN)
-# define MAXNAMLEN DIRSIZ
-#endif
-
-#if defined(UFS_MAXNAMLEN) && !defined(MAXNAMLEN)
-# define MAXNAMLEN UFS_MAXNAMLEN    /* for dynix/ptx */
-#endif
-
-#if defined(NAME_MAX) && !defined(MAXNAMLEN)
-# define MAXNAMLEN NAME_MAX         /* for Linux before .99p3 */
-#endif
-
-// Default value.
-#ifndef MAXNAMLEN
-# define MAXNAMLEN 512
-#endif
-
-#define BASENAMELEN (MAXNAMLEN - 5)
+#define BASENAMELEN (NAME_MAX - 5)
 
 // Use the system path length if it makes sense.
 #if defined(PATH_MAX) && (PATH_MAX > 1000)
@@ -49,25 +32,6 @@
 // use up to 10 Mbyte for Vim.
 #ifndef DFLT_MAXMEMTOT
 # define DFLT_MAXMEMTOT (10*1024)
-#endif
-
-#if !defined(S_ISDIR) && defined(S_IFDIR)
-# define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
-#endif
-#if !defined(S_ISREG) && defined(S_IFREG)
-# define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
-#endif
-#if !defined(S_ISBLK) && defined(S_IFBLK)
-# define S_ISBLK(m) (((m) & S_IFMT) == S_IFBLK)
-#endif
-#if !defined(S_ISSOCK) && defined(S_IFSOCK)
-# define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
-#endif
-#if !defined(S_ISFIFO) && defined(S_IFIFO)
-# define S_ISFIFO(m) (((m) & S_IFMT) == S_IFIFO)
-#endif
-#if !defined(S_ISCHR) && defined(S_IFCHR)
-# define S_ISCHR(m) (((m) & S_IFMT) == S_IFCHR)
 #endif
 
 // Note: Some systems need both string.h and strings.h (Savage).  However,

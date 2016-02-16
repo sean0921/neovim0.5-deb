@@ -196,7 +196,7 @@ char_u *get_past_head(char_u *path)
 int vim_ispathsep(int c)
 {
 #ifdef UNIX
-  return c == '/';          /* UNIX has ':' inside file names */
+  return c == '/';          // Unix has ':' inside file names
 #else
 # ifdef BACKSLASH_IN_FILENAME
   return c == ':' || c == '/' || c == '\\';
@@ -467,16 +467,13 @@ bool path_has_wildcard(const char_u *p)
   return false;
 }
 
-#if defined(UNIX)
 /*
  * Unix style wildcard expansion code.
- * It's here because it's used both for Unix and Mac.
  */
 static int pstrcmp(const void *a, const void *b)
 {
   return pathcmp(*(char **)a, *(char **)b, -1);
 }
-#endif
 
 /// Checks if a path has a character path_expand can expand.
 /// @param p  The path to expand.
@@ -582,9 +579,13 @@ static size_t do_path_expand(garray_T *gap, const char_u *path,
       s = p + 1;
     } else if (path_end >= path + wildoff
                && (vim_strchr((char_u *)"*?[{~$", *path_end) != NULL
+#ifndef WIN32
                    || (!p_fic && (flags & EW_ICASE)
-                       && isalpha(PTR2CHAR(path_end)))))
+                       && isalpha(PTR2CHAR(path_end)))
+#endif
+    )) {
       e = p;
+    }
     if (has_mbyte) {
       len = (*mb_ptr2len)(path_end);
       STRNCPY(p, path_end, len);
@@ -680,11 +681,16 @@ static size_t do_path_expand(garray_T *gap, const char_u *path,
           /* remove backslashes for the remaining components only */
           (void)do_path_expand(gap, buf, len + 1, flags, false);
         } else {
-          /* no more wildcards, check if there is a match */
-          /* remove backslashes for the remaining components only */
-          if (*path_end != NUL)
+          FileInfo file_info;
+
+          // no more wildcards, check if there is a match
+          // remove backslashes for the remaining components only
+          if (*path_end != NUL) {
             backslash_halve(buf + len + 1);
-          if (os_file_exists(buf)) {          /* add existing file */
+          }
+          // add existing file or symbolic link
+          if ((flags & EW_ALLLINKS) ? os_fileinfo_link((char *)buf, &file_info)
+              : os_file_exists(buf)) {
             addfile(gap, buf, flags);
           }
         }
@@ -1293,26 +1299,28 @@ expand_backtick (
   return cnt;
 }
 
-/*
- * Add a file to a file list.  Accepted flags:
- * EW_DIR	add directories
- * EW_FILE	add files
- * EW_EXEC	add executable files
- * EW_NOTFOUND	add even when it doesn't exist
- * EW_ADDSLASH	add slash after directory name
- */
-void 
-addfile (
+// Add a file to a file list.  Accepted flags:
+// EW_DIR      add directories
+// EW_FILE     add files
+// EW_EXEC     add executable files
+// EW_NOTFOUND add even when it doesn't exist
+// EW_ADDSLASH add slash after directory name
+// EW_ALLLINKS add symlink also when the referred file does not exist
+void addfile(
     garray_T *gap,
     char_u *f,         /* filename */
     int flags
 )
 {
   bool isdir;
+  FileInfo file_info;
 
-  /* if the file/dir doesn't exist, may not add it */
-  if (!(flags & EW_NOTFOUND) && !os_file_exists(f))
+  // if the file/dir/link doesn't exist, may not add it
+  if (!(flags & EW_NOTFOUND) &&
+      ((flags & EW_ALLLINKS) ?
+       !os_fileinfo_link((char *)f, &file_info) : !os_file_exists(f))) {
     return;
+  }
 
 #ifdef FNAME_ILLEGAL
   /* if the file/dir contains illegal characters, don't add it */

@@ -748,7 +748,7 @@ return {
       type='string', list='comma', scope={'global'},
       vi_def=true,
       varname='p_fencs',
-      defaults={if_true={vi="ucs-bom"}}
+      defaults={if_true={vi="ucs-bom,utf-8,default,latin1"}}
     },
     {
       full_name='fileformat', abbreviation='ff',
@@ -797,6 +797,14 @@ return {
       redraw={'all_windows'},
       varname='p_fcs',
       defaults={if_true={vi="vert:|,fold:-"}}
+    },
+    {
+      full_name='fixendofline', abbreviation='fixeol',
+      type='bool', scope={'buffer'},
+      vi_def=true,
+      redraw={'statuslines'},
+      varname='p_fixeol',
+      defaults={if_true={vi=true}}
     },
     {
       full_name='fkmap', abbreviation='fk',
@@ -951,7 +959,6 @@ return {
       type='bool', scope={'global'},
       secure=true,
       vi_def=true,
-      enable_if='HAVE_FSYNC',
       varname='p_fs',
       defaults={if_true={vi=true}}
     },
@@ -1137,20 +1144,6 @@ return {
       defaults={if_true={vi=false}}
     },
     {
-      full_name='imactivatefunc', abbreviation='imaf',
-      type='string', scope={'global'},
-      secure=true,
-      vi_def=true,
-      enable_if=false,
-    },
-    {
-      full_name='imactivatekey', abbreviation='imak',
-      type='string', scope={'global'},
-      vi_def=true,
-      enable_if=false,
-      defaults={if_true={vi=""}}
-    },
-    {
       full_name='imcmdline', abbreviation='imc',
       type='bool', scope={'global'},
       vi_def=true,
@@ -1185,13 +1178,6 @@ return {
         if_true={vi=macros('B_IMODE_IM')},
         if_false={vi=macros('B_IMODE_NONE')},
       }
-    },
-    {
-      full_name='imstatusfunc', abbreviation='imsf',
-      type='string', scope={'global'},
-      secure=true,
-      vi_def=true,
-      enable_if=false,
     },
     {
       full_name='include', abbreviation='inc',
@@ -1278,7 +1264,7 @@ return {
       vim=true,
       alloced=true,
       varname='p_isk',
-      defaults={if_true={vi="@,48-57,_", vim=macros('ISK_LATIN1')}}
+      defaults={if_true={vi="@,48-57,_", vim="@,48-57,_,192-255"}}
     },
     {
       full_name='isprint', abbreviation='isp',
@@ -1287,10 +1273,7 @@ return {
       vi_def=true,
       redraw={'all_windows'},
       varname='p_isp',
-      defaults={
-        condition='MSWIN',
-        if_true={vi="@,~-255"},
-        if_false={vi=macros("ISP_LATIN1")}
+      defaults={if_true={vi="@,161-255"}
       }
     },
     {
@@ -1616,7 +1599,7 @@ return {
       deny_duplicates=true,
       alloced=true,
       varname='p_nf',
-      defaults={if_true={vi="octal,hex", vim="hex"}}
+      defaults={if_true={vi="bin,octal,hex", vim="bin,hex"}}
     },
     {
       full_name='number', abbreviation='nu',
@@ -1850,13 +1833,6 @@ return {
       vi_def=true,
       varname='p_report',
       defaults={if_true={vi=2}}
-    },
-    {
-      full_name='restorescreen', abbreviation='rs',
-      type='bool', scope={'global'},
-      vi_def=true,
-      enable_if=false,
-      defaults={if_true={vi=true}}
     },
     {
       full_name='revins', abbreviation='ri',
@@ -2298,13 +2274,6 @@ return {
       redraw={'statuslines'},
       varname='p_swf',
       defaults={if_true={vi=true}}
-    },
-    {
-      full_name='swapsync', abbreviation='sws',
-      type='string', scope={'global'},
-      vi_def=true,
-      varname='p_sws',
-      defaults={if_true={vi="fsync"}}
     },
     {
       full_name='switchbuf', abbreviation='swb',

@@ -44,8 +44,7 @@ Memory usage limits
 
 The option 'maxmem' ('mm') is used to set the maximum memory used for one
 buffer (in kilobytes).  'maxmemtot' is used to set the maximum memory used for
-all buffers (in kilobytes).  The defaults depend on the system used.  For
-MS-DOS, 'maxmemtot' is set depending on the amount of memory available.
+all buffers (in kilobytes).  The defaults depend on the system used.
 These are not hard limits, but tell Vim when to move text into a swap file.
 If you don't like Vim to swap to a file, set 'maxmem' and 'maxmemtot' to a
 very large value.  The swap file will then only be used for recovery.  If you
@@ -57,15 +56,9 @@ argument when starting Vim.
 
 Support for different systems.
 	Vim can be used on:
-	- All Unix systems (it works on all systems it was tested on, although
-	  the GUI and Perl interface may not work everywhere).
-	- MS-DOS in real-mode (no additional drivers required).
-	- In protected mode on Windows 3.1 and MS-DOS (DPMI driver required).
-	- Windows 95 and Windows NT, with support for long file names.
-	- Macintosh
-	Note that on some systems features need to be disabled to reduce
-	resource usage, esp. on MS-DOS.  For some outdated systems you need to
-	use an older Vim version.
+	- Modern Unix systems (*BSD, Linux, etc.)
+	- Windows (XP SP 2 or greater)
+	- OS X
 
 Multi level undo.					|undo|
 	'u' goes backward in time, 'CTRL-R' goes forward again.  Set option
@@ -83,8 +76,7 @@ Graphical User Interface (GUI).				|gui|
 	Included support for GUI: menu's, mouse, scrollbars, etc.  You can
 	define your own menus.  Better support for CTRL/SHIFT/ALT keys in
 	combination with special keys and mouse.  Supported for various
-	platforms, such as X11 (with Motif and Athena interfaces), GTK, Win32
-	(Windows 95 and later), and Macintosh.
+	platforms such as Win32.
 
 Multiple windows and buffers.				|windows.txt|
 	Vim can split the screen into several windows, each editing a
@@ -347,9 +339,8 @@ Printing.						|printing|
 
 Mouse support.						|mouse-using|
 	The mouse is supported in the GUI version, in an xterm for Unix, for
-	BSDs with sysmouse, for Linux with gpm, for MS-DOS, and Win32.  It
-	can be used to position the cursor, select the visual area, paste a
-	register, etc.
+	BSDs with sysmouse, for Linux with gpm, and for Win32.  It can be used
+	to position the cursor, select the visual area, paste a register, etc.
 
 Usage of key names.					|<>| |key-notation|
 	Special keys now all have a name like <Up>, <End>, etc.

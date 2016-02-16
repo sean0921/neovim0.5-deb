@@ -1,5 +1,5 @@
-// VT220/xterm-like terminal emulator implementation for Neovim. Powered by
-// libvterm(http://www.leonerd.org.uk/code/libvterm/).
+// VT220/xterm-like terminal emulator implementation for nvim. Powered by
+// libvterm (http://www.leonerd.org.uk/code/libvterm/).
 //
 // libvterm is a pure C99 terminal emulation library with abstract input and
 // display. This means that the library needs to read data from the master fd
@@ -10,31 +10,31 @@
 // vterm_keyboard_key/vterm_keyboard_unichar, which generates byte streams that
 // must be fed back to the master fd.
 //
-// This implementation uses Neovim buffers as the display mechanism for both
+// This implementation uses nvim buffers as the display mechanism for both
 // the visible screen and the scrollback buffer. When focused, the window
 // "pins" to the bottom of the buffer and mirrors libvterm screen state.
 //
 // When a line becomes invisible due to a decrease in screen height or because
 // a line was pushed up during normal terminal output, we store the line
-// information in the scrollback buffer, which is mirrored in the Neovim buffer
+// information in the scrollback buffer, which is mirrored in the nvim buffer
 // by appending lines just above the visible part of the buffer.
 //
 // When the screen height increases, libvterm will ask for a row in the
-// scrollback buffer, which is mirrored in the Neovim buffer displaying lines
+// scrollback buffer, which is mirrored in the nvim buffer displaying lines
 // that were previously invisible.
 //
-// The vterm->Neovim synchronization is performed in intervals of 10
+// The vterm->nvim synchronization is performed in intervals of 10
 // milliseconds. This is done to minimize screen updates when receiving large
 // bursts of data.
 //
 // This module is decoupled from the processes that normally feed it data, so
-// it's possible to use it as a general purpose console buffer(possibly as a
-// log/display mechanism for Neovim in the future)
+// it's possible to use it as a general purpose console buffer (possibly as a
+// log/display mechanism for nvim in the future)
 //
-// Inspired by vimshell(http://www.wana.at/vimshell/) and
-// Conque(https://code.google.com/p/conque/).  Libvterm usage instructions (plus
+// Inspired by vimshell (http://www.wana.at/vimshell/) and
+// Conque (https://code.google.com/p/conque/). Libvterm usage instructions (plus
 // some extra code) were taken from
-// pangoterm(http://www.leonerd.org.uk/code/pangoterm/)
+// pangoterm (http://www.leonerd.org.uk/code/pangoterm/)
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -77,9 +77,7 @@
 typedef struct terminal_state {
   VimState state;
   Terminal *term;
-  int save_state;           // saved value of State
   int save_rd;              // saved value of RedrawingDisabled
-  bool save_mapped_ctrl_c;  // saved value of mapped_ctrl_c;
   bool close;
   bool got_bs;              // if the last input was <C-\>
 } TerminalState;
@@ -362,12 +360,11 @@ void terminal_enter(void)
 
   checkpcmark();
   setpcmark();
-  s->save_state = State;
+  int save_state = State;
   s->save_rd = RedrawingDisabled;
   State = TERM_FOCUS;
+  mapped_ctrl_c |= TERM_FOCUS;  // Always map CTRL-C to avoid interrupt.
   RedrawingDisabled = false;
-  s->save_mapped_ctrl_c = mapped_ctrl_c;
-  mapped_ctrl_c = true;
   // go to the bottom when the terminal is focused
   adjust_topline(s->term, buf, false);
   // erase the unfocused cursor
@@ -380,11 +377,10 @@ void terminal_enter(void)
   state_enter(&s->state);
 
   restart_edit = 0;
-  State = s->save_state;
+  State = save_state;
   RedrawingDisabled = s->save_rd;
   // draw the unfocused cursor
   invalidate_terminal(s->term, s->term->cursor.row, s->term->cursor.row + 1);
-  mapped_ctrl_c = s->save_mapped_ctrl_c;
   unshowmode(true);
   redraw(curbuf->handle != s->term->buf_handle);
   ui_busy_stop();
@@ -402,11 +398,11 @@ static int terminal_execute(VimState *state, int key)
   TerminalState *s = (TerminalState *)state;
 
   switch (key) {
-    case K_FOCUSGAINED:  // Neovim has been given focus
+    case K_FOCUSGAINED:  // nvim has been given focus
       apply_autocmds(EVENT_FOCUSGAINED, NULL, NULL, false, curbuf);
       break;
 
-    case K_FOCUSLOST:   // Neovim has lost focus
+    case K_FOCUSLOST:   // nvim has lost focus
       apply_autocmds(EVENT_FOCUSLOST, NULL, NULL, false, curbuf);
       break;
 

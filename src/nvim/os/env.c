@@ -46,7 +46,19 @@ bool os_env_exists(const char *name)
 int os_setenv(const char *name, const char *value, int overwrite)
   FUNC_ATTR_NONNULL_ALL
 {
+#ifdef HAVE_SETENV
   return setenv(name, value, overwrite);
+#elif defined(HAVE_PUTENV_S)
+  if (!overwrite && os_getenv(name) != NULL) {
+    return 0;
+  }
+  if (_putenv_s(name, value) == 0) {
+    return 0;
+  }
+  return -1;
+#else
+# error "This system has no implementation available for os_setenv()"
+#endif
 }
 
 /// Unset environment variable
@@ -130,7 +142,7 @@ void os_get_hostname(char *hostname, size_t len)
 ///   - go to that directory
 ///   - do os_dirname() to get the real name of that directory.
 /// This also works with mounts and links.
-/// Don't do this for MS-DOS, it will change the "current dir" for a drive.
+/// Don't do this for Windows, it will change the "current dir" for a drive.
 static char_u   *homedir = NULL;
 
 void init_homedir(void)
@@ -140,6 +152,27 @@ void init_homedir(void)
   homedir = NULL;
 
   char_u *var = (char_u *)os_getenv("HOME");
+
+#ifdef WIN32
+  // Typically, $HOME is not defined on Windows, unless the user has
+  // specifically defined it for Vim's sake. However, on Windows NT
+  // platforms, $HOMEDRIVE and $HOMEPATH are automatically defined for
+  // each user. Try constructing $HOME from these.
+  if (var == NULL) {
+    const char *homedrive = os_getenv("HOMEDRIVE");
+    const char *homepath = os_getenv("HOMEPATH");
+    if (homepath == NULL) {
+        homepath = "\\";
+    }
+    if (homedrive != NULL && strlen(homedrive) + strlen(homepath) < MAXPATHL) {
+      snprintf((char *)NameBuff, MAXPATHL, "%s%s", homedrive, homepath);
+      if (NameBuff[0] != NUL) {
+        var = NameBuff;
+        vim_setenv("HOME", (char *)NameBuff);
+      }
+    }
+  }
+#endif
 
   if (var != NULL) {
 #ifdef UNIX
@@ -257,7 +290,7 @@ void expand_env_esc(char_u *srcp, char_u *dst, int dstlen, bool esc, bool one,
         }
 
 #if defined(UNIX)
-        // Verify that we have found the end of a UNIX ${VAR} style variable
+        // Verify that we have found the end of a Unix ${VAR} style variable
         if (src[1] == '{' && *tail != '}') {
           var = NULL;
         } else {

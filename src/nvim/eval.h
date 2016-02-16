@@ -108,6 +108,10 @@ enum {
     VV_PROGPATH,
     VV_COMMAND_OUTPUT,
     VV_COMPLETED_ITEM,
+    VV_OPTION_NEW,
+    VV_OPTION_OLD,
+    VV_OPTION_TYPE,
+    VV_ERRORS,
     VV_MSGPACK_TYPES,
     VV_LEN, /* number of v: vars */
 };
@@ -115,7 +119,8 @@ enum {
 /// Maximum number of function arguments
 #define MAX_FUNC_ARGS   20
 
-int vim_to_msgpack(msgpack_packer *const, typval_T *const);
+int vim_to_msgpack(msgpack_packer *const, typval_T *const,
+                   const char *const objname);
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "eval.h.generated.h"

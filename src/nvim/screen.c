@@ -147,6 +147,9 @@ static foldinfo_T win_foldinfo; /* info for 'foldcolumn' */
  */
 static schar_T  *current_ScreenLine;
 
+StlClickDefinition *tab_page_click_defs = NULL;
+long tab_page_click_defs_size = 0;
+
 # define SCREEN_LINE(r, o, e, c, rl)    screen_line((r), (o), (e), (c), (rl))
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "screen.c.generated.h"
@@ -752,10 +755,11 @@ static void win_update(win_T *wp)
             lnumt = wp->w_lines[i].wl_lastlnum + 1;
           if (lnumb == MAXLNUM && wp->w_lines[i].wl_lnum >= mod_bot) {
             lnumb = wp->w_lines[i].wl_lnum;
-            /* When there is a fold column it might need updating
-             * in the next line ("J" just above an open fold). */
-            if (wp->w_p_fdc > 0)
-              ++lnumb;
+            // When there is a fold column it might need updating
+            // in the next line ("J" just above an open fold).
+            if (compute_foldcolumn(wp, 0) > 0) {
+              lnumb++;
+            }
           }
         }
 
@@ -1567,10 +1571,11 @@ static void win_draw_end(win_T *wp, int c1, int c2, int row, int endrow, hlf_T h
 {
   int n = 0;
 # define FDC_OFF n
+  int fdc = compute_foldcolumn(wp, 0);
 
   if (wp->w_p_rl) {
-    /* No check for cmdline window: should never be right-left. */
-    n = wp->w_p_fdc;
+    // No check for cmdline window: should never be right-left.
+    n = fdc;
 
     if (n > 0) {
       /* draw the fold column at the right */
@@ -1610,8 +1615,8 @@ static void win_draw_end(win_T *wp, int c1, int c2, int row, int endrow, hlf_T h
                   wp->w_wincol, wp->w_wincol + n,
                   cmdwin_type, ' ', hl_attr(HLF_AT));
     }
-    if (wp->w_p_fdc > 0) {
-      int nn = n + wp->w_p_fdc;
+    if (fdc > 0) {
+      int nn = n + fdc;
 
       /* draw the fold column at the left */
       if (nn > wp->w_width)
@@ -1654,6 +1659,20 @@ static int advance_color_col(int vcol, int **color_cols)
   return **color_cols >= 0;
 }
 
+// Compute the width of the foldcolumn.  Based on 'foldcolumn' and how much
+// space is available for window "wp", minus "col".
+static int compute_foldcolumn(win_T *wp, int col)
+{
+  int fdc = wp->w_p_fdc;
+  int wmw = wp == curwin && p_wmw == 0 ? 1 : p_wmw;
+  int wwidth = wp->w_width;
+
+  if (fdc > wwidth - (col + wmw)) {
+    fdc = wwidth - (col + wmw);
+  }
+  return fdc;
+}
+
 /*
  * Display one folded line.
  */
@@ -1692,12 +1711,9 @@ static void fold_line(win_T *wp, long fold_count, foldinfo_T *foldinfo, linenr_T
     ++col;
   }
 
-  /*
-   * 2. Add the 'foldcolumn'
-   */
-  fdc = wp->w_p_fdc;
-  if (fdc > wp->w_width - col)
-    fdc = wp->w_width - col;
+  // 2. Add the 'foldcolumn'
+  // Reduce the width when there is not enough space.
+  fdc = compute_foldcolumn(wp, col);
   if (fdc > 0) {
     fill_foldcolumn(buf, wp, TRUE, lnum);
     if (wp->w_p_rl) {
@@ -2018,37 +2034,42 @@ fill_foldcolumn (
   int level;
   int first_level;
   int empty;
+  int fdc = compute_foldcolumn(wp, 0);
 
-  /* Init to all spaces. */
-  memset(p, ' ', (size_t)wp->w_p_fdc);
+  // Init to all spaces.
+  memset(p, ' ', (size_t)fdc);
 
   level = win_foldinfo.fi_level;
   if (level > 0) {
-    /* If there is only one column put more info in it. */
-    empty = (wp->w_p_fdc == 1) ? 0 : 1;
+    // If there is only one column put more info in it.
+    empty = (fdc == 1) ? 0 : 1;
 
-    /* If the column is too narrow, we start at the lowest level that
-     * fits and use numbers to indicated the depth. */
-    first_level = level - wp->w_p_fdc - closed + 1 + empty;
-    if (first_level < 1)
+    // If the column is too narrow, we start at the lowest level that
+    // fits and use numbers to indicated the depth.
+    first_level = level - fdc - closed + 1 + empty;
+    if (first_level < 1) {
       first_level = 1;
+    }
 
-    for (i = 0; i + empty < wp->w_p_fdc; ++i) {
+    for (i = 0; i + empty < fdc; i++) {
       if (win_foldinfo.fi_lnum == lnum
-          && first_level + i >= win_foldinfo.fi_low_level)
+          && first_level + i >= win_foldinfo.fi_low_level) {
         p[i] = '-';
-      else if (first_level == 1)
+      } else if (first_level == 1) {
         p[i] = '|';
-      else if (first_level + i <= 9)
+      } else if (first_level + i <= 9) {
         p[i] = '0' + first_level + i;
-      else
+      } else {
         p[i] = '>';
-      if (first_level + i == level)
+      }
+      if (first_level + i == level) {
         break;
+      }
     }
   }
-  if (closed)
-    p[i >= wp->w_p_fdc ? i - 1 : i] = '+';
+  if (closed) {
+    p[i >= fdc ? i - 1 : i] = '+';
+  }
 }
 
 /*
@@ -2629,11 +2650,13 @@ win_line (
       }
 
       if (draw_state == WL_FOLD - 1 && n_extra == 0) {
+        int fdc = compute_foldcolumn(wp, 0);
+
         draw_state = WL_FOLD;
-        if (wp->w_p_fdc > 0) {
-          /* Draw the 'foldcolumn'. */
-          fill_foldcolumn(extra, wp, FALSE, lnum);
-          n_extra = wp->w_p_fdc;
+        if (fdc > 0) {
+          // Draw the 'foldcolumn'.
+          fill_foldcolumn(extra, wp, false, lnum);
+          n_extra = fdc;
           p_extra = extra;
           p_extra[n_extra] = NUL;
           c_extra = NUL;
@@ -2934,14 +2957,16 @@ win_line (
         }
       }
 
-      /* Decide which of the highlight attributes to use. */
-      attr_pri = TRUE;
-      if (area_attr != 0)
-        char_attr = area_attr;
-      else if (search_attr != 0)
-        char_attr = search_attr;
-      /* Use line_attr when not in the Visual or 'incsearch' area
-       * (area_attr may be 0 when "noinvcur" is set). */
+      // Decide which of the highlight attributes to use.
+      attr_pri = true;
+
+      if (area_attr != 0) {
+        char_attr = hl_combine_attr(line_attr, area_attr);
+      } else if (search_attr != 0) {
+        char_attr = hl_combine_attr(line_attr, search_attr);
+      }
+      // Use line_attr when not in the Visual or 'incsearch' area
+      // (area_attr may be 0 when "noinvcur" is set).
       else if (line_attr != 0 && ((fromcol == -10 && tocol == MAXCOL)
                                   || vcol < fromcol || vcol_prev < fromcol_prev
                                   || vcol >= tocol))
@@ -3180,7 +3205,8 @@ win_line (
 
       // 'list': change char 160 to lcs_nbsp and space to lcs_space.
       if (wp->w_p_list
-          && (((c == 160 || (mb_utf8 && mb_c == 160)) && lcs_nbsp)
+          && (((c == 160 || (mb_utf8 && (mb_c == 160 || mb_c == 0x202f)))
+               && lcs_nbsp)
               || (c == ' ' && lcs_space && ptr - line <=  trailcol))) {
         c = (c == ' ') ? lcs_space : lcs_nbsp;
         if (area_attr == 0 && search_attr == 0) {
@@ -3323,16 +3349,15 @@ win_line (
          * Found last space before word: check for line break.
          */
         if (wp->w_p_lbr && vim_isbreak(c) && !vim_isbreak(*ptr)) {
-          char_u *p = ptr - (
-              has_mbyte ? mb_l :
-              1);
+          int mb_off = has_mbyte ? (*mb_head_off)(line, ptr - 1) : 0;
+          char_u *p = ptr - (mb_off + 1);
           // TODO: is passing p for start of the line OK?
           n_extra = win_lbr_chartabsize(wp, line, p, (colnr_T)vcol, NULL) - 1;
           if (c == TAB && n_extra + col > wp->w_width) {
             n_extra = (int)wp->w_buffer->b_p_ts
                       - vcol % (int)wp->w_buffer->b_p_ts - 1;
           }
-          c_extra = ' ';
+          c_extra = mb_off > 0 ? MB_FILLER_CHAR : ' ';
           if (ascii_iswhite(c)) {
             if (c == TAB)
               /* See "Tab alignment" below. */
@@ -3388,7 +3413,7 @@ win_line (
             int    i;
             int    saved_nextra = n_extra;
 
-            if ((is_concealing || boguscols > 0) && vcol_off > 0) {
+            if (vcol_off > 0) {
               // there are characters to conceal
               tab_len += vcol_off;
             }
@@ -3418,25 +3443,31 @@ win_line (
 
             // n_extra will be increased by FIX_FOX_BOGUSCOLS
             // macro below, so need to adjust for that here
-            if ((is_concealing || boguscols > 0) && vcol_off > 0) {
+            if (vcol_off > 0) {
               n_extra -= vcol_off;
             }
           }
-          /* Tab alignment should be identical regardless of
-           * 'conceallevel' value. So tab compensates of all
-           * previous concealed characters, and thus resets vcol_off
-           * and boguscols accumulated so far in the line. Note that
-           * the tab can be longer than 'tabstop' when there
-           * are concealed characters. */
-          FIX_FOR_BOGUSCOLS;
-          // Make sure that the highlighting for the tab char will be correctly
-          // set further below (effectively reverts the FIX_FOR_BOGSUCOLS
-          // macro).
-          if (old_boguscols > 0 && n_extra > tab_len && wp->w_p_list
-              && lcs_tab1) {
-            tab_len += n_extra - tab_len;
+
+          {
+            int vc_saved = vcol_off;
+
+            // Tab alignment should be identical regardless of
+            // 'conceallevel' value. So tab compensates of all
+            // previous concealed characters, and thus resets
+            // vcol_off and boguscols accumulated so far in the
+            // line. Note that the tab can be longer than
+            // 'tabstop' when there are concealed characters.
+            FIX_FOR_BOGUSCOLS;
+
+            // Make sure, the highlighting for the tab char will be
+            // correctly set further below (effectively reverts the
+            // FIX_FOR_BOGSUCOLS macro.
+            if (n_extra == tab_len + vc_saved && wp->w_p_list && lcs_tab1) {
+              tab_len += vc_saved;
+            }
           }
-          mb_utf8 = FALSE;              /* don't draw as UTF-8 */
+
+          mb_utf8 = (int)false;  // don't draw as UTF-8
           if (wp->w_p_list) {
             c = lcs_tab1;
             if (wp->w_p_lbr) {
@@ -3458,7 +3489,7 @@ win_line (
             c = ' ';
           }
         } else if (c == NUL
-                   && ((wp->w_p_list && lcs_eol > 0)
+                   && (wp->w_p_list
                        || ((fromcol >= 0 || fromcol_prev >= 0)
                            && tocol > vcol
                            && VIsual_mode != Ctrl_V
@@ -3468,11 +3499,11 @@ win_line (
                            && !(noinvcur
                                 && lnum == wp->w_cursor.lnum
                                 && (colnr_T)vcol == wp->w_virtcol)))
-                   && lcs_eol_one >= 0) {
-          /* Display a '$' after the line or highlight an extra
-           * character if the line break is included. */
-          /* For a diff line the highlighting continues after the
-           * "$". */
+                   && lcs_eol_one > 0) {
+          // Display a '$' after the line or highlight an extra
+          // character if the line break is included.
+          // For a diff line the highlighting continues after the
+          // "$".
           if (diff_hlf == (hlf_T)0 && line_attr == 0) {
             /* In virtualedit, visual selections may extend
              * beyond end of line. */
@@ -3485,10 +3516,11 @@ win_line (
               c_extra = NUL;
             }
           }
-          if (wp->w_p_list)
+          if (wp->w_p_list && lcs_eol > 0) {
             c = lcs_eol;
-          else
+          } else {
             c = ' ';
+          }
           lcs_eol_one = -1;
           --ptr;                    /* put it back at the NUL */
           if (!attr_pri) {
@@ -3946,20 +3978,24 @@ win_line (
         ScreenAttrs[off] = char_attr;
 
       if (has_mbyte && (*mb_char2cells)(mb_c) > 1) {
-        /* Need to fill two screen columns. */
-        ++off;
-        ++col;
-        if (enc_utf8)
-          /* UTF-8: Put a 0 in the second screen char. */
+        // Need to fill two screen columns.
+        off++;
+        col++;
+        if (enc_utf8) {
+          // UTF-8: Put a 0 in the second screen char.
           ScreenLines[off] = 0;
-        else
-          /* DBCS: Put second byte in the second screen char. */
+        } else {
+          // DBCS: Put second byte in the second screen char.
           ScreenLines[off] = mb_c & 0xff;
-        ++vcol;
-        /* When "tocol" is halfway through a character, set it to the end of
-         * the character, otherwise highlighting won't stop. */
-        if (tocol == vcol)
-          ++tocol;
+        }
+        if (draw_state > WL_NR && filler_todo <= 0) {
+          vcol++;
+        }
+        // When "tocol" is halfway through a character, set it to the end of
+        // the character, otherwise highlighting won't stop.
+        if (tocol == vcol) {
+          tocol++;
+        }
         if (wp->w_p_rl) {
           /* now it's time to backup one cell */
           --off;
@@ -4104,7 +4140,6 @@ win_line (
          * xterm/screen: write an extra character beyond the end of
          * the line. This will work with all terminal types
          * (regardless of the xn,am settings).
-         * Only do this on a fast tty.
          * Only do this if the cursor is on the current line
          * (something has been written in it).
          * Don't do this for the GUI.
@@ -4977,8 +5012,8 @@ win_redr_custom (
   char_u      *stl;
   char_u      *p;
   struct      stl_hlrec hltab[STL_MAX_ITEM];
-  struct      stl_hlrec tabtab[STL_MAX_ITEM];
-  int use_sandbox = FALSE;
+  StlClickRecord tabtab[STL_MAX_ITEM];
+  int use_sandbox = false;
   win_T       *ewp;
   int p_crb_save;
 
@@ -5094,20 +5129,24 @@ win_redr_custom (
   screen_puts(p >= buf + len ? (char_u *)"" : p, row, col, curattr);
 
   if (wp == NULL) {
-    /* Fill the TabPageIdxs[] array for clicking in the tab pagesline. */
+    // Fill the tab_page_click_defs array for clicking in the tab pages line.
     col = 0;
     len = 0;
     p = buf;
-    fillchar = 0;
+    StlClickDefinition cur_click_def = {
+      .type = kStlClickDisabled,
+    };
     for (n = 0; tabtab[n].start != NULL; n++) {
-      len += vim_strnsize(p, (int)(tabtab[n].start - p));
-      while (col < len)
-        TabPageIdxs[col++] = fillchar;
-      p = tabtab[n].start;
-      fillchar = tabtab[n].userhl;
+      len += vim_strnsize(p, (int)(tabtab[n].start - (char *) p));
+      while (col < len) {
+        tab_page_click_defs[col++] = cur_click_def;
+      }
+      p = (char_u *) tabtab[n].start;
+      cur_click_def = tabtab[n].def;
     }
-    while (col < Columns)
-      TabPageIdxs[col++] = fillchar;
+    while (col < Columns) {
+      tab_page_click_defs[col++] = cur_click_def;
+    }
   }
 
 theend:
@@ -5926,9 +5965,9 @@ void screenalloc(bool doclear)
   sattr_T         *new_ScreenAttrs;
   unsigned        *new_LineOffset;
   char_u          *new_LineWraps;
-  short           *new_TabPageIdxs;
-  static int entered = FALSE;                   /* avoid recursiveness */
-  static int done_outofmem_msg = FALSE;         /* did outofmem message */
+  StlClickDefinition *new_tab_page_click_defs;
+  static bool entered = false;  // avoid recursiveness
+  static bool done_outofmem_msg = false;
   int retry_count = 0;
   const bool l_enc_utf8 = enc_utf8;
   const int l_enc_dbcs = enc_dbcs;
@@ -6001,7 +6040,8 @@ retry:
   new_ScreenAttrs = xmalloc((size_t)((Rows + 1) * Columns * sizeof(sattr_T)));
   new_LineOffset = xmalloc((size_t)(Rows * sizeof(unsigned)));
   new_LineWraps = xmalloc((size_t)(Rows * sizeof(char_u)));
-  new_TabPageIdxs = xmalloc((size_t)(Columns * sizeof(short)));
+  new_tab_page_click_defs = xcalloc(
+      (size_t) Columns, sizeof(*new_tab_page_click_defs));
 
   FOR_ALL_TAB_WINDOWS(tp, wp) {
     win_alloc_lines(wp);
@@ -6019,7 +6059,7 @@ retry:
       || new_ScreenAttrs == NULL
       || new_LineOffset == NULL
       || new_LineWraps == NULL
-      || new_TabPageIdxs == NULL
+      || new_tab_page_click_defs == NULL
       || outofmem) {
     if (ScreenLines != NULL || !done_outofmem_msg) {
       /* guess the size */
@@ -6045,8 +6085,8 @@ retry:
     new_LineOffset = NULL;
     xfree(new_LineWraps);
     new_LineWraps = NULL;
-    xfree(new_TabPageIdxs);
-    new_TabPageIdxs = NULL;
+    xfree(new_tab_page_click_defs);
+    new_tab_page_click_defs = NULL;
   } else {
     done_outofmem_msg = FALSE;
 
@@ -6125,7 +6165,8 @@ retry:
   ScreenAttrs = new_ScreenAttrs;
   LineOffset = new_LineOffset;
   LineWraps = new_LineWraps;
-  TabPageIdxs = new_TabPageIdxs;
+  tab_page_click_defs = new_tab_page_click_defs;
+  tab_page_click_defs_size = Columns;
 
   /* It's important that screen_Rows and screen_Columns reflect the actual
    * size of ScreenLines[].  Set them before calling anything. */
@@ -6164,7 +6205,25 @@ void free_screenlines(void)
   xfree(ScreenAttrs);
   xfree(LineOffset);
   xfree(LineWraps);
-  xfree(TabPageIdxs);
+  clear_tab_page_click_defs(tab_page_click_defs, tab_page_click_defs_size);
+  xfree(tab_page_click_defs);
+}
+
+/// Clear tab_page_click_defs table
+///
+/// @param[out]  tpcd  Table to clear.
+/// @param[in]  tpcd_size  Size of the table.
+void clear_tab_page_click_defs(StlClickDefinition *const tpcd,
+                               const long tpcd_size)
+{
+  if (tpcd != NULL) {
+    for (long i = 0; i < tpcd_size; i++) {
+      if (i == 0 || tpcd[i].func != tpcd[i - 1].func) {
+        xfree(tpcd[i].func);
+      }
+    }
+    memset(tpcd, 0, (size_t) tpcd_size * sizeof(tpcd[0]));
+  }
 }
 
 void screenclear(void)
@@ -6772,9 +6831,9 @@ static void draw_tabline(void)
     return;
 
 
-  /* Init TabPageIdxs[] to zero: Clicking outside of tabs has no effect. */
-  for (scol = 0; scol < Columns; ++scol)
-    TabPageIdxs[scol] = 0;
+  // Init TabPageIdxs[] to zero: Clicking outside of tabs has no effect.
+  assert(Columns == tab_page_click_defs_size);
+  clear_tab_page_click_defs(tab_page_click_defs, tab_page_click_defs_size);
 
   /* Use the 'tabline' option if it's set. */
   if (*p_tal != NUL) {
@@ -6872,11 +6931,16 @@ static void draw_tabline(void)
       }
       screen_putchar(' ', 0, col++, attr);
 
-      /* Store the tab page number in TabPageIdxs[], so that
-       * jump_to_mouse() knows where each one is. */
-      ++tabcount;
-      while (scol < col)
-        TabPageIdxs[scol++] = tabcount;
+      // Store the tab page number in tab_page_click_defs[], so that
+      // jump_to_mouse() knows where each one is.
+      tabcount++;
+      while (scol < col) {
+        tab_page_click_defs[scol++] = (StlClickDefinition) {
+          .type = kStlClickTabSwitch,
+          .tabnr = tabcount,
+          .func = NULL,
+        };
+      }
     }
 
     if (use_sep_chars)
@@ -6888,7 +6952,11 @@ static void draw_tabline(void)
     /* Put an "X" for closing the current tab if there are several. */
     if (first_tabpage->tp_next != NULL) {
       screen_putchar('X', 0, (int)Columns - 1, attr_nosel);
-      TabPageIdxs[Columns - 1] = -999;
+      tab_page_click_defs[Columns - 1] = (StlClickDefinition) {
+        .type = kStlClickTabClose,
+        .tabnr = 999,
+        .func = NULL,
+      };
     }
   }
 

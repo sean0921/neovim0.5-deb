@@ -1531,9 +1531,12 @@ static char_u * do_one_cmd(char_u **cmdlinep,
         lnum = CURRENT_TAB_NR;
         ea.line2 = lnum;
         break;
+      case ADDR_QUICKFIX:
+        ea.line2 = qf_get_cur_valid_idx(&ea);
+        break;
     }
     ea.cmd = skipwhite(ea.cmd);
-    lnum = get_address(&ea.cmd, ea.addr_type, ea.skip, ea.addr_count == 0);
+    lnum = get_address(&ea, &ea.cmd, ea.addr_type, ea.skip, ea.addr_count == 0);
     if (ea.cmd == NULL)                     /* error detected */
       goto doend;
     if (lnum == MAXLNUM) {
@@ -1580,6 +1583,13 @@ static char_u * do_one_cmd(char_u **cmdlinep,
             } else {
               ea.line1 = 1;
               ea.line2 = ARGCOUNT;
+            }
+            break;
+          case ADDR_QUICKFIX:
+            ea.line1 = 1;
+            ea.line2 = qf_get_size(&ea);
+            if (ea.line2 == 0) {
+              ea.line2 = 1;
             }
             break;
         }
@@ -1684,7 +1694,7 @@ static char_u * do_one_cmd(char_u **cmdlinep,
   // autocommands defined, trigger the matching autocommands.
   if (p != NULL && ea.cmdidx == CMD_SIZE && !ea.skip
       && ASCII_ISUPPER(*ea.cmd)
-      && has_cmdundefined()) {
+      && has_event(EVENT_CMDUNDEFINED)) {
     p = ea.cmd;
     while (ASCII_ISALNUM(*p)) {
       ++p;
@@ -1960,6 +1970,12 @@ static char_u * do_one_cmd(char_u **cmdlinep,
           ea.line1 = ea.line2 = 0;
         } else {
           ea.line2 = ARGCOUNT;
+        }
+        break;
+      case ADDR_QUICKFIX:
+        ea.line2 = qf_get_size(&ea);
+        if (ea.line2 == 0) {
+          ea.line2 = 1;
         }
         break;
     }
@@ -2945,6 +2961,8 @@ set_one_cmd_context (
   case CMD_botright:
   case CMD_browse:
   case CMD_bufdo:
+  case CMD_cdo:
+  case CMD_cfdo:
   case CMD_confirm:
   case CMD_debug:
   case CMD_folddoclosed:
@@ -2954,7 +2972,9 @@ set_one_cmd_context (
   case CMD_keepjumps:
   case CMD_keepmarks:
   case CMD_keeppatterns:
+  case CMD_ldo:
   case CMD_leftabove:
+  case CMD_lfdo:
   case CMD_lockmarks:
   case CMD_noautocmd:
   case CMD_noswapfile:
@@ -3367,7 +3387,8 @@ skip_range (
  *
  * Return MAXLNUM when no Ex address was found.
  */
-static linenr_T get_address(char_u **ptr,
+static linenr_T get_address(exarg_T *eap,
+                            char_u **ptr,
                             int addr_type,  // flag: one of ADDR_LINES, ...
                             int skip,  // only skip the address, don't use it
                             int to_other_file  // flag: may jump to other file
@@ -3405,6 +3426,9 @@ static linenr_T get_address(char_u **ptr,
         case ADDR_TABS:
           lnum = CURRENT_TAB_NR;
           break;
+        case ADDR_QUICKFIX:
+          lnum = qf_get_cur_valid_idx(eap);
+          break;
       }
       break;
 
@@ -3435,6 +3459,12 @@ static linenr_T get_address(char_u **ptr,
           break;
         case ADDR_TABS:
           lnum = LAST_TAB_NR;
+          break;
+        case ADDR_QUICKFIX:
+          lnum = qf_get_size(eap);
+          if (lnum == 0) {
+            lnum = 1;
+          }
           break;
       }
       break;
@@ -3578,6 +3608,9 @@ static linenr_T get_address(char_u **ptr,
           case ADDR_TABS:
             lnum = CURRENT_TAB_NR;
             break;
+          case ADDR_QUICKFIX:
+            lnum = qf_get_cur_valid_idx(eap);
+            break;
         }
       }
 
@@ -3699,6 +3732,12 @@ static char_u *invalid_range(exarg_T *eap)
         break;
       case ADDR_TABS:
         if (eap->line2 > LAST_TAB_NR) {
+          return (char_u *)_(e_invrange);
+        }
+        break;
+      case ADDR_QUICKFIX:
+        assert(eap->line2 >= 0);
+        if (eap->line2 != 1 && (size_t)eap->line2 > qf_get_size(eap)) {
           return (char_u *)_(e_invrange);
         }
         break;
@@ -4589,6 +4628,7 @@ static struct {
   {ADDR_TABS, "tabs"},
   {ADDR_BUFFERS, "buffers"},
   {ADDR_WINDOWS, "windows"},
+  {ADDR_QUICKFIX, "quickfix"},
   {-1, NULL}
 };
 
@@ -5616,8 +5656,13 @@ static void ex_quit(exarg_T *eap)
       || (only_one_window() && check_changed_any(eap->forceit))) {
     not_exiting();
   } else {
-    if (only_one_window()) {
-      // quit last window
+    // quit last window
+    // Note: only_one_window() returns true, even so a help window is
+    // still open. In that case only quit, if no address has been
+    // specified. Example:
+    // :h|wincmd w|1q     - don't quit
+    // :h|wincmd w|q      - quit
+    if (only_one_window() && (firstwin == lastwin || eap->addr_count == 0)) {
       getout(0);
     }
     /* close window; may free buffer */
@@ -6305,7 +6350,7 @@ static void ex_tabnext(exarg_T *eap)
  */
 static void ex_tabmove(exarg_T *eap)
 {
-  int tab_number = 9999;
+  int tab_number;
 
   if (eap->arg && *eap->arg != NUL) {
     char_u *p = eap->arg;
@@ -6321,17 +6366,35 @@ static void ex_tabmove(exarg_T *eap)
     } else
       p = eap->arg;
 
-    if (p == skipdigits(p)) {
-      /* No numbers as argument. */
-      eap->errmsg = e_invarg;
-      return;
+    if (relative == 0) {
+      if (STRCMP(p, "$") == 0) {
+        tab_number = LAST_TAB_NR;
+      } else if (p == skipdigits(p)) {
+        // No numbers as argument.
+        eap->errmsg = e_invarg;
+        return;
+      } else {
+        tab_number = getdigits(&p);
+      }
+    } else {
+      if (*p != NUL) {
+        tab_number = getdigits(&p);
+      } else {
+        tab_number = 1;
+      }
+      tab_number = tab_number * relative + tabpage_index(curtab);
+      if (relative == -1) {
+        --tab_number;
+      }
     }
-
-    tab_number = getdigits_int(&p);
-    if (relative != 0)
-      tab_number = tab_number * relative + tabpage_index(curtab) - 1; ;
-  } else if (eap->addr_count != 0)
+  } else if (eap->addr_count != 0) {
     tab_number = eap->line2;
+    if (**eap->cmdlinep == '-') {
+      --tab_number;
+    }
+  } else {
+    tab_number = LAST_TAB_NR;
+  }
 
   tabpage_move(tab_number);
 }
@@ -6803,9 +6866,9 @@ void ex_cd(exarg_T *eap)
       prev_dir = NULL;
 
 #if defined(UNIX)
-    /* for UNIX ":cd" means: go to home directory */
+    // On Unix ":cd" means: go to home directory.
     if (*new_dir == NUL) {
-      /* use NameBuff for home directory name */
+      // Use NameBuff for home directory name.
       expand_env((char_u *)"$HOME", NameBuff, MAXPATHL);
       new_dir = NameBuff;
     }
@@ -7013,9 +7076,7 @@ static void ex_put(exarg_T *eap)
  */
 static void ex_copymove(exarg_T *eap)
 {
-  long n;
-
-  n = get_address(&eap->arg, eap->addr_type, FALSE, FALSE);
+  long n = get_address(eap, &eap->arg, eap->addr_type, false, false);
   if (eap->arg == NULL) {           /* error detected */
     eap->nextcmd = NULL;
     return;
@@ -8307,8 +8368,7 @@ makeopens (
 {
   int only_save_windows = TRUE;
   int nr;
-  int cnr = 1;
-  int restore_size = TRUE;
+  int restore_size = true;
   win_T       *wp;
   char_u      *sname;
   win_T       *edited_win = NULL;
@@ -8425,7 +8485,8 @@ makeopens (
   tab_firstwin = firstwin;      /* first window in tab page "tabnr" */
   tab_topframe = topframe;
   for (tabnr = 1;; ++tabnr) {
-    int need_tabnew = FALSE;
+    int need_tabnew = false;
+    int cnr = 1;
 
     if ((ssop_flags & SSOP_TABPAGES)) {
       tabpage_T *tp = find_tabpage(tabnr);

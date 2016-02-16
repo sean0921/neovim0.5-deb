@@ -1,4 +1,4 @@
-*windows.txt*   For Vim version 7.4.  Last change: 2014 Dec 05
+*windows.txt*   For Vim version 7.4.  Last change: 2015 Jan 31
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -681,7 +681,6 @@ can also get to them with the buffer list commands, like ":bnext".
 		When using the |:tab| modifier each argument is opened in a
 		tab page.  The last window is used if it's empty.
 		Also see |++opt| and |+cmd|.
-		{only available when compiled with a GUI}
 
 ==============================================================================
 8. Do a command in all buffers or windows			*list-repeat*
@@ -702,7 +701,8 @@ can also get to them with the buffer list commands, like ":bnext".
 			the current window.
 			{cmd} can contain '|' to concatenate several commands.
 			{cmd} must not open or close windows or reorder them.
-			Also see |:tabdo|, |:argdo| and |:bufdo|.
+			Also see |:tabdo|, |:argdo|, |:bufdo|, |:cdo|, |:ldo|,
+			|:cfdo| and |:lfdo|.
 
 							*:bufdo*
 :[range]bufdo[!] {cmd}	Execute {cmd} in each buffer in the buffer list or if
@@ -728,7 +728,8 @@ can also get to them with the buffer list commands, like ":bnext".
 			autocommand event is disabled by adding it to
 			'eventignore'.  This considerably speeds up editing
 			each buffer.
-			Also see |:tabdo|, |:argdo| and |:windo|.
+			Also see |:tabdo|, |:argdo|, |:windo|, |:cdo|, |:ldo|,
+			|:cfdo| and |:lfdo|.
 
 Examples: >
 
@@ -984,8 +985,8 @@ list of buffers. |unlisted-buffer|
 		(the term "unlisted" is a bit confusing then...).
 
 		Each buffer has a unique number.  That number will not change,
-		so you can always go to a specific buffer with ":buffer N" or
-		"N CTRL-^", where N is the buffer number.
+		thus you can always go to a specific buffer with ":buffer N"
+		or "N CTRL-^", where N is the buffer number.
 
 		Indicators (chars in the same column are mutually exclusive):
 		u	an unlisted buffer (only displayed when [!] is used)

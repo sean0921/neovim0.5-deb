@@ -27,9 +27,6 @@ Error: configure did not run properly.Check auto/config.log.
 # endif
 #endif
 
-/* user ID of root is usually zero, but not for everybody */
-#define ROOT_UID 0
-
 
 /* Can't use "PACKAGE" here, conflicts with a Perl include file. */
 #ifndef VIMPACKAGE
@@ -38,9 +35,19 @@ Error: configure did not run properly.Check auto/config.log.
 
 #include "nvim/os/os_defs.h"       /* bring lots of system header files */
 
-#define NUMBUFLEN 30        /* length of a buffer to store a number in ASCII */
+/// length of a buffer to store a number in ASCII (64 bits binary + NUL)
+#define NUMBUFLEN 65
 
-# define MAX_TYPENR 65535
+// flags for vim_str2nr()
+#define STR2NR_BIN 1
+#define STR2NR_OCT 2
+#define STR2NR_HEX 4
+#define STR2NR_ALL (STR2NR_BIN + STR2NR_OCT + STR2NR_HEX)
+#define STR2NR_FORCE 8  // only when ONE of the above is used
+
+#define MAX_TYPENR 65535
+
+#define ROOT_UID 0
 
 #include "nvim/keymap.h"
 #include "nvim/macros.h"
@@ -231,15 +238,6 @@ enum {
 
 /* Size in bytes of the hash used in the undo file. */
 #define UNDO_HASH_SIZE 32
-
-#ifdef HAVE_FCNTL_H
-# include <fcntl.h>
-#endif
-
-
-#ifndef O_NOFOLLOW
-# define O_NOFOLLOW 0
-#endif
 
 /*
  * defines to avoid typecasts from (char_u *) to (char *) and back

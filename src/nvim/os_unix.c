@@ -44,10 +44,6 @@
 #include "nvim/os/signal.h"
 #include "nvim/msgpack_rpc/helpers.h"
 
-#ifdef HAVE_STROPTS_H
-# include <stropts.h>
-#endif
-
 #ifdef HAVE_SELINUX
 # include <selinux/selinux.h>
 static int selinux_enabled = -1;
@@ -178,13 +174,6 @@ void mch_exit(int r)
 
   exit(r);
 }
-
-#ifndef SEEK_SET
-# define SEEK_SET 0
-#endif
-#ifndef SEEK_END
-# define SEEK_END 2
-#endif
 
 #define SHELL_SPECIAL (char_u *)"\t \"&'$;<>()\\|"
 

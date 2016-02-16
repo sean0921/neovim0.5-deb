@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <fcntl.h>
 
 #include "nvim/vim.h"
 #include "nvim/ascii.h"
@@ -743,8 +744,16 @@ err_closing:
     (void)close(to_cs[1]);
     (void)close(from_cs[0]);
 #else
-  /* WIN32 */
-  /* Create pipes to communicate with cscope */
+  // Create pipes to communicate with cscope
+  int fd;
+  SECURITY_ATTRIBUTES sa;
+  PROCESS_INFORMATION pi;
+  BOOL pipe_stdin = FALSE, pipe_stdout = FALSE;  // NOLINT(readability/bool)
+  STARTUPINFO si;
+  HANDLE stdin_rd, stdout_rd;
+  HANDLE stdout_wr, stdin_wr;
+  BOOL created;
+
   sa.nLength = sizeof(SECURITY_ATTRIBUTES);
   sa.bInheritHandle = TRUE;
   sa.lpSecurityDescriptor = NULL;
@@ -861,17 +870,16 @@ err_closing:
     csinfo[i].hProc = pi.hProcess;
     CloseHandle(pi.hThread);
 
-    /* TODO - tidy up after failure to create files on pipe handles. */
-    if (((fd = _open_osfhandle((OPEN_OH_ARGTYPE)stdin_wr,
-              _O_TEXT|_O_APPEND)) < 0)
-        || ((csinfo[i].to_fp = _fdopen(fd, "w")) == NULL))
+    // TODO(neovim): tidy up after failure to create files on pipe handles.
+    if (((fd = _open_osfhandle((intptr_t)stdin_wr, _O_TEXT|_O_APPEND)) < 0)
+        || ((csinfo[i].to_fp = _fdopen(fd, "w")) == NULL)) {
       PERROR(_("cs_create_connection: fdopen for to_fp failed"));
-    if (((fd = _open_osfhandle((OPEN_OH_ARGTYPE)stdout_rd,
-              _O_TEXT|_O_RDONLY)) < 0)
-        || ((csinfo[i].fr_fp = _fdopen(fd, "r")) == NULL))
+    }
+    if (((fd = _open_osfhandle((intptr_t)stdout_rd,  _O_TEXT|_O_RDONLY)) < 0)
+        || ((csinfo[i].fr_fp = _fdopen(fd, "r")) == NULL)) {
       PERROR(_("cs_create_connection: fdopen for fr_fp failed"));
-
-    /* Close handles for file descriptors inherited by the cscope process */
+    }
+    // Close handles for file descriptors inherited by the cscope process.
     CloseHandle(stdin_rd);
     CloseHandle(stdout_wr);
 
@@ -1145,22 +1153,6 @@ static void clear_csinfo(size_t i)
   csinfo[i].fr_fp  = NULL;
   csinfo[i].to_fp  = NULL;
 }
-
-#ifndef UNIX
-static char *GetWin32Error(void)
-{
-  char *msg = NULL;
-  FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
-      NULL, GetLastError(), 0, (LPSTR)&msg, 0, NULL);
-  if (msg != NULL) {
-    /* remove trailing \r\n */
-    char *pcrlf = strstr(msg, "\r\n");
-    if (pcrlf != NULL)
-      *pcrlf = '\0';
-  }
-  return msg;
-}
-#endif
 
 /*
  * PRIVATE: cs_insert_filelist
@@ -1850,9 +1842,7 @@ static void sig_handler(int s) {
  */
 static void cs_release_csp(size_t i, int freefnpp)
 {
-  /*
-   * Trying to exit normally (not sure whether it is fit to UNIX cscope
-   */
+  // Trying to exit normally (not sure whether it is fit to Unix cscope)
   if (csinfo[i].to_fp != NULL) {
     (void)fputs("q\n", csinfo[i].to_fp);
     (void)fflush(csinfo[i].to_fp);

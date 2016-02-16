@@ -612,6 +612,7 @@ struct file_buffer {
   char_u      *b_p_cfu;         /* 'completefunc' */
   char_u      *b_p_ofu;         /* 'omnifunc' */
   int b_p_eol;                  /* 'endofline' */
+  int b_p_fixeol;               /* 'fixendofline' */
   int b_p_et;                   /* 'expandtab' */
   int b_p_et_nobin;             /* b_p_et saved for binary mode */
   char_u      *b_p_fenc;        /* 'fileencoding' */
@@ -750,6 +751,8 @@ struct file_buffer {
   Terminal *terminal;           // Terminal instance associated with the buffer
 
   dict_T *additional_data;      // Additional data from shada file if any.
+
+  int b_mapped_ctrl_c;          // modes where CTRL-C is mapped
 };
 
 /*

@@ -1,4 +1,5 @@
 require('coxpcall')
+local ffi = require('ffi')
 local lfs = require('lfs')
 local assert = require('luassert')
 local Loop = require('nvim.loop')
@@ -8,7 +9,7 @@ local Session = require('nvim.session')
 
 local nvim_prog = os.getenv('NVIM_PROG') or 'build/bin/nvim'
 local nvim_argv = {nvim_prog, '-u', 'NONE', '-i', 'NONE', '-N',
-                   '--cmd', 'set shortmess+=I background=light noswapfile noautoindent laststatus=1 encoding=utf-8 undodir=. directory=. viewdir=. backupdir=.',
+                   '--cmd', 'set shortmess+=I background=light noswapfile noautoindent laststatus=1 undodir=. directory=. viewdir=. backupdir=.',
                    '--embed'}
 
 -- Formulate a path to the directory containing nvim.  We use this to
@@ -246,9 +247,13 @@ end
 
 local function source(code)
   local tmpname = os.tmpname()
+  if ffi.os == 'OSX' and string.match(tmpname, '^/tmp') then
+   tmpname = '/private'..tmpname
+  end
   write_file(tmpname, code)
   nvim_command('source '..tmpname)
   os.remove(tmpname)
+  return tmpname
 end
 
 local function eq(expected, actual)
@@ -321,6 +326,10 @@ end
 
 local function expect(contents)
   return eq(dedent(contents), curbuf_contents())
+end
+
+local function os_is_windows()
+  return nvim_eval('has("win32")') == 1
 end
 
 local function rmdir(path)
@@ -425,6 +434,7 @@ return {
   wait = wait,
   set_session = set_session,
   write_file = write_file,
+  os_is_windows = os_is_windows,
   rmdir = rmdir,
   mkdir = lfs.mkdir,
   exc_exec = exc_exec,

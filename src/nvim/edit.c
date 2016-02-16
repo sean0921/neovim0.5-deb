@@ -1352,24 +1352,21 @@ ins_redraw (
   if (char_avail())
     return;
 
-  /* Trigger CursorMoved if the cursor moved.  Not when the popup menu is
-   * visible, the command might delete it. */
-  if (ready && (
-        has_cursormovedI()
-        ||
-        curwin->w_p_cole > 0
-        )
+  // Trigger CursorMoved if the cursor moved.  Not when the popup menu is
+  // visible, the command might delete it.
+  if (ready && (has_event(EVENT_CURSORMOVEDI) || curwin->w_p_cole > 0)
       && !equalpos(last_cursormoved, curwin->w_cursor)
-      && !pum_visible()
-      ) {
-    /* Need to update the screen first, to make sure syntax
-     * highlighting is correct after making a change (e.g., inserting
-     * a "(".  The autocommand may also require a redraw, so it's done
-     * again below, unfortunately. */
-    if (syntax_present(curwin) && must_redraw)
+      && !pum_visible()) {
+    // Need to update the screen first, to make sure syntax
+    // highlighting is correct after making a change (e.g., inserting
+    // a "(".  The autocommand may also require a redraw, so it's done
+    // again below, unfortunately.
+    if (syntax_present(curwin) && must_redraw) {
       update_screen(0);
-    if (has_cursormovedI())
-      apply_autocmds(EVENT_CURSORMOVEDI, NULL, NULL, FALSE, curbuf);
+    }
+    if (has_event(EVENT_CURSORMOVEDI)) {
+      apply_autocmds(EVENT_CURSORMOVEDI, NULL, NULL, false, curbuf);
+    }
     if (curwin->w_p_cole > 0) {
       conceal_old_cursor_line = last_cursormoved.lnum;
       conceal_new_cursor_line = curwin->w_cursor.lnum;
@@ -1378,13 +1375,13 @@ ins_redraw (
     last_cursormoved = curwin->w_cursor;
   }
 
-  /* Trigger TextChangedI if b_changedtick differs. */
-  if (ready && has_textchangedI()
+  // Trigger TextChangedI if b_changedtick differs.
+  if (ready && has_event(EVENT_TEXTCHANGEDI)
       && last_changedtick != curbuf->b_changedtick
-      && !pum_visible()
-      ) {
-    if (last_changedtick_buf == curbuf)
-      apply_autocmds(EVENT_TEXTCHANGEDI, NULL, NULL, FALSE, curbuf);
+      && !pum_visible()) {
+    if (last_changedtick_buf == curbuf) {
+      apply_autocmds(EVENT_TEXTCHANGEDI, NULL, NULL, false, curbuf);
+    }
     last_changedtick_buf = curbuf;
     last_changedtick = curbuf->b_changedtick;
   }
@@ -2551,8 +2548,12 @@ void ins_compl_show_pum(void)
       }
   }
 
-  /* Compute the screen column of the start of the completed text.
-   * Use the cursor to get all wrapping and other settings right. */
+  // In Replace mode when a $ is displayed at the end of the line only
+  // part of the screen would be updated.  We do need to redraw here.
+  dollar_vcol = -1;
+
+  // Compute the screen column of the start of the completed text.
+  // Use the cursor to get all wrapping and other settings right.
   col = curwin->w_cursor.col;
   curwin->w_cursor.col = compl_col;
   pum_display(compl_match_array, compl_match_arraysize, cur);
@@ -5017,8 +5018,9 @@ insertchar (
   int textwidth;
   char_u      *p;
   int fo_ins_blank;
+  int force_format = flags & INSCHAR_FORMAT;
 
-  textwidth = comp_textwidth(flags & INSCHAR_FORMAT);
+  textwidth = comp_textwidth(force_format);
   fo_ins_blank = has_format_option(FO_INS_BLANK);
 
   /*
@@ -5037,7 +5039,7 @@ insertchar (
    *	      before 'textwidth'
    */
   if (textwidth > 0
-      && ((flags & INSCHAR_FORMAT)
+      && (force_format
           || (!ascii_iswhite(c)
               && !((State & REPLACE_FLAG)
                    && !(State & VREPLACE_FLAG)
@@ -5051,8 +5053,11 @@ insertchar (
     /* Format with 'formatexpr' when it's set.  Use internal formatting
      * when 'formatexpr' isn't set or it returns non-zero. */
     int do_internal = TRUE;
+    colnr_T virtcol = get_nolist_virtcol()
+                    + char2cells(c != NUL ? c : gchar_cursor());
 
-    if (*curbuf->b_p_fex != NUL && (flags & INSCHAR_NO_FEX) == 0) {
+    if (*curbuf->b_p_fex != NUL && (flags & INSCHAR_NO_FEX) == 0
+        && (force_format || virtcol > (colnr_T)textwidth)) {
       do_internal = (fex_format(curwin->w_cursor.lnum, 1L, c) != 0);
       /* It may be required to save for undo again, e.g. when setline()
        * was called. */
@@ -5120,24 +5125,20 @@ insertchar (
   can_si = FALSE;
   can_si_back = FALSE;
 
-  /*
-   * If there's any pending input, grab up to INPUT_BUFLEN at once.
-   * This speeds up normal text input considerably.
-   * Don't do this when 'cindent' or 'indentexpr' is set, because we might
-   * need to re-indent at a ':', or any other character (but not what
-   * 'paste' is set)..
-   * Don't do this when there an InsertCharPre autocommand is defined,
-   * because we need to fire the event for every character.
-   */
-
-  if (       !ISSPECIAL(c)
-             && (!has_mbyte || (*mb_char2len)(c) == 1)
-             && vpeekc() != NUL
-             && !(State & REPLACE_FLAG)
-             && !cindent_on()
-             && !p_ri
-             && !has_insertcharpre()
-             ) {
+  // If there's any pending input, grab up to INPUT_BUFLEN at once.
+  // This speeds up normal text input considerably.
+  // Don't do this when 'cindent' or 'indentexpr' is set, because we might
+  // need to re-indent at a ':', or any other character (but not what
+  // 'paste' is set)..
+  // Don't do this when there an InsertCharPre autocommand is defined,
+  // because we need to fire the event for every character.
+  if (!ISSPECIAL(c)
+      && (!has_mbyte || (*mb_char2len)(c) == 1)
+      && vpeekc() != NUL
+      && !(State & REPLACE_FLAG)
+      && !cindent_on()
+      && !p_ri
+      && !has_event(EVENT_INSERTCHARPRE)) {
 #define INPUT_BUFLEN 100
     char_u buf[INPUT_BUFLEN + 1];
     int i;
@@ -6580,9 +6581,14 @@ static int cindent_on(void) {
  */
 void fixthisline(IndentGetter get_the_indent)
 {
-  change_indent(INDENT_SET, get_the_indent(), FALSE, 0, TRUE);
-  if (linewhite(curwin->w_cursor.lnum))
-    did_ai = TRUE;          /* delete the indent if the line stays empty */
+    int amount = get_the_indent();
+
+    if (amount >= 0) {
+        change_indent(INDENT_SET, amount, false, 0, true);
+        if (linewhite(curwin->w_cursor.lnum)) {
+            did_ai = true;  // delete the indent if the line stays empty
+        }
+    }
 }
 
 void fix_indent(void) {
@@ -7427,15 +7433,14 @@ static int ins_bs(int c, int mode, int *inserted_space_p)
    * delete newline!
    */
   if (curwin->w_cursor.col == 0) {
-    lnum = Insstart_orig.lnum;
+    lnum = Insstart.lnum;
     if (curwin->w_cursor.lnum == lnum || revins_on) {
       if (u_save((linenr_T)(curwin->w_cursor.lnum - 2),
               (linenr_T)(curwin->w_cursor.lnum + 1)) == FAIL) {
         return FALSE;
       }
-      --Insstart_orig.lnum;
-      Insstart_orig.col = MAXCOL;
-      Insstart = Insstart_orig;
+      --Insstart.lnum;
+      Insstart.col = MAXCOL;
     }
     /*
      * In replace mode:
@@ -7585,27 +7590,35 @@ static int ins_bs(int c, int mode, int *inserted_space_p)
        * happen when using 'sts' and 'linebreak'. */
       if (vcol >= start_vcol)
         ins_bs_one(&vcol);
-    }
-    /*
-     * Delete upto starting point, start of line or previous word.
-     */
-    else do {
-        if (!revins_on)     /* put cursor on char to be deleted */
-          dec_cursor();
 
-        /* start of word? */
-        if (mode == BACKSPACE_WORD && !ascii_isspace(gchar_cursor())) {
-          mode = BACKSPACE_WORD_NOT_SPACE;
-          temp = vim_iswordc(gchar_cursor());
+    // Delete upto starting point, start of line or previous word.
+    } else {
+      int cclass = 0, prev_cclass = 0;
+
+      if (has_mbyte) {
+        cclass = mb_get_class(get_cursor_pos_ptr());
+      }
+      do {
+        if (!revins_on) {   // put cursor on char to be deleted
+          dec_cursor();
         }
-        /* end of word? */
-        else if (mode == BACKSPACE_WORD_NOT_SPACE
-                 && (ascii_isspace(cc = gchar_cursor())
-                     || vim_iswordc(cc) != temp)) {
-          if (!revins_on)
+        cc = gchar_cursor();
+        // look multi-byte character class
+        if (has_mbyte) {
+          prev_cclass = cclass;
+          cclass = mb_get_class(get_cursor_pos_ptr());
+        }
+        if (mode == BACKSPACE_WORD && !ascii_isspace(cc)) {   // start of word?
+          mode = BACKSPACE_WORD_NOT_SPACE;
+          temp = vim_iswordc(cc);
+        } else if (mode == BACKSPACE_WORD_NOT_SPACE
+                   && ((ascii_isspace(cc) || vim_iswordc(cc) != temp)
+                       || prev_cclass != cclass)) {   // end of word?
+          if (!revins_on) {
             inc_cursor();
-          else if (State & REPLACE_FLAG)
+          } else if (State & REPLACE_FLAG) {
             dec_cursor();
+          }
           break;
         }
         if (State & REPLACE_FLAG)
@@ -7638,18 +7651,18 @@ static int ins_bs(int c, int mode, int *inserted_space_p)
         (curwin->w_cursor.col > mincol
          && (curwin->w_cursor.lnum != Insstart_orig.lnum
              || curwin->w_cursor.col != Insstart_orig.col)));
-    did_backspace = TRUE;
+    }
+    did_backspace = true;
   }
-  did_si = FALSE;
-  can_si = FALSE;
-  can_si_back = FALSE;
-  if (curwin->w_cursor.col <= 1)
-    did_ai = FALSE;
-  /*
-   * It's a little strange to put backspaces into the redo
-   * buffer, but it makes auto-indent a lot easier to deal
-   * with.
-   */
+  did_si = false;
+  can_si = false;
+  can_si_back = false;
+  if (curwin->w_cursor.col <= 1) {
+    did_ai = false;
+  }
+  // It's a little strange to put backspaces into the redo
+  // buffer, but it makes auto-indent a lot easier to deal
+  // with.
   AppendCharToRedobuff(c);
 
   /* If deleted before the insertion point, adjust it */
@@ -8478,13 +8491,13 @@ static char_u *do_insert_char_pre(int c)
 {
   char_u buf[MB_MAXBYTES + 1];
 
-  /* Return quickly when there is nothing to do. */
-  if (!has_insertcharpre())
+  // Return quickly when there is nothing to do.
+  if (!has_event(EVENT_INSERTCHARPRE)) {
     return NULL;
-
-  if (has_mbyte)
+  }
+  if (has_mbyte) {
     buf[(*mb_char2bytes)(c, buf)] = NUL;
-  else {
+  } else {
     buf[0] = c;
     buf[1] = NUL;
   }

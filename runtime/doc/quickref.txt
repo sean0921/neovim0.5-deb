@@ -730,13 +730,10 @@ Short explanation of each option:		*option-list*
 'icon'			    let Vim set the text of the window icon
 'iconstring'		    string to use for the Vim icon text
 'ignorecase'	  'ic'	    ignore case in search patterns
-'imactivatekey'   'imak'    key that activates the X input method
-'imactivatefunc'  'imaf'    function to enable/disable the X input method
 'imcmdline'	  'imc'     use IM when starting to edit a command line
 'imdisable'	  'imd'     do not use the IM in any mode
 'iminsert'	  'imi'     use :lmap or IM in Insert mode
 'imsearch'	  'ims'     use :lmap or IM when typing a search pattern
-'imstatusfunc'    'imsf'    function to obtain X input method status
 'include'	  'inc'     pattern to be used to find an include file
 'includeexpr'	  'inex'    expression used to process an include line
 'incsearch'	  'is'	    highlight match while typing search pattern
@@ -820,7 +817,6 @@ Short explanation of each option:		*option-list*
 'relativenumber'  'rnu'	    show relative line number in front of each line
 'remap'			    allow mappings to work recursively
 'report'		    threshold for reporting nr. of lines changed
-'restorescreen'   'rs'	    Win32: restore screen when exiting
 'revins'	  'ri'	    inserting characters will work backwards
 'rightleft'	  'rl'	    window is right-to-left oriented
 'rightleftcmd'	  'rlc'     commands for which editing works right-to-left
@@ -874,7 +870,6 @@ Short explanation of each option:		*option-list*
 'suffixes'	  'su'	    suffixes that are ignored with multiple match
 'suffixesadd'	  'sua'     suffixes added when searching for a file
 'swapfile'	  'swf'     whether to use a swapfile for a buffer
-'swapsync'	  'sws'     how to sync the swap file
 'switchbuf'	  'swb'     sets behavior when switching to another buffer
 'synmaxcol'	  'smc'     maximum column to find syntax items
 'syntax'	  'syn'     syntax to be loaded for current buffer
@@ -985,11 +980,9 @@ Short explanation of each option:		*option-list*
 |g_CTRL-G|	   g CTRL-G	show cursor column, line, and character
 				   position
 |CTRL-C|	   CTRL-C	during searches: Interrupt the search
-|dos-CTRL-Break|   CTRL-Break	MS-DOS: during searches: Interrupt the search
+|dos-CTRL-Break|   CTRL-Break	Windows: during searches: Interrupt the search
 |<Del>|		   <Del>	while entering a count: delete last character
 |:version|	:ve[rsion]	show version information
-|:mode|		:mode N		MS-DOS: set screen mode to N (number, C80,
-				   C4350, etc.)
 |:normal|	:norm[al][!] {commands}
 				execute Normal mode commands
 |Q|		   Q		switch to "Ex" mode

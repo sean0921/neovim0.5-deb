@@ -87,34 +87,36 @@ struct block_def {
  */
 static char opchars[][3] =
 {
-  {NUL, NUL, FALSE},    /* OP_NOP */
-  {'d', NUL, FALSE},    /* OP_DELETE */
-  {'y', NUL, FALSE},    /* OP_YANK */
-  {'c', NUL, FALSE},    /* OP_CHANGE */
-  {'<', NUL, TRUE},     /* OP_LSHIFT */
-  {'>', NUL, TRUE},     /* OP_RSHIFT */
-  {'!', NUL, TRUE},     /* OP_FILTER */
-  {'g', '~', FALSE},    /* OP_TILDE */
-  {'=', NUL, TRUE},     /* OP_INDENT */
-  {'g', 'q', TRUE},     /* OP_FORMAT */
-  {':', NUL, TRUE},     /* OP_COLON */
-  {'g', 'U', FALSE},    /* OP_UPPER */
-  {'g', 'u', FALSE},    /* OP_LOWER */
-  {'J', NUL, TRUE},     /* DO_JOIN */
-  {'g', 'J', TRUE},     /* DO_JOIN_NS */
-  {'g', '?', FALSE},    /* OP_ROT13 */
-  {'r', NUL, FALSE},    /* OP_REPLACE */
-  {'I', NUL, FALSE},    /* OP_INSERT */
-  {'A', NUL, FALSE},    /* OP_APPEND */
-  {'z', 'f', TRUE},     /* OP_FOLD */
-  {'z', 'o', TRUE},     /* OP_FOLDOPEN */
-  {'z', 'O', TRUE},     /* OP_FOLDOPENREC */
-  {'z', 'c', TRUE},     /* OP_FOLDCLOSE */
-  {'z', 'C', TRUE},     /* OP_FOLDCLOSEREC */
-  {'z', 'd', TRUE},     /* OP_FOLDDEL */
-  {'z', 'D', TRUE},     /* OP_FOLDDELREC */
-  {'g', 'w', TRUE},     /* OP_FORMAT2 */
-  {'g', '@', FALSE},    /* OP_FUNCTION */
+  { NUL,    NUL, false },    // OP_NOP
+  { 'd',    NUL, false },    // OP_DELETE
+  { 'y',    NUL, false },    // OP_YANK
+  { 'c',    NUL, false },    // OP_CHANGE
+  { '<',    NUL, true },     // OP_LSHIFT
+  { '>',    NUL, true },     // OP_RSHIFT
+  { '!',    NUL, true },     // OP_FILTER
+  { 'g',    '~', false },    // OP_TILDE
+  { '=',    NUL, true },     // OP_INDENT
+  { 'g',    'q', true },     // OP_FORMAT
+  { ':',    NUL, true },     // OP_COLON
+  { 'g',    'U', false },    // OP_UPPER
+  { 'g',    'u', false },    // OP_LOWER
+  { 'J',    NUL, true },     // DO_JOIN
+  { 'g',    'J', true },     // DO_JOIN_NS
+  { 'g',    '?', false },    // OP_ROT13
+  { 'r',    NUL, false },    // OP_REPLACE
+  { 'I',    NUL, false },    // OP_INSERT
+  { 'A',    NUL, false },    // OP_APPEND
+  { 'z',    'f', true },     // OP_FOLD
+  { 'z',    'o', true },     // OP_FOLDOPEN
+  { 'z',    'O', true },     // OP_FOLDOPENREC
+  { 'z',    'c', true },     // OP_FOLDCLOSE
+  { 'z',    'C', true },     // OP_FOLDCLOSEREC
+  { 'z',    'd', true },     // OP_FOLDDEL
+  { 'z',    'D', true },     // OP_FOLDDELREC
+  { 'g',    'w', true },     // OP_FORMAT2
+  { 'g',    '@', false },    // OP_FUNCTION
+  { Ctrl_A, NUL, false },    // OP_NR_ADD
+  { Ctrl_X, NUL, false },    // OP_NR_SUB
 };
 
 /*
@@ -125,13 +127,27 @@ int get_op_type(int char1, int char2)
 {
   int i;
 
-  if (char1 == 'r')             /* ignore second character */
+  if (char1 == 'r') {
+    // ignore second character
     return OP_REPLACE;
-  if (char1 == '~')             /* when tilde is an operator */
+  }
+  if (char1 == '~') {
+    // when tilde is an operator
     return OP_TILDE;
-  for (i = 0;; i++)
-    if (opchars[i][0] == char1 && opchars[i][1] == char2)
+  }
+  if (char1 == 'g' && char2 == Ctrl_A) {
+    // add
+    return OP_NR_ADD;
+  }
+  if (char1 == 'g' && char2 == Ctrl_X) {
+    // subtract
+    return OP_NR_SUB;
+  }
+  for (i = 0;; i++) {
+    if (opchars[i][0] == char1 && opchars[i][1] == char2) {
       break;
+    }
+  }
   return i;
 }
 
@@ -174,20 +190,20 @@ void op_shift(oparg_T *oap, int curs_top, int amount)
           (linenr_T)(oap->end.lnum + 1)) == FAIL)
     return;
 
-  if (oap->block_mode)
+  if (oap->motion_type == MBLOCK) {
     block_col = curwin->w_cursor.col;
+  }
 
   for (i = oap->line_count - 1; i >= 0; i--) {
     first_char = *get_cursor_line_ptr();
-    if (first_char == NUL)                              /* empty line */
+    if (first_char == NUL) {  // empty line
       curwin->w_cursor.col = 0;
-    else if (oap->block_mode)
+    } else if (oap->motion_type == MBLOCK) {
       shift_block(oap, amount);
-    else
-    /* Move the line right if it doesn't start with '#', 'smartindent'
-     * isn't set or 'cindent' isn't set or '#' isn't in 'cino'. */
-    if (first_char != '#' || !preprocs_left()) {
-      shift_line(oap->op_type == OP_LSHIFT, p_sr, amount, FALSE);
+    } else if (first_char != '#' || !preprocs_left()) {
+      // Move the line right if it doesn't start with '#', 'smartindent'
+      // isn't set or 'cindent' isn't set or '#' isn't in 'cino'.
+      shift_line(oap->op_type == OP_LSHIFT, p_sr, amount, false);
     }
     ++curwin->w_cursor.lnum;
   }
@@ -196,7 +212,7 @@ void op_shift(oparg_T *oap, int curs_top, int amount)
   /* The cursor line is not in a closed fold */
   foldOpenCursor();
 
-  if (oap->block_mode) {
+  if (oap->motion_type == MBLOCK) {
     curwin->w_cursor.lnum = oap->start.lnum;
     curwin->w_cursor.col = block_col;
   } else if (curs_top) { /* put cursor on first line, for ">>" */
@@ -554,7 +570,7 @@ void op_reindent(oparg_T *oap, Indenter how)
 {
   long i;
   char_u      *l;
-  int count;
+  int amount;
   linenr_T first_changed = 0;
   linenr_T last_changed = 0;
   linenr_T start_lnum = curwin->w_cursor.lnum;
@@ -582,11 +598,11 @@ void op_reindent(oparg_T *oap, Indenter how)
         || how != get_lisp_indent) {
       l = skipwhite(get_cursor_line_ptr());
       if (*l == NUL)                        /* empty or blank line */
-        count = 0;
+        amount = 0;
       else
-        count = how();                      /* get the indent for this line */
+        amount = how();                     /* get the indent for this line */
 
-      if (set_indent(count, SIN_UNDO)) {
+      if (amount >= 0 && set_indent(amount, SIN_UNDO)) {
         /* did change the indent, call changed_lines() later */
         if (first_changed == 0)
           first_changed = curwin->w_cursor.lnum;
@@ -703,17 +719,16 @@ char_u *get_expr_line_src(void)
 /// @param writing allow only writable registers
 bool valid_yank_reg(int regname, bool writing)
 {
-  if (       (regname > 0 && ASCII_ISALNUM(regname))
-             || (!writing && vim_strchr((char_u *)
-                     "/.%#:="
-                     , regname) != NULL)
-             || regname == '"'
-             || regname == '-'
-             || regname == '_'
-             || regname == '*'
-             || regname == '+'
-             )
+  if ((regname > 0 && ASCII_ISALNUM(regname))
+      || (!writing && vim_strchr((char_u *) "/.%:=" , regname) != NULL)
+      || regname == '#'
+      || regname == '"'
+      || regname == '-'
+      || regname == '_'
+      || regname == '*'
+      || regname == '+') {
     return true;
+  }
   return false;
 }
 
@@ -1275,8 +1290,9 @@ cmdline_paste_reg (
         || (i < reg->y_size - 1
             && !(remcr
                  && i == reg->y_size - 2
-                 && *reg->y_array[i + 1] == NUL)))
+                 && *reg->y_array[i + 1] == NUL))) {
       cmdline_paste_str((char_u *)"\r", literally);
+    }
 
     /* Check for CTRL-C, in case someone tries to paste a few thousand
      * lines and gets bored. */
@@ -1321,12 +1337,11 @@ int op_delete(oparg_T *oap)
    * line and motion_type == MCHAR and the result is a blank line, make the
    * delete linewise.  Don't do this for the change command or Visual mode.
    */
-  if (       oap->motion_type == MCHAR
-             && !oap->is_VIsual
-             && !oap->block_mode
-             && oap->line_count > 1
-             && oap->motion_force == NUL
-             && oap->op_type == OP_DELETE) {
+  if (oap->motion_type == MCHAR
+      && !oap->is_VIsual
+      && oap->line_count > 1
+      && oap->motion_force == NUL
+      && oap->op_type == OP_DELETE) {
     ptr = ml_get(oap->end.lnum) + oap->end.col;
     if (*ptr != NUL)
       ptr += oap->inclusive;
@@ -1339,20 +1354,20 @@ int op_delete(oparg_T *oap)
    * Check for trying to delete (e.g. "D") in an empty line.
    * Note: For the change operator it is ok.
    */
-  if (       oap->motion_type == MCHAR
-             && oap->line_count == 1
-             && oap->op_type == OP_DELETE
-             && *ml_get(oap->start.lnum) == NUL) {
-    /*
-     * It's an error to operate on an empty region, when 'E' included in
-     * 'cpoptions' (Vi compatible).
-     */
-    if (virtual_op)
-      /* Virtual editing: Nothing gets deleted, but we set the '[ and ']
-       * marks as if it happened. */
+  if (oap->motion_type != MLINE
+      && oap->line_count == 1
+      && oap->op_type == OP_DELETE
+      && *ml_get(oap->start.lnum) == NUL) {
+    // It's an error to operate on an empty region, when 'E' included in
+    // 'cpoptions' (Vi compatible).
+    if (virtual_op) {
+      // Virtual editing: Nothing gets deleted, but we set the '[ and ']
+      // marks as if it happened.
       goto setmarks;
-    if (vim_strchr(p_cpo, CPO_EMPTYREGION) != NULL)
+    }
+    if (vim_strchr(p_cpo, CPO_EMPTYREGION) != NULL) {
       beep_flush();
+    }
     return OK;
   }
 
@@ -1403,10 +1418,11 @@ int op_delete(oparg_T *oap)
   /*
    * block mode delete
    */
-  if (oap->block_mode) {
+  if (oap->motion_type == MBLOCK) {
     if (u_save((linenr_T)(oap->start.lnum - 1),
-            (linenr_T)(oap->end.lnum + 1)) == FAIL)
+               (linenr_T)(oap->end.lnum + 1)) == FAIL) {
       return FAIL;
+    }
 
     for (lnum = curwin->w_cursor.lnum; lnum <= oap->end.lnum; ++lnum) {
       block_prep(oap, &bd, lnum, TRUE);
@@ -1594,7 +1610,7 @@ int op_delete(oparg_T *oap)
   msgmore(curbuf->b_ml.ml_line_count - old_lcount);
 
 setmarks:
-  if (oap->block_mode) {
+  if (oap->motion_type == MBLOCK) {
     curbuf->b_op_end.lnum = oap->end.lnum;
     curbuf->b_op_end.col = oap->start.col;
   } else
@@ -1655,7 +1671,7 @@ int op_replace(oparg_T *oap, int c)
   /*
    * block mode replace
    */
-  if (oap->block_mode) {
+  if (oap->motion_type == MBLOCK) {
     bd.is_MAX = (curwin->w_curswant == MAXCOL);
     for (; curwin->w_cursor.lnum <= oap->end.lnum; ++curwin->w_cursor.lnum) {
       curwin->w_cursor.col = 0;        /* make sure cursor position is valid */
@@ -1837,7 +1853,7 @@ void op_tilde(oparg_T *oap)
     return;
 
   pos = oap->start;
-  if (oap->block_mode) {                    /* Visual block mode */
+  if (oap->motion_type == MBLOCK) {  // Visual block mode
     for (; pos.lnum <= oap->end.lnum; ++pos.lnum) {
       int one_change;
 
@@ -1991,6 +2007,7 @@ void op_insert(oparg_T *oap, long count1)
   char_u              *firstline, *ins_text;
   struct block_def bd;
   int i;
+  pos_T t1;
 
   /* edit() changes this - record it for OP_APPEND */
   bd.is_MAX = (curwin->w_curswant == MAXCOL);
@@ -1999,11 +2016,11 @@ void op_insert(oparg_T *oap, long count1)
   curwin->w_cursor.lnum = oap->start.lnum;
   update_screen(INVERTED);
 
-  if (oap->block_mode) {
-    /* When 'virtualedit' is used, need to insert the extra spaces before
-     * doing block_prep().  When only "block" is used, virtual edit is
-     * already disabled, but still need it when calling
-     * coladvance_force(). */
+  if (oap->motion_type == MBLOCK) {
+    // When 'virtualedit' is used, need to insert the extra spaces before
+    // doing block_prep().  When only "block" is used, virtual edit is
+    // already disabled, but still need it when calling
+    // coladvance_force().
     if (curwin->w_cursor.coladd > 0) {
       int old_ve_flags = ve_flags;
 
@@ -2025,7 +2042,7 @@ void op_insert(oparg_T *oap, long count1)
   }
 
   if (oap->op_type == OP_APPEND) {
-    if (oap->block_mode
+    if (oap->motion_type == MBLOCK
         && curwin->w_cursor.coladd == 0
         ) {
       /* Move the cursor to the character right of the block. */
@@ -2053,7 +2070,16 @@ void op_insert(oparg_T *oap, long count1)
     }
   }
 
-  edit(NUL, FALSE, (linenr_T)count1);
+  t1 = oap->start;
+  edit(NUL, false, (linenr_T)count1);
+
+  // When a tab was inserted, and the characters in front of the tab
+  // have been converted to a tab as well, the column of the cursor
+  // might have actually been reduced, so need to adjust here. */
+  if (t1.lnum == curbuf->b_op_start_orig.lnum &&
+      lt(curbuf->b_op_start_orig, t1)) {
+    oap->start = curbuf->b_op_start_orig;
+  }
 
   /* If user has moved off this line, we don't know what to do, so do
    * nothing.
@@ -2061,7 +2087,7 @@ void op_insert(oparg_T *oap, long count1)
   if (curwin->w_cursor.lnum != oap->start.lnum || got_int)
     return;
 
-  if (oap->block_mode) {
+  if (oap->motion_type == MBLOCK) {
     struct block_def bd2;
 
     /* The user may have moved the cursor before inserting something, try
@@ -2069,21 +2095,23 @@ void op_insert(oparg_T *oap, long count1)
     if (oap->start.lnum == curbuf->b_op_start_orig.lnum && !bd.is_MAX) {
       if (oap->op_type == OP_INSERT
           && oap->start.col + oap->start.coladd
-             != curbuf->b_op_start_orig.col + curbuf->b_op_start_orig.coladd) {
+          != curbuf->b_op_start_orig.col + curbuf->b_op_start_orig.coladd) {
+        size_t t = getviscol2(curbuf->b_op_start_orig.col,
+                              curbuf->b_op_start_orig.coladd);
         oap->start.col = curbuf->b_op_start_orig.col;
-        pre_textlen -= getviscol2(oap->start.col, oap->start.coladd)
-                       - oap->start_vcol;
-        oap->start_vcol = getviscol2(oap->start.col, oap->start.coladd);
+        pre_textlen -= t - oap->start_vcol;
+        oap->start_vcol = t;
       } else if (oap->op_type == OP_APPEND
                  && oap->end.col + oap->end.coladd
-                    >= curbuf->b_op_start_orig.col
-                       + curbuf->b_op_start_orig.coladd) {
+                 >= curbuf->b_op_start_orig.col
+                 + curbuf->b_op_start_orig.coladd) {
+        size_t t = getviscol2(curbuf->b_op_start_orig.col,
+                              curbuf->b_op_start_orig.coladd);
         oap->start.col = curbuf->b_op_start_orig.col;
         /* reset pre_textlen to the value of OP_INSERT */
         pre_textlen += bd.textlen;
-        pre_textlen -= getviscol2(oap->start.col, oap->start.coladd)
-                       - oap->start_vcol;
-        oap->start_vcol = getviscol2(oap->start.col, oap->start.coladd);
+        pre_textlen -= t - oap->start_vcol;
+        oap->start_vcol = t;
         oap->op_type = OP_INSERT;
       }
     }
@@ -2166,13 +2194,14 @@ int op_change(oparg_T *oap)
       && !virtual_op)
     inc_cursor();
 
-  /* check for still on same line (<CR> in inserted text meaningless) */
-  /* skip blank lines too */
-  if (oap->block_mode) {
-    /* Add spaces before getting the current line length. */
+  // check for still on same line (<CR> in inserted text meaningless)
+  // skip blank lines too
+  if (oap->motion_type == MBLOCK) {
+    // Add spaces before getting the current line length.
     if (virtual_op && (curwin->w_cursor.coladd > 0
-                       || gchar_cursor() == NUL))
+                       || gchar_cursor() == NUL)) {
       coladvance_force(getviscol());
+    }
     firstline = ml_get(oap->start.lnum);
     pre_textlen = (long)STRLEN(firstline);
     pre_indent = (long)(skipwhite(firstline) - firstline);
@@ -2189,9 +2218,10 @@ int op_change(oparg_T *oap)
    * block.
    * Don't repeat the insert when Insert mode ended with CTRL-C.
    */
-  if (oap->block_mode && oap->start.lnum != oap->end.lnum && !got_int) {
-    /* Auto-indenting may have changed the indent.  If the cursor was past
-     * the indent, exclude that indent change from the inserted text. */
+  if (oap->motion_type == MBLOCK
+      && oap->start.lnum != oap->end.lnum && !got_int) {
+    // Auto-indenting may have changed the indent.  If the cursor was past
+    // the indent, exclude that indent change from the inserted text.
     firstline = ml_get(oap->start.lnum);
     if (bd.textcol > (colnr_T)pre_indent) {
       long new_indent = (long)(skipwhite(firstline) - firstline);
@@ -2332,13 +2362,12 @@ static void op_yank_reg(oparg_T *oap, bool message, yankreg_T *reg, bool append)
    * If the cursor was in column 1 before and after the movement, and the
    * operator is not inclusive, the yank is always linewise.
    */
-  if (       oap->motion_type == MCHAR
-             && oap->start.col == 0
-             && !oap->inclusive
-             && (!oap->is_VIsual || *p_sel == 'o')
-             && !oap->block_mode
-             && oap->end.col == 0
-             && yanklines > 1) {
+  if (oap->motion_type == MCHAR
+      && oap->start.col == 0
+      && !oap->inclusive
+      && (!oap->is_VIsual || *p_sel == 'o')
+      && oap->end.col == 0
+      && yanklines > 1) {
     yanktype = MLINE;
     --yankendlnum;
     --yanklines;
@@ -2354,9 +2383,8 @@ static void op_yank_reg(oparg_T *oap, bool message, yankreg_T *reg, bool append)
   y_idx = 0;
   lnum = oap->start.lnum;
 
-  if (oap->block_mode) {
-    /* Visual block mode */
-    reg->y_type = MBLOCK;             /* set the yank register type */
+  if (yanktype == MBLOCK) {
+    // Visual block mode
     reg->y_width = oap->end_vcol - oap->start_vcol;
 
     if (curwin->w_curswant == MAXCOL && reg->y_width > 0)
@@ -2470,25 +2498,26 @@ static void op_yank_reg(oparg_T *oap, bool message, yankreg_T *reg, bool append)
   if (curwin->w_p_rnu) {
     redraw_later(SOME_VALID);  // cursor moved to start
   }
-  if (message) {                   /* Display message about yank? */
-    if (yanktype == MCHAR
-        && !oap->block_mode
-        && yanklines == 1)
+  if (message) {  // Display message about yank?
+    if (yanktype == MCHAR && yanklines == 1) {
       yanklines = 0;
-    /* Some versions of Vi use ">=" here, some don't...  */
+    }
+    // Some versions of Vi use ">=" here, some don't...
     if (yanklines > p_report) {
-      /* redisplay now, so message is not deleted */
+      // redisplay now, so message is not deleted
       update_topline_redraw();
       if (yanklines == 1) {
-        if (oap->block_mode)
+        if (yanktype == MBLOCK) {
           MSG(_("block of 1 line yanked"));
-        else
+        } else {
           MSG(_("1 line yanked"));
-      } else if (oap->block_mode)
+        }
+      } else if (yanktype == MBLOCK) {
         smsg(_("block of %" PRId64 " lines yanked"),
              (int64_t)yanklines);
-      else
+      } else {
         smsg(_("%" PRId64 " lines yanked"), (int64_t)yanklines);
+      }
     }
   }
 
@@ -2497,9 +2526,7 @@ static void op_yank_reg(oparg_T *oap, bool message, yankreg_T *reg, bool append)
    */
   curbuf->b_op_start = oap->start;
   curbuf->b_op_end = oap->end;
-  if (yanktype == MLINE
-      && !oap->block_mode
-      ) {
+  if (yanktype == MLINE) {
     curbuf->b_op_start.col = 0;
     curbuf->b_op_end.col = MAXCOL;
   }
@@ -4170,248 +4197,447 @@ static void block_prep(oparg_T *oap, struct block_def *bdp, linenr_T lnum, int i
   bdp->textstart = pstart;
 }
 
-
-static void reverse_line(char_u *s)
+/// Handle the add/subtract operator.
+///
+/// @param[in]  oap      Arguments of operator.
+/// @param[in]  Prenum1  Amount of addition or subtraction.
+/// @param[in]  g_cmd    Prefixed with `g`.
+void op_addsub(oparg_T *oap, linenr_T Prenum1, bool g_cmd)
 {
-  int i, j;
-  char_u c;
+  pos_T pos;
+  struct block_def bd;
+  ssize_t change_cnt = 0;
+  linenr_T amount = Prenum1;
 
-  if ((i = (int)STRLEN(s) - 1) <= 0)
-    return;
+  if (!VIsual_active) {
+    pos = curwin->w_cursor;
+    if (u_save_cursor() == FAIL) {
+      return;
+    }
+    change_cnt = do_addsub(oap->op_type, &pos, 0, amount);
+    if (change_cnt) {
+      changed_lines(pos.lnum, 0, pos.lnum + 1, 0L);
+    }
+  } else {
+    int one_change;
+    int length;
+    pos_T startpos;
 
-  curwin->w_cursor.col = i - curwin->w_cursor.col;
-  for (j = 0; j < i; j++, i--) {
-    c = s[i]; s[i] = s[j]; s[j] = c;
+    if (u_save((linenr_T)(oap->start.lnum - 1),
+               (linenr_T)(oap->end.lnum + 1)) == FAIL) {
+      return;
+    }
+
+    pos = oap->start;
+    for (; pos.lnum <= oap->end.lnum; ++pos.lnum) {
+      if (oap->motion_type == MBLOCK) {
+        // Visual block mode
+        block_prep(oap, &bd, pos.lnum, false);
+        pos.col = bd.textcol;
+        length = bd.textlen;
+      } else if (oap->motion_type == MLINE) {
+        curwin->w_cursor.col = 0;
+        pos.col = 0;
+        length = (colnr_T)STRLEN(ml_get(pos.lnum));
+      } else {
+        // oap->motion_type == MCHAR
+        if (!oap->inclusive) {
+          dec(&(oap->end));
+        }
+        length = (colnr_T)STRLEN(ml_get(pos.lnum));
+        pos.col = 0;
+        if (pos.lnum == oap->start.lnum) {
+          pos.col += oap->start.col;
+          length -= oap->start.col;
+        }
+        if (pos.lnum == oap->end.lnum) {
+          length = (int)STRLEN(ml_get(oap->end.lnum));
+          if (oap->end.col >= length) {
+            oap->end.col = length - 1;
+          }
+          length = oap->end.col - pos.col + 1;
+        }
+      }
+      one_change = do_addsub(oap->op_type, &pos, length, amount);
+      if (one_change) {
+        // Remember the start position of the first change.
+        if (change_cnt == 0) {
+          startpos = curbuf->b_op_start;
+        }
+        change_cnt++;
+      }
+
+      if (g_cmd && one_change) {
+        amount += Prenum1;
+      }
+    }
+    if (change_cnt) {
+      changed_lines(oap->start.lnum, 0, oap->end.lnum + 1, 0L);
+    }
+
+    if (!change_cnt && oap->is_VIsual) {
+      // No change: need to remove the Visual selection
+      redraw_curbuf_later(INVERTED);
+    }
+
+    // Set '[ mark if something changed. Keep the last end
+    // position from do_addsub().
+    if (change_cnt > 0) {
+      curbuf->b_op_start = startpos;
+    }
+
+    if (change_cnt > p_report) {
+      if (change_cnt == 1) {
+        MSG(_("1 line changed"));
+      } else {
+        smsg((char *)_("%" PRId64 " lines changed"), (int64_t)change_cnt);
+      }
+    }
   }
 }
 
-# define RLADDSUBFIX(ptr) if (curwin->w_p_rl) reverse_line(ptr);
-
-/*
- * add or subtract 'Prenum1' from a number in a line
- * 'command' is CTRL-A for add, CTRL-X for subtract
- *
- * return FAIL for failure, OK otherwise
- */
-int do_addsub(int command, linenr_T Prenum1)
+/// Add or subtract from a number in a line.
+///
+/// @param op_type OP_NR_ADD or OP_NR_SUB.
+/// @param pos     Cursor position.
+/// @param length  Target number length.
+/// @param Prenum1 Amount of addition or subtraction.
+///
+/// @return true if some character was changed.
+int do_addsub(int op_type, pos_T *pos, int length, linenr_T Prenum1)
 {
   int col;
   char_u      *buf1;
   char_u buf2[NUMBUFLEN];
-  int hex;                      /* 'X' or 'x': hex; '0': octal */
-  static int hexupper = FALSE;          /* 0xABC */
-  unsigned long n, oldn;
+  int pre;  // 'X' or 'x': hex; '0': octal; 'B' or 'b': bin
+  static bool hexupper = false;  // 0xABC
+  unsigned long n;
+  unsigned long oldn;
   char_u      *ptr;
   int c;
-  int length = 0;                       /* character length of the number */
   int todel;
-  int dohex;
-  int dooct;
-  int doalp;
+  bool dohex;
+  bool dooct;
+  bool dobin;
+  bool doalp;
   int firstdigit;
-  int negative;
-  int subtract;
+  bool subtract;
+  bool negative = false;
+  bool was_positive = true;
+  bool visual = VIsual_active;
+  bool did_change = false;
+  pos_T save_cursor = curwin->w_cursor;
+  int maxlen = 0;
+  pos_T startpos;
+  pos_T endpos;
 
-  dohex = (vim_strchr(curbuf->b_p_nf, 'x') != NULL);    /* "heX" */
-  dooct = (vim_strchr(curbuf->b_p_nf, 'o') != NULL);    /* "Octal" */
-  doalp = (vim_strchr(curbuf->b_p_nf, 'p') != NULL);    /* "alPha" */
+  dohex = (vim_strchr(curbuf->b_p_nf, 'x') != NULL);    // "heX"
+  dooct = (vim_strchr(curbuf->b_p_nf, 'o') != NULL);    // "Octal"
+  dobin = (vim_strchr(curbuf->b_p_nf, 'b') != NULL);    // "Bin"
+  doalp = (vim_strchr(curbuf->b_p_nf, 'p') != NULL);    // "alPha"
 
-  ptr = get_cursor_line_ptr();
-  RLADDSUBFIX(ptr);
+  curwin->w_cursor = *pos;
+  ptr = ml_get(pos->lnum);
+  col = pos->col;
 
-  /*
-   * First check if we are on a hexadecimal number, after the "0x".
-   */
-  col = curwin->w_cursor.col;
-  if (dohex)
-    while (col > 0 && ascii_isxdigit(ptr[col]))
-      --col;
-  if (       dohex
-             && col > 0
-             && (ptr[col] == 'X'
-                 || ptr[col] == 'x')
-             && ptr[col - 1] == '0'
-             && ascii_isxdigit(ptr[col + 1])) {
-    /*
-     * Found hexadecimal number, move to its start.
-     */
-    --col;
-  } else {
-    /*
-     * Search forward and then backward to find the start of number.
-     */
-    col = curwin->w_cursor.col;
-
-    while (ptr[col] != NUL
-           && !ascii_isdigit(ptr[col])
-           && !(doalp && ASCII_ISALPHA(ptr[col])))
-      ++col;
-
-    while (col > 0
-           && ascii_isdigit(ptr[col - 1])
-           && !(doalp && ASCII_ISALPHA(ptr[col])))
-      --col;
+  if (*ptr == NUL) {
+    goto theend;
   }
 
-  /*
-   * If a number was found, and saving for undo works, replace the number.
-   */
+  // First check if we are on a hexadecimal number, after the "0x".
+  if (!VIsual_active) {
+    if (dobin) {
+      while (col > 0 && ascii_isbdigit(ptr[col])) {
+        col--;
+      }
+    }
+
+    if (dohex) {
+      while (col > 0 && ascii_isxdigit(ptr[col])) {
+        col--;
+      }
+    }
+    if (dobin
+        && dohex
+        && !((col > 0
+              && (ptr[col] == 'X' ||
+                  ptr[col] == 'x')
+              && ptr[col - 1] == '0'
+              && ascii_isxdigit(ptr[col + 1])))) {
+        // In case of binary/hexadecimal pattern overlap match, rescan
+
+        col = curwin->w_cursor.col;
+
+        while (col > 0 && ascii_isdigit(ptr[col])) {
+          col--;
+        }
+    }
+
+    if ((dohex
+         && col > 0
+         && (ptr[col] == 'X'
+             || ptr[col] == 'x')
+         && ptr[col - 1] == '0'
+         && ascii_isxdigit(ptr[col + 1])) ||
+        (dobin
+         && col > 0
+         && (ptr[col] == 'B'
+             || ptr[col] == 'b')
+         && ptr[col - 1] == '0'
+         && ascii_isbdigit(ptr[col + 1]))) {
+         // Found hexadecimal or binary number, move to its start.
+        col--;
+    } else {
+      // Search forward and then backward to find the start of number.
+      col = pos->col;
+
+      while (ptr[col] != NUL
+             && !ascii_isdigit(ptr[col])
+             && !(doalp && ASCII_ISALPHA(ptr[col]))) {
+        col++;
+      }
+
+      while (col > 0
+             && ascii_isdigit(ptr[col - 1])
+             && !(doalp && ASCII_ISALPHA(ptr[col]))) {
+        col--;
+      }
+    }
+  }
+
+  if (visual) {
+    while (ptr[col] != NUL && length > 0 && !ascii_isdigit(ptr[col]) &&
+           !(doalp && ASCII_ISALPHA(ptr[col]))) {
+      col++;
+      length--;
+    }
+
+    if (length == 0) {
+      goto theend;
+    }
+
+    if (col > pos->col && ptr[col - 1] == '-') {
+      negative = true;
+      was_positive = false;
+    }
+  }
+
+  // If a number was found, and saving for undo works, replace the number.
   firstdigit = ptr[col];
-  RLADDSUBFIX(ptr);
-  if ((!ascii_isdigit(firstdigit) && !(doalp && ASCII_ISALPHA(firstdigit)))
-      || u_save_cursor() != OK) {
+  if (!ascii_isdigit(firstdigit) && !(doalp && ASCII_ISALPHA(firstdigit))) {
     beep_flush();
-    return FAIL;
+    goto theend;
   }
-
-  /* get ptr again, because u_save() may have changed it */
-  ptr = get_cursor_line_ptr();
-  RLADDSUBFIX(ptr);
 
   if (doalp && ASCII_ISALPHA(firstdigit)) {
-    /* decrement or increment alphabetic character */
-    if (command == Ctrl_X) {
+    // decrement or increment alphabetic character
+    if (op_type == OP_NR_SUB) {
       if (CharOrd(firstdigit) < Prenum1) {
-        if (isupper(firstdigit))
+        if (isupper(firstdigit)) {
           firstdigit = 'A';
-        else
+        } else {
           firstdigit = 'a';
-      } else
+        }
+      } else {
         firstdigit -= Prenum1;
+      }
     } else {
       if (26 - CharOrd(firstdigit) - 1 < Prenum1) {
-        if (isupper(firstdigit))
+        if (isupper(firstdigit)) {
           firstdigit = 'Z';
-        else
+        } else {
           firstdigit = 'z';
-      } else
+        }
+      } else {
         firstdigit += Prenum1;
+      }
     }
     curwin->w_cursor.col = col;
-    (void)del_char(FALSE);
+    if (!did_change) {
+      startpos = curwin->w_cursor;
+    }
+    did_change = true;
+    (void)del_char(false);
     ins_char(firstdigit);
+    endpos = curwin->w_cursor;
+    curwin->w_cursor.col = col;
   } else {
-    negative = FALSE;
-    if (col > 0 && ptr[col - 1] == '-') {           /* negative number */
-      --col;
-      negative = TRUE;
+    if (col > 0 && ptr[col - 1] == '-' && !visual) {
+      // negative number
+      col--;
+      negative = true;
     }
 
-    /* get the number value (unsigned) */
-    vim_str2nr(ptr + col, &hex, &length, dooct, dohex, NULL, &n);
-
-    /* ignore leading '-' for hex and octal numbers */
-    if (hex && negative) {
-      ++col;
-      --length;
-      negative = FALSE;
+    // get the number value (unsigned)
+    if (visual && VIsual_mode != 'V') {
+      maxlen = (curbuf->b_visual.vi_curswant == MAXCOL
+                ? (int)STRLEN(ptr) - col
+                : length);
     }
 
-    /* add or subtract */
-    subtract = FALSE;
-    if (command == Ctrl_X)
-      subtract ^= TRUE;
-    if (negative)
-      subtract ^= TRUE;
+    vim_str2nr(ptr + col, &pre, &length,
+               0 + (dobin ? STR2NR_BIN : 0)
+               + (dooct ? STR2NR_OCT : 0)
+               + (dohex ? STR2NR_HEX : 0),
+               NULL, &n, maxlen);
+
+    // ignore leading '-' for hex, octal and bin numbers
+    if (pre && negative) {
+      col++;
+      length--;
+      negative = false;
+    }
+
+    // add or subtract
+    subtract = false;
+    if (op_type == OP_NR_SUB) {
+      subtract ^= true;
+    }
+    if (negative) {
+      subtract ^= true;
+    }
 
     oldn = n;
-    if (subtract)
-      n -= (unsigned long)Prenum1;
-    else
-      n += (unsigned long)Prenum1;
 
-    /* handle wraparound for decimal numbers */
-    if (!hex) {
+    n = subtract ? n - (unsigned long) Prenum1
+                 : n + (unsigned long) Prenum1;
+
+    // handle wraparound for decimal numbers
+    if (!pre) {
       if (subtract) {
         if (n > oldn) {
           n = 1 + (n ^ (unsigned long)-1);
-          negative ^= TRUE;
+          negative ^= true;
         }
-      } else { /* add */
+      } else {
+        // add
         if (n < oldn) {
           n = (n ^ (unsigned long)-1);
-          negative ^= TRUE;
+          negative ^= true;
         }
       }
-      if (n == 0)
-        negative = FALSE;
+      if (n == 0) {
+        negative = false;
+      }
     }
 
-    /*
-     * Delete the old number.
-     */
+    if (visual && !was_positive && !negative && col > 0) {
+      // need to remove the '-'
+      col--;
+      length++;
+    }
+
+    // Delete the old number.
     curwin->w_cursor.col = col;
+    if (!did_change) {
+      startpos = curwin->w_cursor;
+    }
+    did_change = true;
     todel = length;
     c = gchar_cursor();
-    /*
-     * Don't include the '-' in the length, only the length of the part
-     * after it is kept the same.
-     */
-    if (c == '-')
-      --length;
+
+    // Don't include the '-' in the length, only the length of the part
+    // after it is kept the same.
+    if (c == '-') {
+      length--;
+    }
     while (todel-- > 0) {
       if (c < 0x100 && isalpha(c)) {
-        if (isupper(c))
-          hexupper = TRUE;
-        else
-          hexupper = FALSE;
+        if (isupper(c)) {
+          hexupper = true;
+        } else {
+          hexupper = false;
+        }
       }
-      /* del_char() will mark line needing displaying */
-      (void)del_char(FALSE);
+      // del_char() will mark line needing displaying
+      (void)del_char(false);
       c = gchar_cursor();
     }
 
-    /*
-     * Prepare the leading characters in buf1[].
-     * When there are many leading zeros it could be very long.  Allocate
-     * a bit too much.
-     */
+    // Prepare the leading characters in buf1[].
+    // When there are many leading zeros it could be very long.
+    // Allocate a bit too much.
     buf1 = xmalloc(length + NUMBUFLEN);
+    if (buf1 == NULL) {
+      goto theend;
+    }
     ptr = buf1;
-    if (negative) {
+    if (negative && (!visual || (visual && was_positive))) {
       *ptr++ = '-';
     }
-    if (hex) {
+    if (pre) {
       *ptr++ = '0';
-      --length;
+      length--;
     }
-    if (hex == 'x' || hex == 'X') {
-      *ptr++ = hex;
-      --length;
+    if (pre == 'b' || pre == 'B' ||
+        pre == 'x' || pre == 'X') {
+      *ptr++ = pre;
+      length--;
     }
 
-    /*
-     * Put the number characters in buf2[].
-     */
-    if (hex == 0)
-      sprintf((char *)buf2, "%" PRIu64, (uint64_t)n);
-    else if (hex == '0')
-      sprintf((char *)buf2, "%" PRIo64, (uint64_t)n);
-    else if (hex && hexupper)
-      sprintf((char *)buf2, "%" PRIX64, (uint64_t)n);
-    else
-      sprintf((char *)buf2, "%" PRIx64, (uint64_t)n);
+    // Put the number characters in buf2[].
+    if (pre == 'b' || pre == 'B') {
+      size_t bits = 0;
+      size_t i = 0;
+
+      // leading zeros
+      for (bits = 8 * sizeof(n); bits > 0; bits--) {
+          if ((n >> (bits - 1)) & 0x1) {
+            break;
+          }
+      }
+
+      while (bits > 0) {
+          buf2[i++] = ((n >> --bits) & 0x1) ? '1' : '0';
+      }
+
+      buf2[i] = '\0';
+
+    } else if (pre == 0) {
+      vim_snprintf((char *)buf2, ARRAY_SIZE(buf2), "%" PRIu64, (uint64_t)n);
+    } else if (pre == '0') {
+      vim_snprintf((char *)buf2, ARRAY_SIZE(buf2), "%" PRIo64, (uint64_t)n);
+    } else if (pre && hexupper) {
+      vim_snprintf((char *)buf2, ARRAY_SIZE(buf2), "%" PRIX64, (uint64_t)n);
+    } else {
+      vim_snprintf((char *)buf2, ARRAY_SIZE(buf2), "%" PRIx64, (uint64_t)n);
+    }
     length -= (int)STRLEN(buf2);
 
-    /*
-     * Adjust number of zeros to the new number of digits, so the
-     * total length of the number remains the same.
-     * Don't do this when
-     * the result may look like an octal number.
-     */
-    if (firstdigit == '0' && !(dooct && hex == 0))
-      while (length-- > 0)
+    // Adjust number of zeros to the new number of digits, so the
+    // total length of the number remains the same.
+    // Don't do this when
+    // the result may look like an octal number.
+    if (firstdigit == '0' && !(dooct && pre == 0)) {
+      while (length-- > 0) {
         *ptr++ = '0';
+      }
+    }
     *ptr = NUL;
     STRCAT(buf1, buf2);
-    ins_str(buf1);              /* insert the new number */
+    ins_str(buf1);              // insert the new number
     xfree(buf1);
+    endpos = curwin->w_cursor;
+    if (did_change && curwin->w_cursor.col) {
+      curwin->w_cursor.col--;
+    }
   }
-  --curwin->w_cursor.col;
-  curwin->w_set_curswant = TRUE;
-  ptr = ml_get_buf(curbuf, curwin->w_cursor.lnum, TRUE);
-  RLADDSUBFIX(ptr);
-  return OK;
+
+  if (did_change) {
+    // set the '[ and '] marks
+    curbuf->b_op_start = startpos;
+    curbuf->b_op_end = endpos;
+    if (curbuf->b_op_end.col > 0) {
+      curbuf->b_op_end.col--;
+    }
+  }
+
+theend:
+  if (visual) {
+    curwin->w_cursor = save_cursor;
+  }
+
+  return did_change;
 }
 
 /*
@@ -4655,6 +4881,27 @@ void write_reg_contents_ex(int name,
   /* Special case: '/' search pattern */
   if (name == '/') {
     set_last_search_pat(str, RE_SEARCH, TRUE, TRUE);
+    return;
+  }
+
+  if (name == '#') {
+    buf_T *buf;
+
+    if (ascii_isdigit(*str)) {
+      int num = atoi((char *)str);
+
+      buf = buflist_findnr(num);
+      if (buf == NULL) {
+        EMSGN(_(e_nobufnr), (long)num);
+      }
+    } else {
+      buf = buflist_findnr(buflist_findpat(str, str + STRLEN(str),
+                                           true, false, false));
+    }
+    if (buf == NULL) {
+      return;
+    }
+    curwin->w_alt_fnum = buf->b_fnum;
     return;
   }
 
@@ -4903,7 +5150,7 @@ void cursor_pos_info(void)
         /* Make 'sbr' empty for a moment to get the correct size. */
         p_sbr = empty_option;
         oparg.is_VIsual = true;
-        oparg.block_mode = true;
+        oparg.motion_type = MBLOCK;
         oparg.op_type = OP_NOP;
         getvcols(curwin, &min_pos, &max_pos,
             &oparg.start_vcol, &oparg.end_vcol);
@@ -4964,7 +5211,7 @@ void cursor_pos_info(void)
               &char_count_cursor, len, eol_size);
           if (lnum == curbuf->b_ml.ml_line_count
               && !curbuf->b_p_eol
-              && curbuf->b_p_bin
+              && (curbuf->b_p_bin || !curbuf->b_p_fixeol)
               && (long)STRLEN(s) < len)
             byte_count_cursor -= eol_size;
         }
@@ -4985,7 +5232,7 @@ void cursor_pos_info(void)
     }
 
     /* Correction for when last line doesn't have an EOL. */
-    if (!curbuf->b_p_eol && curbuf->b_p_bin)
+    if (!curbuf->b_p_eol && (curbuf->b_p_bin || !curbuf->b_p_fixeol))
       byte_count -= eol_size;
 
     if (l_VIsual_active) {

@@ -101,10 +101,11 @@ struct dictitem_S {
 
 typedef struct dictitem_S dictitem_T;
 
-#define DI_FLAGS_RO     1 /* "di_flags" value: read-only variable */
-#define DI_FLAGS_RO_SBX 2 /* "di_flags" value: read-only in the sandbox */
-#define DI_FLAGS_FIX    4 /* "di_flags" value: fixed variable, not allocated */
-#define DI_FLAGS_LOCK   8 /* "di_flags" value: locked variable */
+#define DI_FLAGS_RO     1   // "di_flags" value: read-only variable
+#define DI_FLAGS_RO_SBX 2   // "di_flags" value: read-only in the sandbox
+#define DI_FLAGS_FIX    4   // "di_flags" value: fixed: no :unlet or remove()
+#define DI_FLAGS_LOCK   8   // "di_flags" value: locked variable
+#define DI_FLAGS_ALLOC  16  // "di_flags" value: separately allocated
 
 /*
  * Structure to hold info about a Dictionary.
@@ -118,8 +119,6 @@ struct dictvar_S {
   dict_T      *dv_copydict;     /* copied dict used by deepcopy() */
   dict_T      *dv_used_next;    /* next dict in used dicts list */
   dict_T      *dv_used_prev;    /* previous dict in used dicts list */
-  int internal_refcount;        // number of internal references to
-                                // prevent garbage collection
   QUEUE watchers;               // dictionary key watchers set by user code
 };
 

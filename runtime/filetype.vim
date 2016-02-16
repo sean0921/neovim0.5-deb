@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2015 Jan 07
+" Last Change:	2015 Apr 06
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -1262,8 +1262,8 @@ au BufNewFile,BufRead */etc/modules.conf,*/etc/modules,*/etc/conf.modules setf m
 " Mplayer config
 au BufNewFile,BufRead mplayer.conf,*/.mplayer/config	setf mplayerconf
 
-" Moterola S record
-au BufNewFile,BufRead *.s19,*.s28,*.s37		setf srec
+" Motorola S record
+au BufNewFile,BufRead *.s19,*.s28,*.s37,*.mot,*.srec	setf srec
 
 " Mrxvtrc
 au BufNewFile,BufRead mrxvtrc,.mrxvtrc		setf mrxvtrc
@@ -1290,7 +1290,7 @@ au BufNewFile,BufRead *.mush			setf mush
 au BufNewFile,BufRead Mutt{ng,}rc		setf muttrc
 
 " Nano
-au BufNewFile,BufRead */etc/nanorc,.nanorc	setf nanorc
+au BufNewFile,BufRead */etc/nanorc,*.nanorc  	setf nanorc
 
 " Nastran input/DMAP
 "au BufNewFile,BufRead *.dat			setf nastran
@@ -1393,7 +1393,7 @@ else
   au BufNewFile,BufRead *.pl			call s:FTpl()
 endif
 au BufNewFile,BufRead *.plx,*.al		setf perl
-au BufNewFile,BufRead *.p6,*.pm6		setf perl6
+au BufNewFile,BufRead *.p6,*.pm6,*.pl6	setf perl6
 
 func! s:FTpl()
   if exists("g:filetype_pl")
@@ -1422,6 +1422,7 @@ au BufNewFile,BufRead *.pm
 
 " Perl POD
 au BufNewFile,BufRead *.pod			setf pod
+au BufNewFile,BufRead *.pod6		setf pod6
 
 " Php, php3, php4, etc.
 " Also Phtml (was used for PHP 2 in the past)
@@ -2030,6 +2031,10 @@ func! s:FTRules()
   endif
   if path =~ '^/etc/ufw/'
     setf conf  " Better than hog
+    return
+  endif
+  if path =~ '^/\(etc\|usr/share\)/polkit-1/rules\.d'
+    setf javascript
     return
   endif
   try

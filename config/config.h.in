@@ -5,7 +5,6 @@
 
 #define SIZEOF_INT @SIZEOF_INT@
 #define SIZEOF_LONG @SIZEOF_LONG@
-#define SIZEOF_OFF_T @SIZEOF_OFF_T@
 
 #if @SIZEOF_VOID_PTR@ == 8
 #define ARCH_64
@@ -14,22 +13,18 @@
 #endif
 
 #cmakedefine HAVE__NSGETENVIRON
-#cmakedefine HAVE_CRT_EXTERNS_H
-#cmakedefine HAVE_FCNTL_H
 #cmakedefine HAVE_FD_CLOEXEC
 #cmakedefine HAVE_FSEEKO
-#cmakedefine HAVE_FSYNC
 #cmakedefine HAVE_GETPWENT
 #cmakedefine HAVE_GETPWNAM
 #cmakedefine HAVE_GETPWUID
 #cmakedefine HAVE_ICONV
 #cmakedefine HAVE_ICONV_H
 #cmakedefine HAVE_LANGINFO_H
-#cmakedefine HAVE_LIBGEN_H
 #cmakedefine HAVE_LOCALE_H
 #cmakedefine HAVE_NL_LANGINFO_CODESET
 #cmakedefine HAVE_NL_MSG_CAT_CNTR
-#cmakedefine HAVE_PUTENV
+#cmakedefine HAVE_PUTENV_S
 #cmakedefine HAVE_PWD_H
 #cmakedefine HAVE_READLINK
 // TODO: add proper cmake check
@@ -42,11 +37,8 @@
 #cmakedefine HAVE_STRCASECMP
 #cmakedefine HAVE_STRINGS_H
 #cmakedefine HAVE_STRNCASECMP
-#cmakedefine HAVE_STROPTS_H
-#cmakedefine HAVE_SYS_PARAM_H
 #cmakedefine HAVE_SYS_UTSNAME_H
 #cmakedefine HAVE_SYS_WAIT_H
-#cmakedefine HAVE_UNISTD_H
 #cmakedefine HAVE_UTIME
 #cmakedefine HAVE_UTIME_H
 #cmakedefine HAVE_UTIMES

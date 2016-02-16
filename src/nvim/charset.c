@@ -1454,6 +1454,24 @@ char_u* skipdigits(char_u *q)
   return p;
 }
 
+/// skip over binary digits
+///
+/// @param q pointer to string
+///
+/// @return Pointer to the character after the skipped digits.
+const char* skipbin(const char *q)
+  FUNC_ATTR_PURE
+  FUNC_ATTR_NONNULL_ALL
+  FUNC_ATTR_NONNULL_RET
+{
+  const char *p = q;
+  while (ascii_isbdigit(*p)) {
+    // skip to next non-digit
+    p++;
+  }
+  return p;
+}
+
 /// skip over digits and hex characters
 ///
 /// @param q
@@ -1479,6 +1497,24 @@ char_u* skiptodigit(char_u *q)
 {
   char_u *p = q;
   while (*p != NUL && !ascii_isdigit(*p)) {
+    // skip to next digit
+    p++;
+  }
+  return p;
+}
+
+/// skip to binary character (or NUL after the string)
+///
+/// @param q pointer to string
+///
+/// @return Pointer to the binary character or (NUL after the string).
+const char* skiptobin(const char *q)
+  FUNC_ATTR_PURE
+  FUNC_ATTR_NONNULL_ALL
+  FUNC_ATTR_NONNULL_RET
+{
+  const char *p = q;
+  while (*p != NUL && !ascii_isbdigit(*p)) {
     // skip to next digit
     p++;
   }
@@ -1720,67 +1756,79 @@ int vim_isblankline(char_u *lbuf)
 }
 
 /// Convert a string into a long and/or unsigned long, taking care of
-/// hexadecimal and octal numbers.  Accepts a '-' sign.
-/// If "hexp" is not NULL, returns a flag to indicate the type of the number:
+/// hexadecimal, octal and binary numbers.  Accepts a '-' sign.
+/// If "prep" is not NULL, returns a flag to indicate the type of the number:
 ///   0      decimal
 ///   '0'    octal
+///   'B'    bin
+///   'b'    bin
 ///   'X'    hex
 ///   'x'    hex
 /// If "len" is not NULL, the length of the number in characters is returned.
 /// If "nptr" is not NULL, the signed result is returned in it.
 /// If "unptr" is not NULL, the unsigned result is returned in it.
-/// If "dooct" is non-zero recognize octal numbers, when > 1 always assume
-/// octal number.
-/// If "dohex" is non-zero recognize hex numbers, when > 1 always assume
-/// hex number.
+/// If "what" contains STR2NR_BIN recognize binary numbers.
+/// If "what" contains STR2NR_OCT recognize octal numbers.
+/// If "what" contains STR2NR_HEX recognize hex numbers.
+/// If "what" contains STR2NR_FORCE always assume bin/oct/hex.
+/// If maxlen > 0, check at a maximum maxlen chars.
 ///
 /// @param start
-/// @param hexp Returns type of number 0 = decimal, 'x' or 'X' is hex,
-//         '0' = octal
+/// @param prep Returns type of number 0 = decimal, 'x' or 'X' is hex,
+///        '0' = octal, 'b' or 'B' is bin
 /// @param len Returns the detected length of number.
-/// @param dooct recognize octal number
-/// @param dohex recognize hex number
+/// @param what Recognizes what number passed.
 /// @param nptr Returns the signed result.
 /// @param unptr Returns the unsigned result.
-void vim_str2nr(char_u *start, int *hexp, int *len, int dooct, int dohex,
-                long *nptr, unsigned long *unptr)
+/// @param maxlen Max length of string to check.
+void vim_str2nr(char_u *start, int *prep, int *len, int what,
+                long *nptr, unsigned long *unptr, int maxlen)
 {
   char_u *ptr = start;
-  int hex = 0; // default is decimal
-  int negative = FALSE;
+  int pre = 0;  // default is decimal
+  bool negative = false;
   unsigned long un = 0;
-  int n;
 
   if (ptr[0] == '-') {
-    negative = TRUE;
-    ++ptr;
+    negative = true;
+    ptr++;
   }
 
-  // Recognize hex and octal.
-  if ((ptr[0] == '0') && (ptr[1] != '8') && (ptr[1] != '9')) {
-    hex = ptr[1];
+  // Recognize hex, octal and bin.
+  if ((ptr[0] == '0') && (ptr[1] != '8') && (ptr[1] != '9')
+      && (maxlen == 0 || maxlen > 1)) {
+    pre = ptr[1];
 
-    if (dohex
-        && ((hex == 'X') || (hex == 'x'))
-        && ascii_isxdigit(ptr[2])) {
+    if ((what & STR2NR_HEX)
+        && ((pre == 'X') || (pre == 'x'))
+        && ascii_isxdigit(ptr[2])
+        && (maxlen == 0 || maxlen > 2)) {
       // hexadecimal
       ptr += 2;
+    } else if ((what & STR2NR_BIN)
+               && ((pre == 'B') || (pre == 'b'))
+               && ascii_isbdigit(ptr[2])
+               && (maxlen == 0 || maxlen > 2)) {
+      // binary
+      ptr += 2;
     } else {
-      // default is decimal
-      hex = 0;
+      // decimal or octal, default is decimal
+      pre = 0;
 
-      if (dooct) {
+      if (what & STR2NR_OCT) {
         // Don't interpret "0", "08" or "0129" as octal.
-        for (n = 1; ascii_isdigit(ptr[n]); ++n) {
+        for (int n = 1; ascii_isdigit(ptr[n]); ++n) {
           if (ptr[n] > '7') {
             // can't be octal
-            hex = 0;
+            pre = 0;
             break;
           }
-
           if (ptr[n] >= '0') {
             // assume octal
-            hex = '0';
+            pre = '0';
+          }
+          if (n == maxlen) {
+            break;
           }
         }
       }
@@ -1788,28 +1836,54 @@ void vim_str2nr(char_u *start, int *hexp, int *len, int dooct, int dohex,
   }
 
   // Do the string-to-numeric conversion "manually" to avoid sscanf quirks.
-  if ((hex == '0') || (dooct > 1)) {
+  int n = 1;
+  if ((pre == 'B') || (pre == 'b') || what == STR2NR_BIN + STR2NR_FORCE) {
+    // bin
+    if (pre != 0) {
+      n += 2;  // skip over "0b"
+    }
+    while ('0' <= *ptr && *ptr <= '1') {
+      un = 2 * un + (unsigned long)(*ptr - '0');
+      ptr++;
+      if (n++ == maxlen) {
+        break;
+      }
+    }
+  } else if ((pre == '0') || what == STR2NR_OCT + STR2NR_FORCE) {
     // octal
     while ('0' <= *ptr && *ptr <= '7') {
       un = 8 * un + (unsigned long)(*ptr - '0');
       ptr++;
+      if (n++ == maxlen) {
+        break;
+      }
     }
-  } else if ((hex != 0) || (dohex > 1)) {
+  } else if ((pre == 'X') || (pre == 'x')
+             || what == STR2NR_HEX + STR2NR_FORCE) {
     // hex
+    if (pre != 0) {
+      n += 2;  // skip over "0x"
+    }
     while (ascii_isxdigit(*ptr)) {
       un = 16 * un + (unsigned long)hex2nr(*ptr);
       ptr++;
+      if (n++ == maxlen) {
+        break;
+      }
     }
   } else {
     // decimal
     while (ascii_isdigit(*ptr)) {
       un = 10 * un + (unsigned long)(*ptr - '0');
       ptr++;
+      if (n++ == maxlen) {
+        break;
+      }
     }
   }
 
-  if (hexp != NULL) {
-    *hexp = hex;
+  if (prep != NULL) {
+    *prep = pre;
   }
 
   if (len != NULL) {

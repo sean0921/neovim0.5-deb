@@ -6,8 +6,13 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 # Prefer our bundled versions of dependencies.
 set(DEPS_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/.deps/usr" CACHE PATH "Path prefix for finding dependencies")
-list(INSERT CMAKE_PREFIX_PATH 0 ${DEPS_PREFIX})
-set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:${DEPS_PREFIX}/lib/pkgconfig")
+if(CMAKE_CROSSCOMPILING AND NOT UNIX)
+  list(INSERT CMAKE_FIND_ROOT_PATH 0 ${DEPS_PREFIX})
+  list(INSERT CMAKE_PREFIX_PATH 0 ${DEPS_PREFIX}/../host/bin)
+else()
+  list(INSERT CMAKE_PREFIX_PATH 0 ${DEPS_PREFIX})
+  set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:${DEPS_PREFIX}/lib/pkgconfig")
+endif()
 
 # used for check_c_compiler_flag
 include(CheckCCompilerFlag)
@@ -35,37 +40,35 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set(USE_FNAME_CASE TRUE)
 endif()
 
-# Set available build types for CMake GUIs.
-# A different build type can still be set by -DCMAKE_BUILD_TYPE=...
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
-  STRINGS "Debug" "Dev" "Release" "MinSizeRel" "RelWithDebInfo")
-
 # Set default build type.
 if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "CMAKE_BUILD_TYPE not given, defaulting to 'Dev'.")
   set(CMAKE_BUILD_TYPE "Dev" CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-# Version tokens
-#   - In a git repo, these tokens are _ignored_.
-#     - If the current HEAD is tagged, the tag name is used.
-#     - Otherwise the result of `git describe` is used.
-#   - If not in a git repo (e.g. a tarball) these tokens set the version string.
+# Set available build types for CMake GUIs.
+# A different build type can still be set by -DCMAKE_BUILD_TYPE=...
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
+  STRINGS "Debug" "Dev" "Release" "MinSizeRel" "RelWithDebInfo")
+
+# If not in a git repo (e.g., a tarball) these tokens define the complete
+# version string, else it is combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
 set(NVIM_VERSION_MINOR 1)
-set(NVIM_VERSION_PATCH 1)
+set(NVIM_VERSION_PATCH 2)
+set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 file(TO_CMAKE_PATH ${CMAKE_CURRENT_LIST_DIR}/.git FORCED_GIT_DIR)
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC NVIM_VERSION_COMMIT)
-if(NVIM_VERSION_COMMIT)    # is a git repo
-  git_get_exact_tag(NVIM_VERSION_MEDIUM)
-  if(NVIM_VERSION_MEDIUM)  # is a tagged release
-    unset(NVIM_VERSION_COMMIT)
-  else()                   # is a dev build
-    git_describe(NVIM_VERSION_MEDIUM)
-    get_git_head_revision(GIT_REFSPEC NVIM_VERSION_COMMIT)
-  endif()
+if(NVIM_VERSION_COMMIT) # is a git repo
+  git_describe(NVIM_VERSION_MEDIUM)
+  # `git describe` annotates the most recent tagged release; for pre-release
+  # builds we must replace that with the unreleased version.
+  string(REGEX REPLACE "^v[0-9]+\\.[0-9]+\\.[0-9]+"
+         "v${NVIM_VERSION_MAJOR}.${NVIM_VERSION_MINOR}.${NVIM_VERSION_PATCH}"
+         NVIM_VERSION_MEDIUM
+         ${NVIM_VERSION_MEDIUM})
 endif()
 
 set(NVIM_VERSION_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
@@ -204,6 +207,7 @@ endif()
 if(MINGW)
   # Use POSIX compatible stdio in Mingw
   add_definitions(-D__USE_MINGW_ANSI_STDIO)
+  add_definitions(-D_WIN32_WINNT=0x0600)
 endif()
 
 # OpenBSD's GCC (4.2.1) doesn't have -Wvla
@@ -212,12 +216,16 @@ if(HAS_WVLA_FLAG)
   add_definitions(-Wvla)
 endif()
 
-check_c_compiler_flag(-fstack-protector-strong HAS_FSTACK_PROTECTOR_STRONG_FLAG)
-check_c_compiler_flag(-fstack-protector HAS_FSTACK_PROTECTOR_FLAG)
-if(HAS_FSTACK_PROTECTOR_STRONG_FLAG)
-  add_definitions(-fstack-protector-strong)
-elseif(HAS_FSTACK_PROTECTOR_FLAG)
-  add_definitions(-fstack-protector --param ssp-buffer-size=4)
+if(UNIX)
+  # -fstack-protector breaks non Unix builds even in Mingw-w64
+  check_c_compiler_flag(-fstack-protector-strong HAS_FSTACK_PROTECTOR_STRONG_FLAG)
+  check_c_compiler_flag(-fstack-protector HAS_FSTACK_PROTECTOR_FLAG)
+
+  if(HAS_FSTACK_PROTECTOR_STRONG_FLAG)
+    add_definitions(-fstack-protector-strong)
+  elseif(HAS_FSTACK_PROTECTOR_FLAG)
+    add_definitions(-fstack-protector --param ssp-buffer-size=4)
+  endif()
 endif()
 
 check_c_compiler_flag(-fdiagnostics-color=auto HAS_DIAG_COLOR_FLAG)
@@ -271,7 +279,7 @@ include(CheckLibraryExists)
 find_package(LibUV REQUIRED)
 include_directories(SYSTEM ${LIBUV_INCLUDE_DIRS})
 
-find_package(Msgpack REQUIRED)
+find_package(Msgpack 1.0.0 REQUIRED)
 include_directories(SYSTEM ${MSGPACK_INCLUDE_DIRS})
 
 find_package(LuaJit REQUIRED)
@@ -328,9 +336,16 @@ endif()
 set(CMAKE_THREAD_PREFER_PTHREAD ON)
 find_package(Threads REQUIRED)
 
+# Place targets in bin/ or lib/ for all build configurations
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+foreach(CFGNAME ${CMAKE_CONFIGURATION_TYPES})
+  string(TOUPPER ${CFGNAME} CFGNAME)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CFGNAME} ${CMAKE_BINARY_DIR}/bin)
+  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CFGNAME} ${CMAKE_BINARY_DIR}/lib)
+  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CFGNAME} ${CMAKE_BINARY_DIR}/lib)
+endforeach()
 
 # Find Lua interpreter
 include(LuaHelpers)
@@ -377,6 +392,16 @@ install_helper(
   FILES ${MANPAGES}
   DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
+# MIN_LOG_LEVEL for log.h
+if(DEFINED MIN_LOG_LEVEL)
+  if(NOT MIN_LOG_LEVEL MATCHES "^[0-3]$")
+    message(FATAL_ERROR "MIN_LOG_LEVEL must be a number DEBUG (0), INFO (1), WARNING (2) or ERROR (3)")
+  endif()
+  message(STATUS "Log level set to ${MIN_LOG_LEVEL}")
+else()
+  message(STATUS "Log level not specified, defaulting to INFO(1)")
+endif()
+
 # Go down the tree.
 
 add_subdirectory(src/nvim)
@@ -401,7 +426,11 @@ if(BUSTED_PRG)
   if(POLICY CMP0026)
     cmake_policy(SET CMP0026 OLD)
   endif()
-  get_target_property(TEST_LIBNVIM_PATH nvim-test LOCATION)
+  if(CMAKE_GENERATOR MATCHES "Visual Studio")
+    set(TEST_LIBNVIM_PATH ${CMAKE_BINARY_DIR}/lib/nvim-test.dll)
+  else()
+    get_target_property(TEST_LIBNVIM_PATH nvim-test LOCATION)
+  endif()
 
   configure_file(
     test/config/paths.lua.in
@@ -465,3 +494,15 @@ if(LUACHECK_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTestsLint.cmake)
 endif()
+
+set(CPACK_PACKAGE_NAME "Neovim")
+set(CPACK_PACKAGE_VENDOR "neovim.io")
+set(CPACK_PACKAGE_VERSION ${NVIM_VERSION_MEDIUM})
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Neovim")
+# Set toplevel directory/installer name as Neovim
+set(CPACK_PACKAGE_FILE_NAME "Neovim")
+set(CPACK_TOPLEVEL_TAG "Neovim")
+set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
+set(CPACK_NSIS_MODIFY_PATH ON)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+include(CPack)
