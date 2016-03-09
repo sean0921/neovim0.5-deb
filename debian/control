@@ -29,7 +29,7 @@ Vcs-Browser: https://anonscm.debian.org/cgit/pkg-vim/neovim.git
 Package: neovim
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}, neovim-runtime (= ${source:Version})
-Recommends: xsel | xclip
+Recommends: xsel | xclip, python-neovim, python3-neovim
 Suggests: ctags, vim-scripts
 Description: heavily refactored vim fork
  Neovim is a fork of Vim focused on modern code and features, rather than
