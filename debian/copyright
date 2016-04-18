@@ -10,7 +10,9 @@ Files: debian/*
 Copyright: 2016 James McCoy <jamessan@debian.org>
 License: Apache
 
-Files: runtime/* src/*
+Files: runtime/*
+       src/*
+       test/functional/legacy/*
 Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
            2006 Benji Fisher <benji@member.ams.org>
            1999-2014 Charles E. Campbell, Jr.
@@ -25,6 +27,7 @@ Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
 License: Vim
 
 Files: src/nvim/api/*
+       src/nvim/bufhl_defs.h
        src/nvim/event/*
        src/nvim/memory.*
        src/nvim/msgpack_rpc/*
@@ -41,6 +44,7 @@ Files: src/nvim/api/*
        runtime/autoload/shada.vim
        runtime/autoload/vimexpect.vim
        runtime/autoload/msgpack.vim
+       runtime/doc/api.txt
        runtime/doc/job_control.txt
        runtime/doc/msgpack_rpc.txt
        runtime/doc/nvim*
