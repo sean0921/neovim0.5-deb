@@ -1130,7 +1130,7 @@ static int command_line_handle_key(CommandLineState *s)
     if (!mouse_has(MOUSE_COMMAND)) {
       return command_line_not_changed(s);                   // Ignore mouse
     }
-    cmdline_paste(0, true, true);
+    cmdline_paste(eval_has_provider("clipboard") ? '*' : 0, true, true);
     redrawcmd();
     return command_line_changed(s);
 
@@ -2424,20 +2424,17 @@ void restore_cmdline_alloc(char_u *p)
   xfree(p);
 }
 
-/*
- * paste a yank register into the command line.
- * used by CTRL-R command in command-line mode
- * insert_reg() can't be used here, because special characters from the
- * register contents will be interpreted as commands.
- *
- * return FAIL for failure, OK otherwise
- */
-static int 
-cmdline_paste (
-    int regname,
-    int literally,          /* Insert text literally instead of "as typed" */
-    int remcr              /* remove trailing CR */
-)
+/// Paste a yank register into the command line.
+/// Used by CTRL-R command in command-line mode.
+/// insert_reg() can't be used here, because special characters from the
+/// register contents will be interpreted as commands.
+///
+/// @param regname   Register name.
+/// @param literally Insert text literally instead of "as typed".
+/// @param remcr     When true, remove trailing CR.
+///
+/// @returns FAIL for failure, OK otherwise
+static bool cmdline_paste(int regname, bool literally, bool remcr)
 {
   long i;
   char_u              *arg;
@@ -2957,20 +2954,37 @@ ExpandOne (
     }
   }
 
-  /* Find longest common part */
+  // Find longest common part
   if (mode == WILD_LONGEST && xp->xp_numfiles > 0) {
     size_t len;
-    for (len = 0; xp->xp_files[0][len]; ++len) {
-      for (i = 0; i < xp->xp_numfiles; ++i) {
+    size_t mb_len = 1;
+    int c0;
+    int ci;
+
+    for (len = 0; xp->xp_files[0][len]; len += mb_len) {
+      if (has_mbyte) {
+        mb_len = (* mb_ptr2len)(&xp->xp_files[0][len]);
+        c0 = (* mb_ptr2char)(&xp->xp_files[0][len]);
+      } else {
+        c0 = xp->xp_files[0][len];
+      }
+      for (i = 1; i < xp->xp_numfiles; ++i) {
+        if (has_mbyte) {
+          ci =(* mb_ptr2char)(&xp->xp_files[i][len]);
+        } else {
+          ci = xp->xp_files[i][len];
+        }
+
         if (p_fic && (xp->xp_context == EXPAND_DIRECTORIES
                       || xp->xp_context == EXPAND_FILES
                       || xp->xp_context == EXPAND_SHELLCMD
                       || xp->xp_context == EXPAND_BUFFERS)) {
-          if (TOLOWER_LOC(xp->xp_files[i][len]) !=
-              TOLOWER_LOC(xp->xp_files[0][len]))
+          if (vim_tolower(c0) != vim_tolower(ci)) {
             break;
-        } else if (xp->xp_files[i][len] != xp->xp_files[0][len])
+          }
+        } else if (c0 != ci) {
           break;
+        }
       }
       if (i < xp->xp_numfiles) {
         if (!(options & WILD_NO_BEEP)) {
@@ -2979,8 +2993,9 @@ ExpandOne (
         break;
       }
     }
+
     ss = (char_u *)xstrndup((char *)xp->xp_files[0], len);
-    findex = -1;                            /* next p_wc gets first one */
+    findex = -1;  // next p_wc gets first one
   }
 
   // Concatenate all matching names
@@ -5136,6 +5151,8 @@ static int ex_window(void)
 
     /* Don't execute autocommands while deleting the window. */
     block_autocmds();
+    // Avoid command-line window first character being concealed
+    curwin->w_p_cole = 0;
     wp = curwin;
     bp = curbuf;
     win_goto(old_curwin);

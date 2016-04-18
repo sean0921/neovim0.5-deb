@@ -100,6 +100,12 @@
 # define VIMRC_FILE     ".nvimrc"
 #endif
 
+typedef enum {
+  kNone  = -1,
+  kFalse = 0,
+  kTrue  = 1,
+} TriState;
+
 /* Values for "starting" */
 #define NO_SCREEN       2       /* no screen updating yet */
 #define NO_BUFFERS      1       /* not all buffers loaded yet */
@@ -207,6 +213,10 @@ EXTERN int compl_length INIT(= 0);
 /* Set when character typed while looking for matches and it means we should
  * stop looking for matches. */
 EXTERN int compl_interrupted INIT(= FALSE);
+
+// Set when doing something for completion that may call edit() recursively,
+// which is not allowed. Also used to disable folding during completion
+EXTERN int compl_busy INIT(= false);
 
 /* List of flags for method of completion. */
 EXTERN int compl_cont_status INIT(= 0);
@@ -912,8 +922,8 @@ EXTERN int KeyTyped;                     // TRUE if user typed current char
 EXTERN int KeyStuffed;                   // TRUE if current char from stuffbuf
 EXTERN int maptick INIT(= 0);            // tick for each non-mapped char
 
-EXTERN char_u chartab[256];             /* table used in charset.c; See
-                                           init_chartab() for explanation */
+EXTERN uint8_t chartab[256];             // table used in charset.c; See
+                                         // init_chartab() for explanation
 
 EXTERN int must_redraw INIT(= 0);           /* type of redraw necessary */
 EXTERN int skip_redraw INIT(= FALSE);       /* skip redraw once */

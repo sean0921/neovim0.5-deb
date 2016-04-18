@@ -317,20 +317,30 @@ int main(int argc, char **argv)
   }
 
   // open terminals when opening files that start with term://
-  do_cmdline_cmd("autocmd BufReadCmd term://* "
+#define PROTO "term://"
+  do_cmdline_cmd("autocmd BufReadCmd " PROTO "* nested "
                  ":call termopen( "
                  // Capture the command string
                  "matchstr(expand(\"<amatch>\"), "
-                 "'\\c\\mterm://\\%(.\\{-}//\\%(\\d\\+:\\)\\?\\)\\?\\zs.*'), "
+                 "'\\c\\m" PROTO "\\%(.\\{-}//\\%(\\d\\+:\\)\\?\\)\\?\\zs.*'), "
                  // capture the working directory
                  "{'cwd': get(matchlist(expand(\"<amatch>\"), "
-                 "'\\c\\mterm://\\(.\\{-}\\)//'), 1, '')})");
+                 "'\\c\\m" PROTO "\\(.\\{-}\\)//'), 1, '')})");
+#undef PROTO
 
   /* Execute --cmd arguments. */
   exe_pre_commands(&params);
 
   /* Source startup scripts. */
   source_startup_scripts(&params);
+
+  // If using the runtime (-u is not NONE), enable syntax & filetype plugins.
+  if (params.use_vimrc != NULL && strcmp(params.use_vimrc, "NONE") != 0) {
+    // Does ":filetype plugin indent on".
+    filetype_maybe_enable();
+    // Sources syntax/syntax.vim, which calls `:filetype on`.
+    syn_maybe_on();
+  }
 
   /*
    * Read all the plugin files.
@@ -649,6 +659,9 @@ static void init_locale(void)
   setlocale(LC_NUMERIC, "C");
 # endif
 
+# ifdef LOCALE_INSTALL_DIR    // gnu/linux standard: $prefix/share/locale
+  bindtextdomain(PROJECT_NAME, LOCALE_INSTALL_DIR);
+# else                        // old vim style: $runtime/lang
   {
     char_u  *p;
 
@@ -657,11 +670,12 @@ static void init_locale(void)
     p = (char_u *)vim_getenv("VIMRUNTIME");
     if (p != NULL && *p != NUL) {
       vim_snprintf((char *)NameBuff, MAXPATHL, "%s/lang", p);
-      bindtextdomain(VIMPACKAGE, (char *)NameBuff);
+      bindtextdomain(PROJECT_NAME, (char *)NameBuff);
     }
     xfree(p);
-    textdomain(VIMPACKAGE);
   }
+# endif
+  textdomain(PROJECT_NAME);
   TIME_MSG("locale set");
 }
 #endif

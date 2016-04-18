@@ -3,7 +3,7 @@ local helpers = require('test.functional.helpers')
 local Screen = require('test.functional.ui.screen')
 local clear, nvim, eq, neq = helpers.clear, helpers.nvim, helpers.eq, helpers.neq
 local ok, nvim_async, feed = helpers.ok, helpers.nvim_async, helpers.feed
-local os_is_windows = helpers.os_is_windows
+local os_name = helpers.os_name
 
 describe('vim_* functions', function()
   before_each(clear)
@@ -17,7 +17,7 @@ describe('vim_* functions', function()
       nvim('command', 'w')
       local f = io.open(fname)
       ok(f ~= nil)
-      if os_is_windows() then
+      if os_name() == 'windows' then
         eq('testing\r\napi\r\n', f:read('*a'))
       else
         eq('testing\napi\n', f:read('*a'))
@@ -144,15 +144,23 @@ describe('vim_* functions', function()
 
   describe('replace_termcodes', function()
     it('escapes K_SPECIAL as K_SPECIAL KS_SPECIAL KE_FILLER', function()
-      eq(helpers.nvim('replace_termcodes', '\128', true, true, true), '\128\254X')
+      eq('\128\254X', helpers.nvim('replace_termcodes', '\128', true, true, true))
     end)
 
-    it('leaves non K_SPECIAL string unchanged', function()
-      eq(helpers.nvim('replace_termcodes', 'abc', true, true, true), 'abc')
+    it('leaves non-K_SPECIAL string unchanged', function()
+      eq('abc', helpers.nvim('replace_termcodes', 'abc', true, true, true))
     end)
 
     it('converts <expressions>', function()
-      eq(helpers.nvim('replace_termcodes', '<Leader>', true, true, true), '\\')
+      eq('\\', helpers.nvim('replace_termcodes', '<Leader>', true, true, true))
+    end)
+
+    it('converts <LeftMouse> to K_SPECIAL KS_EXTRA KE_LEFTMOUSE', function()
+      -- K_SPECIAL KS_EXTRA KE_LEFTMOUSE
+      -- 0x80      0xfd     0x2c
+      -- 128       253      44
+      eq('\128\253\44', helpers.nvim('replace_termcodes',
+                                     '<LeftMouse>', true, true, true))
     end)
   end)
 

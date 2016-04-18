@@ -19,6 +19,7 @@
 #include "nvim/ex_cmds.h"
 #include "nvim/ex_cmds2.h"
 #include "nvim/ex_getln.h"
+#include "nvim/fileio.h"
 #include "nvim/fold.h"
 #include "nvim/getchar.h"
 #include "nvim/indent.h"
@@ -835,12 +836,13 @@ int do_record(int c)
   yankreg_T  *old_y_previous;
   int retval;
 
-  if (Recording == FALSE) {         /* start recording */
-    /* registers 0-9, a-z and " are allowed */
-    if (c < 0 || (!ASCII_ISALNUM(c) && c != '"'))
+  if (Recording == false) {
+    // start recording
+    // registers 0-9, a-z and " are allowed
+    if (c < 0 || (!ASCII_ISALNUM(c) && c != '"')) {
       retval = FAIL;
-    else {
-      Recording = TRUE;
+    } else {
+      Recording = c;
       showmode();
       regname = c;
       retval = OK;
@@ -1259,21 +1261,18 @@ get_spec_reg (
   return FALSE;
 }
 
-/*
- * Paste a yank register into the command line.
- * Only for non-special registers.
- * Used by CTRL-R command in command-line mode
- * insert_reg() can't be used here, because special characters from the
- * register contents will be interpreted as commands.
- *
- * return FAIL for failure, OK otherwise
- */
-int 
-cmdline_paste_reg (
-    int regname,
-    int literally,          /* Insert text literally instead of "as typed" */
-    int remcr              /* don't add trailing CR */
-)
+/// Paste a yank register into the command line.
+/// Only for non-special registers.
+/// Used by CTRL-R command in command-line mode
+/// insert_reg() can't be used here, because special characters from the
+/// register contents will be interpreted as commands.
+///
+/// @param regname   Register name.
+/// @param literally Insert text literally instead of "as typed".
+/// @param remcr     When true, don't add CR characters.
+///
+/// @returns FAIL for failure, OK otherwise
+bool cmdline_paste_reg(int regname, bool literally, bool remcr)
 {
   long i;
 
@@ -1284,13 +1283,9 @@ cmdline_paste_reg (
   for (i = 0; i < reg->y_size; i++) {
     cmdline_paste_str(reg->y_array[i], literally);
 
-    /* Insert ^M between lines and after last line if type is MLINE.
-     * Don't do this when "remcr" is TRUE and the next line is empty. */
-    if (reg->y_type == MLINE
-        || (i < reg->y_size - 1
-            && !(remcr
-                 && i == reg->y_size - 2
-                 && *reg->y_array[i + 1] == NUL))) {
+    // Insert ^M between lines and after last line if type is MLINE.
+    // Don't do this when "remcr" is true.
+    if ((reg->y_type == MLINE || i < reg->y_size - 1) && !remcr) {
       cmdline_paste_str((char_u *)"\r", literally);
     }
 
@@ -1409,8 +1404,9 @@ int op_delete(oparg_T *oap)
       op_yank_reg(oap, false, reg, false);
     }
 
-    if(oap->regname == 0) {
+    if (oap->regname == 0) {
       set_clipboard(0, reg);
+      yank_do_autocmd(oap, reg);
     }
 
   }
@@ -1555,55 +1551,31 @@ int op_delete(oparg_T *oap)
         if (gchar_cursor() != NUL)
           curwin->w_cursor.coladd = 0;
       }
-      if (oap->op_type == OP_DELETE
-          && oap->inclusive
-          && oap->end.lnum == curbuf->b_ml.ml_line_count
-          && n > (int)STRLEN(ml_get(oap->end.lnum))) {
-        /* Special case: gH<Del> deletes the last line. */
-        del_lines(1L, FALSE);
-      } else {
-        (void)del_bytes((long)n, !virtual_op, oap->op_type == OP_DELETE
-            && !oap->is_VIsual
-            );
-      }
-    } else {                          /* delete characters between lines */
+
+      (void)del_bytes((long)n, !virtual_op,
+                      oap->op_type == OP_DELETE && !oap->is_VIsual);
+    } else {
+      // delete characters between lines
       pos_T curpos;
-      int delete_last_line;
 
       /* save deleted and changed lines for undo */
       if (u_save((linenr_T)(curwin->w_cursor.lnum - 1),
               (linenr_T)(curwin->w_cursor.lnum + oap->line_count)) == FAIL)
         return FAIL;
 
-      delete_last_line = (oap->end.lnum == curbuf->b_ml.ml_line_count);
-      truncate_line(TRUE);              /* delete from cursor to end of line */
+      truncate_line(true);        // delete from cursor to end of line
 
-      curpos = curwin->w_cursor;        /* remember curwin->w_cursor */
-      ++curwin->w_cursor.lnum;
-      del_lines(oap->line_count - 2, FALSE);
+      curpos = curwin->w_cursor;  // remember curwin->w_cursor
+      curwin->w_cursor.lnum++;
+      del_lines(oap->line_count - 2, false);
 
-      if (delete_last_line)
-        oap->end.lnum = curbuf->b_ml.ml_line_count;
-
+      // delete from start of line until op_end
       n = (oap->end.col + 1 - !oap->inclusive);
-      if (oap->inclusive && delete_last_line
-          && n > (int)STRLEN(ml_get(oap->end.lnum))) {
-        /* Special case: gH<Del> deletes the last line. */
-        del_lines(1L, FALSE);
-        curwin->w_cursor = curpos;              /* restore curwin->w_cursor */
-        if (curwin->w_cursor.lnum > curbuf->b_ml.ml_line_count)
-          curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
-      } else {
-        /* delete from start of line until op_end */
-        curwin->w_cursor.col = 0;
-        (void)del_bytes((long)n, !virtual_op, oap->op_type == OP_DELETE
-            && !oap->is_VIsual
-            );
-        curwin->w_cursor = curpos;              /* restore curwin->w_cursor */
-      }
-      if (curwin->w_cursor.lnum < curbuf->b_ml.ml_line_count) {
-        do_join(2, FALSE, FALSE, FALSE, false);
-      }
+      curwin->w_cursor.col = 0;
+      (void)del_bytes((long)n, !virtual_op,
+                      oap->op_type == OP_DELETE && !oap->is_VIsual);
+      curwin->w_cursor = curpos;  // restore curwin->w_cursor
+      (void)do_join(2, false, false, false, false);
     }
   }
 
@@ -2333,6 +2305,8 @@ bool op_yank(oparg_T *oap, bool message)
   yankreg_T *reg = get_yank_register(oap->regname, YREG_YANK);
   op_yank_reg(oap, message, reg, is_append_register(oap->regname));
   set_clipboard(oap->regname, reg);
+  yank_do_autocmd(oap, reg);
+
   return true;
 }
 
@@ -2548,6 +2522,58 @@ static void yank_copy_line(yankreg_T *reg, struct block_def *bd, long y_idx)
   *pnew = NUL;
 }
 
+/// Execute autocommands for TextYankPost.
+///
+/// @param oap Operator arguments.
+/// @param reg The yank register used.
+static void yank_do_autocmd(oparg_T *oap, yankreg_T *reg)
+  FUNC_ATTR_NONNULL_ALL
+{
+  static bool recursive = false;
+
+  if (recursive || !has_event(EVENT_TEXTYANKPOST)) {
+    // No autocommand was defined
+    // or we yanked from this autocommand.
+    return;
+  }
+
+  recursive = true;
+
+  // set v:event to a dictionary with information about the yank
+  dict_T *dict = get_vim_var_dict(VV_EVENT);
+
+  // the yanked text
+  list_T *list = list_alloc();
+  for (linenr_T i = 0; i < reg->y_size; i++) {
+    list_append_string(list, reg->y_array[i], -1);
+  }
+  list->lv_lock = VAR_FIXED;
+  dict_add_list(dict, "regcontents", list);
+
+  // the register type
+  char buf[NUMBUFLEN+2];
+  format_reg_type(reg->y_type, reg->y_width, buf, ARRAY_SIZE(buf));
+  dict_add_nr_str(dict, "regtype", 0, (char_u *)buf);
+
+  // name of requested register or the empty string for an unnamed operation.
+  buf[0] = (char)oap->regname;
+  buf[1] = NUL;
+  dict_add_nr_str(dict, "regname", 0, (char_u *)buf);
+
+  // kind of operation (yank/delete/change)
+  buf[0] = get_op_char(oap->op_type);
+  buf[1] = NUL;
+  dict_add_nr_str(dict, "operator", 0, (char_u *)buf);
+
+  dict_set_keys_readonly(dict);
+  textlock++;
+  apply_autocmds(EVENT_TEXTYANKPOST, NULL, NULL, false, curbuf);
+  textlock--;
+  dict_clear(dict);
+
+  recursive = false;
+}
+
 
 /*
  * Put contents of register "regname" into the text.
@@ -2688,17 +2714,27 @@ void do_put(int regname, yankreg_T *reg, int dir, long count, int flags)
 
   if (y_type == MLINE) {
     if (flags & PUT_LINE_SPLIT) {
-      /* "p" or "P" in Visual mode: split the lines to put the text in
-       * between. */
-      if (u_save_cursor() == FAIL)
+      // "p" or "P" in Visual mode: split the lines to put the text in
+      // between.
+      if (u_save_cursor() == FAIL) {
         goto end;
-      ptr = vim_strsave(get_cursor_pos_ptr());
-      ml_append(curwin->w_cursor.lnum, ptr, (colnr_T)0, FALSE);
+      }
+      char_u *p = get_cursor_pos_ptr();
+      if (dir == FORWARD && *p != NUL) {
+        mb_ptr_adv(p);
+      }
+      ptr = vim_strsave(p);
+      ml_append(curwin->w_cursor.lnum, ptr, (colnr_T)0, false);
       xfree(ptr);
 
-      ptr = vim_strnsave(get_cursor_line_ptr(), curwin->w_cursor.col);
-      ml_replace(curwin->w_cursor.lnum, ptr, FALSE);
-      ++nr_lines;
+      oldp = get_cursor_line_ptr();
+      p = oldp + curwin->w_cursor.col;
+      if (dir == FORWARD && *p != NUL) {
+        mb_ptr_adv(p);
+      }
+      ptr = vim_strnsave(oldp, p - oldp);
+      ml_replace(curwin->w_cursor.lnum, ptr, false);
+      nr_lines++;
       dir = FORWARD;
     }
     if (flags & PUT_LINE_FORWARD) {
@@ -4645,7 +4681,7 @@ theend:
  * Used for getregtype()
  * Returns MAUTO for error.
  */
-char_u get_reg_type(int regname, long *reglen)
+char_u get_reg_type(int regname, colnr_T *reg_width)
 {
   switch (regname) {
   case '%':                     /* file name */
@@ -4668,12 +4704,44 @@ char_u get_reg_type(int regname, long *reglen)
   yankreg_T *reg = get_yank_register(regname, YREG_PASTE);
 
   if (reg->y_array != NULL) {
-    if (reglen != NULL && reg->y_type == MBLOCK)
-      *reglen = reg->y_width;
+    if (reg_width != NULL && reg->y_type == MBLOCK) {
+      *reg_width = reg->y_width;
+    }
     return reg->y_type;
   }
   return MAUTO;
 }
+
+/// Format the register type as a string.
+///
+/// @param reg_type The register type.
+/// @param reg_width The width, only used if "reg_type" is MBLOCK.
+/// @param[out] buf Buffer to store formatted string. The allocated size should
+///                 be at least NUMBUFLEN+2 to always fit the value.
+/// @param buf_len The allocated size of the buffer.
+void format_reg_type(char_u reg_type, colnr_T reg_width,
+                     char* buf, size_t buf_len)
+  FUNC_ATTR_NONNULL_ALL
+{
+  assert(buf_len > 1);
+  switch (reg_type) {
+    case MLINE:
+      buf[0] = 'V';
+      buf[1] = NUL;
+      break;
+    case MCHAR:
+      buf[0] = 'v';
+      buf[1] = NUL;
+      break;
+    case MBLOCK:
+      snprintf(buf, buf_len, CTRL_V_STR "%" PRIdCOLNR, reg_width + 1);
+      break;
+    case MAUTO:
+      buf[0] = NUL;
+      break;
+  }
+}
+
 
 /// When `flags` has `kGRegList` return a list with text `s`.
 /// Otherwise just return `s`.

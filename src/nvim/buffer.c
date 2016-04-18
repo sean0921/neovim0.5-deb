@@ -141,14 +141,21 @@ open_buffer (
   /* mark cursor position as being invalid */
   curwin->w_valid = 0;
 
-  if (curbuf->b_ffname != NULL
-      ) {
+  if (curbuf->b_ffname != NULL) {
+    int old_msg_silent = msg_silent;
+    if (shortmess(SHM_FILEINFO)) {
+      msg_silent = 1;
+    }
+
     retval = readfile(curbuf->b_ffname, curbuf->b_fname,
-        (linenr_T)0, (linenr_T)0, (linenr_T)MAXLNUM, eap,
-        flags | READ_NEW);
-    /* Help buffer is filtered. */
-    if (curbuf->b_help)
+                      (linenr_T)0, (linenr_T)0, (linenr_T)MAXLNUM, eap,
+                      flags | READ_NEW);
+    msg_silent = old_msg_silent;
+
+    // Help buffer is filtered.
+    if (curbuf->b_help) {
       fix_help_buffer();
+    }
   } else if (read_stdin) {
     int save_bin = curbuf->b_p_bin;
     linenr_T line_count;
@@ -257,17 +264,16 @@ open_buffer (
   return retval;
 }
 
-/*
- * Return TRUE if "buf" points to a valid buffer (in the buffer list).
- */
-int buf_valid(buf_T *buf)
+/// Check that "buf" points to a valid buffer (in the buffer list).
+bool buf_valid(buf_T *buf)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
   FOR_ALL_BUFFERS(bp) {
     if (bp == buf) {
-      return TRUE;
+      return true;
     }
   }
-  return FALSE;
+  return false;
 }
 
 /*
@@ -580,16 +586,17 @@ free_buffer_stuff (
 )
 {
   if (free_options) {
-    clear_wininfo(buf);                 /* including window-local options */
-    free_buf_options(buf, TRUE);
+    clear_wininfo(buf);                 // including window-local options
+    free_buf_options(buf, true);
     ga_clear(&buf->b_s.b_langp);
   }
-  vars_clear(&buf->b_vars->dv_hashtab);   /* free all internal variables */
+  vars_clear(&buf->b_vars->dv_hashtab);   // free all internal variables
   hash_init(&buf->b_vars->dv_hashtab);
-  uc_clear(&buf->b_ucmds);              /* clear local user commands */
-  buf_delete_signs(buf);                /* delete any signs */
-  map_clear_int(buf, MAP_ALL_MODES, TRUE, FALSE);    /* clear local mappings */
-  map_clear_int(buf, MAP_ALL_MODES, TRUE, TRUE);     /* clear local abbrevs */
+  uc_clear(&buf->b_ucmds);              // clear local user commands
+  buf_delete_signs(buf);                // delete any signs
+  bufhl_clear_all(buf);                // delete any highligts
+  map_clear_int(buf, MAP_ALL_MODES, true, false);    // clear local mappings
+  map_clear_int(buf, MAP_ALL_MODES, true, true);     // clear local abbrevs
   xfree(buf->b_start_fenc);
   buf->b_start_fenc = NULL;
 }
@@ -1601,21 +1608,28 @@ int buflist_getfile(int n, linenr_T lnum, int options, int forceit)
     col = 0;
 
   if (options & GETF_SWITCH) {
-    /* If 'switchbuf' contains "useopen": jump to first window containing
-     * "buf" if one exists */
-    if (swb_flags & SWB_USEOPEN)
+    // If 'switchbuf' contains "useopen": jump to first window containing
+    // "buf" if one exists
+    if (swb_flags & SWB_USEOPEN) {
       wp = buf_jump_open_win(buf);
-    /* If 'switchbuf' contains "usetab": jump to first window in any tab
-     * page containing "buf" if one exists */
-    if (wp == NULL && (swb_flags & SWB_USETAB))
+    }
+
+    // If 'switchbuf' contains "usetab": jump to first window in any tab
+    // page containing "buf" if one exists
+    if (wp == NULL && (swb_flags & SWB_USETAB)) {
       wp = buf_jump_open_tab(buf);
-    /* If 'switchbuf' contains "split" or "newtab" and the current buffer
-     * isn't empty: open new window */
-    if (wp == NULL && (swb_flags & (SWB_SPLIT | SWB_NEWTAB)) && !bufempty()) {
-      if (swb_flags & SWB_NEWTAB)               /* Open in a new tab */
+    }
+
+    // If 'switchbuf' contains "split", "vsplit" or "newtab" and the
+    // current buffer isn't empty: open new tab or window
+    if (wp == NULL && (swb_flags & (SWB_VSPLIT | SWB_SPLIT | SWB_NEWTAB))
+        && !bufempty()) {
+      if (swb_flags & SWB_NEWTAB) {
         tabpage_new();
-      else if (win_split(0, 0) == FAIL)         /* Open in a new window */
+      } else if (win_split(0, (swb_flags & SWB_VSPLIT) ? WSP_VERT : 0)
+                 == FAIL) {
         return FAIL;
+      }
       RESET_BINDING(curwin);
     }
   }
@@ -1734,12 +1748,15 @@ int buflist_findpat(
   int toggledollar;
 
   if (pattern_end == pattern + 1 && (*pattern == '%' || *pattern == '#')) {
-    if (*pattern == '%')
+    if (*pattern == '%') {
       match = curbuf->b_fnum;
-    else
+    } else {
       match = curwin->w_alt_fnum;
-    if (diffmode && !diff_mode_buf(buflist_findnr(match)))
+    }
+    buf_T *found_buf = buflist_findnr(match);
+    if (diffmode && !(found_buf && diff_mode_buf(found_buf))) {
       match = -1;
+    }
   }
   /*
    * Try four ways of matching a listed buffer:
@@ -2044,16 +2061,15 @@ void buflist_setfpos(buf_T *const buf, win_T *const win,
 }
 
 
-/*
- * Return true when "wip" has 'diff' set and the diff is only for another tab
- * page.  That's because a diff is local to a tab page.
- */
+/// Check that "wip" has 'diff' set and the diff is only for another tab page.
+/// That's because a diff is local to a tab page.
 static bool wininfo_other_tab_diff(wininfo_T *wip)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
   if (wip->wi_opt.wo_diff) {
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-      /* return false when it's a window in the current tab page, thus
-       * the buffer was in diff mode here */
+      // return false when it's a window in the current tab page, thus
+      // the buffer was in diff mode here
       if (wip->wi_win == wp) {
         return false;
       }
@@ -2410,52 +2426,62 @@ void buflist_altfpos(win_T *win)
   buflist_setfpos(curbuf, win, win->w_cursor.lnum, win->w_cursor.col, TRUE);
 }
 
-/*
- * Return TRUE if 'ffname' is not the same file as current file.
- * Fname must have a full path (expanded by path_get_absolute_path()).
- */
-int otherfile(char_u *ffname)
+/// Check that "ffname" is not the same file as current file.
+/// Fname must have a full path (expanded by path_get_absolute_path()).
+///
+/// @param  ffname  full path name to check
+bool otherfile(char_u *ffname)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
   return otherfile_buf(curbuf, ffname, NULL, false);
 }
 
-static int otherfile_buf(buf_T *buf, char_u *ffname,
-                         FileID *file_id_p, bool file_id_valid)
+/// Check that "ffname" is not the same file as the file loaded in "buf".
+/// Fname must have a full path (expanded by path_get_absolute_path()).
+///
+/// @param  buf            buffer to check
+/// @param  ffname         full path name to check
+/// @param  file_id_p      information about the file at "ffname".
+/// @param  file_id_valid  whether a valid "file_id_p" was passed in.
+static bool otherfile_buf(buf_T *buf, char_u *ffname, FileID *file_id_p,
+                          bool file_id_valid)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  /* no name is different */
+  // no name is different
   if (ffname == NULL || *ffname == NUL || buf->b_ffname == NULL) {
-    return TRUE;
+    return true;
   }
   if (fnamecmp(ffname, buf->b_ffname) == 0) {
-    return FALSE;
+    return false;
   }
   {
     FileID file_id;
-    /* If no struct stat given, get it now */
+    // If no struct stat given, get it now
     if (file_id_p == NULL) {
       file_id_p = &file_id;
       file_id_valid = os_fileid((char *)ffname, file_id_p);
     }
     if (!file_id_valid) {
       // file_id not valid, assume files are different.
-      return TRUE;
+      return true;
     }
-    /* Use dev/ino to check if the files are the same, even when the names
-     * are different (possible with links).  Still need to compare the
-     * name above, for when the file doesn't exist yet.
-     * Problem: The dev/ino changes when a file is deleted (and created
-     * again) and remains the same when renamed/moved.  We don't want to
-     * stat() each buffer each time, that would be too slow.  Get the
-     * dev/ino again when they appear to match, but not when they appear
-     * to be different: Could skip a buffer when it's actually the same
-     * file. */
+    // Use dev/ino to check if the files are the same, even when the names
+    // are different (possible with links).  Still need to compare the
+    // name above, for when the file doesn't exist yet.
+    // Problem: The dev/ino changes when a file is deleted (and created
+    // again) and remains the same when renamed/moved.  We don't want to
+    // stat() each buffer each time, that would be too slow.  Get the
+    // dev/ino again when they appear to match, but not when they appear
+    // to be different: Could skip a buffer when it's actually the same
+    // file.
     if (buf_same_file_id(buf, file_id_p)) {
       buf_set_file_id(buf);
-      if (buf_same_file_id(buf, file_id_p))
-        return FALSE;
+      if (buf_same_file_id(buf, file_id_p)) {
+        return false;
+      }
     }
   }
-  return TRUE;
+  return true;
 }
 
 // Set file_id for a buffer.
@@ -2472,11 +2498,14 @@ void buf_set_file_id(buf_T *buf)
   }
 }
 
-// return TRUE if file_id in buffer "buf" matches with "file_id".
+/// Check that file_id in buffer "buf" matches with "file_id".
+///
+/// @param  buf      buffer
+/// @param  file_id  file id
 static bool buf_same_file_id(buf_T *buf, FileID *file_id)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
-  return buf->file_id_valid
-         && os_fileid_equal(&(buf->file_id), file_id);
+  return buf->file_id_valid && os_fileid_equal(&(buf->file_id), file_id);
 }
 
 /*
@@ -2759,23 +2788,28 @@ void maketitle(void)
     resettitle();
 }
 
-/*
- * Used for title and icon: Check if "str" differs from "*last".  Set "*last"
- * from "str" if it does.
- * Return TRUE when "*last" changed.
- */
-static int ti_change(char_u *str, char_u **last)
+/// Used for title and icon: Check if "str" differs from "*last".  Set "*last"
+/// from "str" if it does by freeing the old value of "*last" and duplicating
+/// "str".
+///
+/// @param          str   desired title string
+/// @param[in,out]  last  current title string
+//
+/// @return true when "*last" changed.
+static bool ti_change(char_u *str, char_u **last)
+  FUNC_ATTR_WARN_UNUSED_RESULT
 {
   if ((str == NULL) != (*last == NULL)
       || (str != NULL && *last != NULL && STRCMP(str, *last) != 0)) {
     xfree(*last);
-    if (str == NULL)
+    if (str == NULL) {
       *last = NULL;
-    else
+    } else {
       *last = vim_strsave(str);
-    return TRUE;
+    }
+    return true;
   }
-  return FALSE;
+  return false;
 }
 
 /*
@@ -3003,7 +3037,7 @@ int build_stl_str_hl(
           && item[groupitem[groupdepth]].minwid == 0) {
         bool has_normal_items = false;
         for (long n = groupitem[groupdepth] + 1; n < curitem; n++) {
-          if (item[n].type == Normal) {
+          if (item[n].type == Normal || item[n].type == Highlight) {
             has_normal_items = true;
             break;
           }
@@ -3895,6 +3929,11 @@ void get_rel_pos(win_T *wp, char_u *buf, int buflen)
 
   above = wp->w_topline - 1;
   above += diff_check_fill(wp, wp->w_topline) - wp->w_topfill;
+  if (wp->w_topline == 1 && wp->w_topfill >= 1) {
+    // All buffer lines are displayed and there is an indication
+    // of filler lines, that can be considered seeing all lines.
+    above = 0;
+  }
   below = wp->w_buffer->b_ml.ml_line_count - wp->w_botline + 1;
   if (below <= 0)
     STRLCPY(buf, (above == 0 ? _("All") : _("Bot")), buflen);
@@ -3906,26 +3945,29 @@ void get_rel_pos(win_T *wp, char_u *buf, int buflen)
         : (int)(above * 100L / (above + below)));
 }
 
-/*
- * Append (file 2 of 8) to "buf[buflen]", if editing more than one file.
- * Return TRUE if it was appended.
- */
-static int 
-append_arg_number (
-    win_T *wp,
-    char_u *buf,
-    int buflen,
-    int add_file                   /* Add "file" before the arg number */
-)
+/// Append (file 2 of 8) to "buf[buflen]", if editing more than one file.
+///
+/// @param          wp        window whose buffers to check
+/// @param[in,out]  buf       string buffer to add the text to
+/// @param          buflen    length of the string buffer
+/// @param          add_file  if true, add "file" before the arg number
+///
+/// @return true if it was appended.
+static bool append_arg_number(win_T *wp, char_u *buf, int buflen, bool add_file)
+  FUNC_ATTR_NONNULL_ALL
 {
-  char_u      *p;
+  // Nothing to do
+  if (ARGCOUNT <= 1) {
+    return false;
+  }
 
-  if (ARGCOUNT <= 1)            /* nothing to do */
-    return FALSE;
+  char_u *p = buf + STRLEN(buf);  // go to the end of the buffer
 
-  p = buf + STRLEN(buf);        /* go to the end of the buffer */
-  if (p - buf + 35 >= buflen)   /* getting too long */
-    return FALSE;
+  // Early out if the string is getting too long
+  if (p - buf + 35 >= buflen) {
+    return false;
+  }
+
   *p++ = ' ';
   *p++ = '(';
   if (add_file) {
@@ -3933,9 +3975,10 @@ append_arg_number (
     p += 5;
   }
   vim_snprintf((char *)p, (size_t)(buflen - (p - buf)),
-      wp->w_arg_idx_invalid ? "(%d) of %d)"
-      : "%d of %d)", wp->w_arg_idx + 1, ARGCOUNT);
-  return TRUE;
+               wp->w_arg_idx_invalid
+               ? "(%d) of %d)"
+               : "%d of %d)", wp->w_arg_idx + 1, ARGCOUNT);
+  return true;
 }
 
 /*
@@ -4569,11 +4612,16 @@ char_u *buf_spname(buf_T *buf)
   return NULL;
 }
 
-/*
- * Find a window for buffer "buf".
- * If found true is returned and "wp" and "tp" are set to the window and tabpage.
- * If not found false is returned.
- */
+/// Find a window for buffer "buf".
+/// If found true is returned and "wp" and "tp" are set to
+/// the window and tabpage.
+/// If not found, false is returned.
+///
+/// @param       buf  buffer to find a window for
+/// @param[out]  wp   stores the found window
+/// @param[out]  tp   stores the found tabpage
+///
+/// @return true if a window was found for the buffer.
 bool find_win_for_buf(buf_T *buf, win_T **wp, tabpage_T **tp)
 {
   *wp = NULL;
@@ -4855,6 +4903,224 @@ void sign_mark_adjust(linenr_T line1, linenr_T line2, long amount, long amount_a
     }
 }
 
+// bufhl: plugin highlights associated with a buffer
+
+/// Adds a highlight to buffer.
+///
+/// Unlike matchaddpos() highlights follow changes to line numbering (as lines
+/// are inserted/removed above the highlighted line), like signs and marks do.
+///
+/// When called with "src_id" set to 0, a unique source id is generated and
+/// returned. Succesive calls can pass it in as "src_id" to add new highlights
+/// to the same source group. All highlights in the same group can be cleared
+/// at once. If the highlight never will be manually deleted pass in -1 for
+/// "src_id"
+///
+/// if "hl_id" or "lnum" is invalid no highlight is added, but a new src_id
+/// is still returned.
+///
+/// @param buf The buffer to add highlights to
+/// @param src_id src_id to use or 0 to use a new src_id group,
+///               or -1 for ungrouped highlight.
+/// @param hl_id Id of the highlight group to use
+/// @param lnum The line to highlight
+/// @param col_start First column to highlight
+/// @param col_end The last column to highlight,
+///                or -1 to highlight to end of line
+/// @return The src_id that was used
+int bufhl_add_hl(buf_T *buf,
+                 int src_id,
+                 int hl_id,
+                 linenr_T lnum,
+                 colnr_T col_start,
+                 colnr_T col_end) {
+  static int next_src_id = 1;
+  if (src_id == 0) {
+    src_id = next_src_id++;
+  }
+  if (hl_id <= 0) {
+      // no highlight group or invalid line, just return src_id
+      return src_id;
+  }
+  if (!buf->b_bufhl_info) {
+    buf->b_bufhl_info = map_new(linenr_T, bufhl_vec_T)();
+  }
+  bufhl_vec_T* lineinfo = map_ref(linenr_T, bufhl_vec_T)(buf->b_bufhl_info,
+                                                         lnum, true);
+
+  bufhl_hl_item_T *hlentry = kv_pushp(bufhl_hl_item_T, *lineinfo);
+  hlentry->src_id = src_id;
+  hlentry->hl_id = hl_id;
+  hlentry->start = col_start;
+  hlentry->stop = col_end;
+
+  if (0 < lnum && lnum <= buf->b_ml.ml_line_count) {
+    changed_lines_buf(buf, lnum, lnum+1, 0);
+    redraw_buf_later(buf, VALID);
+  }
+  return src_id;
+}
+
+/// Clear bufhl highlights from a given source group and range of lines.
+///
+/// @param buf The buffer to remove highlights from
+/// @param src_id highlight source group to clear, or -1 to clear all groups.
+/// @param line_start first line to clear
+/// @param line_end last line to clear or MAXLNUM to clear to end of file.
+void bufhl_clear_line_range(buf_T *buf,
+                            int src_id,
+                            linenr_T line_start,
+                            linenr_T line_end) {
+  if (!buf->b_bufhl_info) {
+    return;
+  }
+  linenr_T line;
+  linenr_T first_changed = MAXLNUM, last_changed = -1;
+  // In the case line_start - line_end << bufhl_info->size
+  // it might be better to reverse this, i e loop over the lines
+  // to clear on.
+  bufhl_vec_T unused;
+  map_foreach(buf->b_bufhl_info, line, unused, {
+    (void)unused;
+    if (line_start <= line && line <= line_end) {
+      if (bufhl_clear_line(buf->b_bufhl_info, src_id, line)) {
+        if (line > last_changed) {
+          last_changed = line;
+        }
+        if (line < first_changed) {
+          first_changed = line;
+        }
+      }
+    }
+  })
+
+  if (last_changed != -1) {
+    changed_lines_buf(buf, first_changed, last_changed+1, 0);
+    redraw_buf_later(buf, VALID);
+  }
+}
+
+/// Clear bufhl highlights from a given source group and given line
+///
+/// @param bufhl_info The highlight info for the buffer
+/// @param src_id Highlight source group to clear, or -1 to clear all groups.
+/// @param lnum Linenr where the highlight should be cleared
+static bool bufhl_clear_line(bufhl_info_T *bufhl_info, int src_id, int lnum) {
+  bufhl_vec_T* lineinfo = map_ref(linenr_T, bufhl_vec_T)(bufhl_info,
+                                                         lnum, false);
+  size_t oldsize = kv_size(*lineinfo);
+  if (src_id < 0) {
+    kv_size(*lineinfo) = 0;
+  } else {
+    size_t newind = 0;
+    for (size_t i = 0; i < kv_size(*lineinfo); i++) {
+      if (kv_A(*lineinfo, i).src_id != src_id) {
+        if (i != newind) {
+          kv_A(*lineinfo, newind) = kv_A(*lineinfo, i);
+        }
+        newind++;
+      }
+    }
+    kv_size(*lineinfo) = newind;
+  }
+
+  if (kv_size(*lineinfo) == 0) {
+    kv_destroy(*lineinfo);
+    map_del(linenr_T, bufhl_vec_T)(bufhl_info, lnum);
+  }
+  return kv_size(*lineinfo) != oldsize;
+}
+
+/// Remove all highlights and free the highlight data
+void bufhl_clear_all(buf_T* buf) {
+  if (!buf->b_bufhl_info) {
+    return;
+  }
+  bufhl_clear_line_range(buf, -1, 1, MAXLNUM);
+  map_free(linenr_T, bufhl_vec_T)(buf->b_bufhl_info);
+  buf->b_bufhl_info = NULL;
+}
+
+/// Adjust a placed highlight for inserted/deleted lines.
+void bufhl_mark_adjust(buf_T* buf,
+                       linenr_T line1,
+                       linenr_T line2,
+                       long amount,
+                       long amount_after) {
+  if (!buf->b_bufhl_info) {
+    return;
+  }
+
+  bufhl_info_T *newmap = map_new(linenr_T, bufhl_vec_T)();
+  linenr_T line;
+  bufhl_vec_T lineinfo;
+  map_foreach(buf->b_bufhl_info, line, lineinfo, {
+    if (line >= line1 && line <= line2) {
+      if (amount == MAXLNUM) {
+        bufhl_clear_line(buf->b_bufhl_info, -1, line);
+        continue;
+      } else {
+        line += amount;
+      }
+    } else if (line > line2) {
+      line += amount_after;
+    }
+    map_put(linenr_T, bufhl_vec_T)(newmap, line, lineinfo);
+  });
+  map_free(linenr_T, bufhl_vec_T)(buf->b_bufhl_info);
+  buf->b_bufhl_info = newmap;
+}
+
+
+/// Get highlights to display at a specific line
+///
+/// @param buf The buffer handle
+/// @param lnum The line number
+/// @param[out] info The highligts for the line
+/// @return true if there was highlights to display
+bool bufhl_start_line(buf_T *buf, linenr_T lnum, bufhl_lineinfo_T *info) {
+  if (!buf->b_bufhl_info) {
+    return false;
+  }
+
+  info->valid_to = -1;
+  info->entries = map_get(linenr_T, bufhl_vec_T)(buf->b_bufhl_info, lnum);
+  return kv_size(info->entries) > 0;
+}
+
+/// get highlighting at column col
+///
+/// It is is assumed this will be called with
+/// non-decreasing column nrs, so that it is
+/// possible to only recalculate highlights
+/// at endpoints.
+///
+/// @param info The info returned by bufhl_start_line
+/// @param col The column to get the attr for
+/// @return The highilight attr to display at the column
+int bufhl_get_attr(bufhl_lineinfo_T *info, colnr_T col) {
+  if (col <= info->valid_to) {
+    return info->current;
+  }
+  int attr = 0;
+  info->valid_to = MAXCOL;
+  for (size_t i = 0; i < kv_size(info->entries); i++) {
+    bufhl_hl_item_T entry = kv_A(info->entries, i);
+    if (entry.start <= col && col <= entry.stop) {
+      int entry_attr = syn_id2attr(entry.hl_id);
+      attr = hl_combine_attr(attr, entry_attr);
+      if (entry.stop < info->valid_to) {
+        info->valid_to = entry.stop;
+      }
+    } else if (col < entry.start && entry.start-1 < info->valid_to) {
+      info->valid_to = entry.start-1;
+    }
+  }
+  info->current = attr;
+  return attr;
+}
+
+
 /*
  * Set 'buflisted' for curbuf to "on" and trigger autocommands if it changed.
  */
@@ -4869,50 +5135,54 @@ void set_buflisted(int on)
   }
 }
 
-/*
- * Read the file for "buf" again and check if the contents changed.
- * Return TRUE if it changed or this could not be checked.
- */
-int buf_contents_changed(buf_T *buf)
+/// Read the file for "buf" again and check if the contents changed.
+/// Return true if it changed or this could not be checked.
+///
+/// @param  buf  buffer to check
+///
+/// @return true if the buffer's contents have changed
+bool buf_contents_changed(buf_T *buf)
+  FUNC_ATTR_NONNULL_ALL
 {
-  buf_T       *newbuf;
-  int differ = TRUE;
-  linenr_T lnum;
-  aco_save_T aco;
+  bool differ = true;
+
+  // Allocate a buffer without putting it in the buffer list.
+  buf_T *newbuf = buflist_new(NULL, NULL, (linenr_T)1, BLN_DUMMY);
+  if (newbuf == NULL) {
+    return true;
+  }
+
+  // Force the 'fileencoding' and 'fileformat' to be equal.
   exarg_T ea;
-
-  /* Allocate a buffer without putting it in the buffer list. */
-  newbuf = buflist_new(NULL, NULL, (linenr_T)1, BLN_DUMMY);
-  if (newbuf == NULL)
-    return TRUE;
-
-  /* Force the 'fileencoding' and 'fileformat' to be equal. */
   prep_exarg(&ea, buf);
 
-  /* set curwin/curbuf to buf and save a few things */
+  // set curwin/curbuf to buf and save a few things
+  aco_save_T aco;
   aucmd_prepbuf(&aco, newbuf);
 
   if (ml_open(curbuf) == OK
       && readfile(buf->b_ffname, buf->b_fname,
-          (linenr_T)0, (linenr_T)0, (linenr_T)MAXLNUM,
-          &ea, READ_NEW | READ_DUMMY) == OK) {
-    /* compare the two files line by line */
+                  (linenr_T)0, (linenr_T)0, (linenr_T)MAXLNUM,
+                  &ea, READ_NEW | READ_DUMMY) == OK) {
+    // compare the two files line by line
     if (buf->b_ml.ml_line_count == curbuf->b_ml.ml_line_count) {
-      differ = FALSE;
-      for (lnum = 1; lnum <= curbuf->b_ml.ml_line_count; ++lnum)
-        if (STRCMP(ml_get_buf(buf, lnum, FALSE), ml_get(lnum)) != 0) {
-          differ = TRUE;
+      differ = false;
+      for (linenr_T lnum = 1; lnum <= curbuf->b_ml.ml_line_count; ++lnum) {
+        if (STRCMP(ml_get_buf(buf, lnum, false), ml_get(lnum)) != 0) {
+          differ = true;
           break;
         }
+      }
     }
   }
   xfree(ea.cmd);
 
-  /* restore curwin/curbuf and a few other things */
+  // restore curwin/curbuf and a few other things
   aucmd_restbuf(&aco);
 
-  if (curbuf != newbuf)         /* safety check */
-    wipe_buffer(newbuf, FALSE);
+  if (curbuf != newbuf) {  // safety check
+    wipe_buffer(newbuf, false);
+  }
 
   return differ;
 }

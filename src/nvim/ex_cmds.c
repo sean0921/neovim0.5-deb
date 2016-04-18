@@ -1377,9 +1377,9 @@ char_u *make_filter_cmd(char_u *cmd, char_u *itmp, char_u *otmp)
     }
   }
 #endif
-  if (otmp != NULL)
-    append_redir(buf, (int)len, p_srr, otmp);
-
+  if (otmp != NULL) {
+    append_redir(buf, len, p_srr, otmp);
+  }
   return buf;
 }
 
@@ -1390,7 +1390,7 @@ char_u *make_filter_cmd(char_u *cmd, char_u *itmp, char_u *otmp)
  * The caller should make sure that there is enough room:
  *	STRLEN(opt) + STRLEN(fname) + 3
  */
-void append_redir(char_u *buf, int buflen, char_u *opt, char_u *fname)
+void append_redir(char_u *buf, size_t buflen, char_u *opt, char_u *fname)
 {
   char_u      *p;
   char_u      *end;
@@ -1506,8 +1506,11 @@ void ex_file(exarg_T *eap)
     if (rename_buffer(eap->arg) == FAIL)
       return;
   }
-  /* print full file name if :cd used */
-  fileinfo(FALSE, FALSE, eap->forceit);
+
+  if (!shortmess(SHM_FILEINFO)) {
+    // print full file name if :cd used
+    fileinfo(false, false, eap->forceit);
+  }
 }
 
 /*
@@ -2483,7 +2486,9 @@ do_ecmd (
     msg_scroll = msg_scroll_save;
     msg_scrolled_ign = TRUE;
 
-    fileinfo(FALSE, TRUE, FALSE);
+    if (!shortmess(SHM_FILEINFO)) {
+      fileinfo(false, true, false);
+    }
 
     msg_scrolled_ign = FALSE;
   }
@@ -3017,7 +3022,7 @@ void do_sub(exarg_T *eap)
     // The number of lines joined is the number of lines in the range
     linenr_T joined_lines_count = eap->line2 - eap->line1 + 1
       // plus one extra line if not at the end of file.
-      + eap->line2 < curbuf->b_ml.ml_line_count ? 1 : 0;
+      + (eap->line2 < curbuf->b_ml.ml_line_count ? 1 : 0);
     if (joined_lines_count > 1) {
       do_join(joined_lines_count, FALSE, TRUE, FALSE, true);
       sub_nsubs = joined_lines_count - 1;
@@ -4779,6 +4784,7 @@ void ex_helptags(exarg_T *eap)
       WILD_LIST_NOTFOUND|WILD_SILENT, WILD_EXPAND_FREE);
   if (dirname == NULL || !os_isdir(dirname)) {
     EMSG2(_("E150: Not a directory: %s"), eap->arg);
+    xfree(dirname);
     return;
   }
 
@@ -4876,16 +4882,13 @@ helptags_one (
   int fi;
   char_u      *s;
   char_u      *fname;
-  int dirlen;
   int utf8 = MAYBE;
   int this_utf8;
   int firstline;
   int mix = FALSE;              /* detected mixed encodings */
 
-  /*
-   * Find all *.txt files.
-   */
-  dirlen = (int)STRLEN(dir);
+  // Find all *.txt files.
+  size_t dirlen = STRLEN(dir);
   STRCPY(NameBuff, dir);
   STRCAT(NameBuff, "/**/*");
   STRCAT(NameBuff, ext);
@@ -4907,7 +4910,7 @@ helptags_one (
    */
   STRCPY(NameBuff, dir);
   add_pathsep((char *)NameBuff);
-  STRCAT(NameBuff, tagfname);
+  STRNCAT(NameBuff, tagfname, sizeof(NameBuff) - dirlen - 2);
   fd_tags = mch_fopen((char *)NameBuff, "w");
   if (fd_tags == NULL) {
     EMSG2(_("E152: Cannot open %s for writing"), NameBuff);

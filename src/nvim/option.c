@@ -168,11 +168,12 @@ static int p_ml_nobin;
 static long p_tw_nobin;
 static long p_wm_nobin;
 
-/* Saved values for when 'paste' is set */
+// Saved values for when 'paste' is set.
+static int p_ai_nopaste;
+static int p_et_nopaste;
+static long p_sts_nopaste;
 static long p_tw_nopaste;
 static long p_wm_nopaste;
-static long p_sts_nopaste;
-static int p_ai_nopaste;
 
 typedef struct vimoption {
   char        *fullname;        /* full option name */
@@ -218,20 +219,22 @@ typedef struct vimoption {
 #define P_RALL          0x6000U  /* redraw all windows */
 #define P_RCLR          0x7000U  /* clear and redraw all */
 
-#define P_COMMA         0x8000U  /* comma separated list */
-#define P_NODUP         0x10000U /* don't allow duplicate strings */
-#define P_FLAGLIST      0x20000U /* list of single-char flags */
+#define P_COMMA         0x8000U    ///< comma separated list
+#define P_ONECOMMA      0x18000U   ///< P_COMMA and cannot have two consecutive
+                                   ///< commas
+#define P_NODUP         0x20000U   ///< don't allow duplicate strings
+#define P_FLAGLIST      0x40000U   ///< list of single-char flags
 
-#define P_SECURE        0x40000U /* cannot change in modeline or secure mode */
-#define P_GETTEXT       0x80000U /* expand default value with _() */
-#define P_NOGLOB       0x100000U /* do not use local value for global vimrc */
-#define P_NFNAME       0x200000U /* only normal file name chars allowed */
-#define P_INSECURE     0x400000U /* option was set from a modeline */
-#define P_PRI_MKRC     0x800000U /* priority for :mkvimrc (setting option has
-                                    side effects) */
-#define P_NO_ML       0x1000000U /* not allowed in modeline */
-#define P_CURSWANT    0x2000000U /* update curswant required; not needed when
-                                  * there is a redraw flag */
+#define P_SECURE        0x80000U   ///< cannot change in modeline or secure mode
+#define P_GETTEXT       0x100000U  ///< expand default value with _()
+#define P_NOGLOB        0x200000U  ///< do not use local value for global vimrc
+#define P_NFNAME        0x400000U  ///< only normal file name chars allowed
+#define P_INSECURE      0x800000U  ///< option was set from a modeline
+#define P_PRI_MKRC     0x1000000U  ///< priority for :mkvimrc (setting option
+                                   ///< has side effects)
+#define P_NO_ML        0x2000000U  ///< not allowed in modeline
+#define P_CURSWANT     0x4000000U  ///< update curswant required; not needed
+                                   ///< when there is a redraw flag
 
 #define HIGHLIGHT_INIT \
   "8:SpecialKey,~:EndOfBuffer,z:TermCursor,Z:TermCursorNC,@:NonText," \
@@ -708,13 +711,9 @@ void set_init_1(void)
   /* Must be before option_expand(), because that one needs vim_isIDc() */
   didset_options();
 
-  /* Use the current chartab for the generic chartab. */
+  // Use the current chartab for the generic chartab. This is not in
+  // didset_options() because it only depends on 'encoding'.
   init_spell_chartab();
-
-  /*
-   * initialize the table for 'breakat'.
-   */
-  fill_breakat_flags();
 
   /*
    * Expand environment variables and things like "~" for the defaults.
@@ -748,13 +747,7 @@ void set_init_1(void)
     }
   }
 
-  /* Initialize the highlight_attr[] table. */
-  highlight_changed();
-
   save_file_ff(curbuf);         /* Buffer is unchanged */
-
-  /* Parse default for 'wildmode'  */
-  check_opt_wim();
 
   /* Detect use of mlterm.
    * Mlterm is a terminal emulator akin to xterm that has some special
@@ -765,11 +758,7 @@ void set_init_1(void)
   if (os_env_exists("MLTERM"))
     set_option_value((char_u *)"tbidi", 1L, NULL, 0);
 
-  /* Parse default for 'fillchars'. */
-  (void)set_chars_option(&p_fcs);
-
-  /* Parse default for 'listchars'. */
-  (void)set_chars_option(&p_lcs);
+  didset_options2();
 
   // enc_locale() will try to find the encoding of the current locale.
   // This will be used when 'default' is used as encoding specifier
@@ -1148,9 +1137,12 @@ do_set (
        */
       arg += 3;
       if (*arg == '&') {
-        ++arg;
-        /* Only for :set command set global value of local options. */
+        arg++;
+        // Only for :set command set global value of local options.
         set_options_default(OPT_FREE | opt_flags);
+        didset_options();
+        didset_options2();
+        redraw_all_later(CLEAR);
       } else {
         showoptions(1, opt_flags);
         did_show = TRUE;
@@ -1674,9 +1666,11 @@ do_set (
                 if (adding) {
                   i = (int)STRLEN(origval);
                   // Strip a trailing comma, would get 2.
-                  if (comma && i > 1 && origval[i - 1] == ','
+                  if (comma && i > 1
+                      && (flags & P_ONECOMMA) == P_ONECOMMA
+                      && origval[i - 1] == ','
                       && origval[i - 2] != '\\') {
-                    --i;
+                    i--;
                   }
                   memmove(newval + i + comma, newval,
                       STRLEN(newval) + 1);
@@ -2068,9 +2062,31 @@ static void didset_options(void)
   (void)spell_check_msm();
   (void)spell_check_sps();
   (void)compile_cap_prog(curwin->w_s);
-  /* set cedit_key */
+  (void)did_set_spell_option(true);
+  // set cedit_key
   (void)check_cedit();
   briopt_check(curwin);
+  // initialize the table for 'breakat'.
+  fill_breakat_flags();
+}
+
+// More side effects of setting options.
+static void didset_options2(void)
+{
+  // Initialize the highlight_attr[] table.
+  (void)highlight_changed();
+
+  // Parse default for 'clipboard'.
+  (void)opt_strings_flags(p_cb, p_cb_values, &cb_flags, true);
+
+  // Parse default for 'fillchars'.
+  (void)set_chars_option(&p_fcs);
+
+  // Parse default for 'listchars'.
+  (void)set_chars_option(&p_lcs);
+
+  // Parse default for 'wildmode'.
+  check_opt_wim();
 }
 
 /*
@@ -2849,22 +2865,7 @@ did_set_string_option (
              || varp == &(curwin->w_s->b_p_spf)) {
     // When 'spelllang' or 'spellfile' is set and there is a window for this
     // buffer in which 'spell' is set load the wordlists.
-    if (varp == &(curwin->w_s->b_p_spf)) {
-      int l = (int)STRLEN(curwin->w_s->b_p_spf);
-      if (l > 0
-          && (l < 4 || STRCMP(curwin->w_s->b_p_spf + l - 4, ".add") != 0)) {
-        errmsg = e_invarg;
-      }
-    }
-
-    if (errmsg == NULL) {
-      FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-        if (wp->w_buffer == curbuf && wp->w_p_spell) {
-          errmsg = did_set_spelllang(wp);
-          break;
-        }
-      }
-    }
+    errmsg = did_set_spell_option(varp == &(curwin->w_s->b_p_spf));
   }
   /* When 'spellcapcheck' is set compile the regexp program. */
   else if (varp == &(curwin->w_s->b_p_spc)) {
@@ -3418,6 +3419,30 @@ char_u *check_stl_option(char_u *s)
   if (groupdepth != 0)
     return (char_u *)N_("E542: unbalanced groups");
   return NULL;
+}
+
+static char_u *did_set_spell_option(bool is_spellfile)
+{
+  char_u  *errmsg = NULL;
+
+  if (is_spellfile) {
+    int l = (int)STRLEN(curwin->w_s->b_p_spf);
+    if (l > 0
+        && (l < 4 || STRCMP(curwin->w_s->b_p_spf + l - 4, ".add") != 0)) {
+      errmsg = e_invarg;
+    }
+  }
+
+  if (errmsg == NULL) {
+    FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+      if (wp->w_buffer == curbuf && wp->w_p_spell) {
+        errmsg = did_set_spelllang(wp);
+        break;
+      }
+    }
+  }
+
+  return errmsg;
 }
 
 /*
@@ -5499,6 +5524,7 @@ void buf_copy_options(buf_T *buf, int flags)
       buf->b_p_et = p_et;
       buf->b_p_fixeol = p_fixeol;
       buf->b_p_et_nobin = p_et_nobin;
+      buf->b_p_et_nopaste = p_et_nopaste;
       buf->b_p_ml = p_ml;
       buf->b_p_ml_nobin = p_ml_nobin;
       buf->b_p_inf = p_inf;
@@ -5921,13 +5947,17 @@ option_value2string (
   if (opp->flags & P_NUM) {
     long wc = 0;
 
-    if (wc_use_keyname(varp, &wc))
-      STRCPY(NameBuff, get_special_key_name((int)wc, 0));
-    else if (wc != 0)
-      STRCPY(NameBuff, transchar((int)wc));
-    else
-      sprintf((char *)NameBuff, "%" PRId64, (int64_t)*(long *)varp);
-  } else { /* P_STRING */
+    if (wc_use_keyname(varp, &wc)) {
+      STRLCPY(NameBuff, get_special_key_name((int)wc, 0), sizeof(NameBuff));
+    } else if (wc != 0) {
+      STRLCPY(NameBuff, transchar((int)wc), sizeof(NameBuff));
+    } else {
+      snprintf((char *)NameBuff,
+               sizeof(NameBuff),
+               "%" PRId64,
+               (int64_t)*(long *)varp);
+    }
+  } else {  // P_STRING
     varp = *(char_u **)(varp);
     if (varp == NULL)                       /* just in case */
       NameBuff[0] = NUL;
@@ -6137,16 +6167,14 @@ int has_format_option(int x)
   return vim_strchr(curbuf->b_p_fo, x) != NULL;
 }
 
-/*
- * Return TRUE if "x" is present in 'shortmess' option, or
- * 'shortmess' contains 'a' and "x" is present in SHM_A.
- */
-int shortmess(int x)
+/// @returns true if "x" is present in 'shortmess' option, or
+/// 'shortmess' contains 'a' and "x" is present in SHM_ALL_ABBREVIATIONS.
+bool shortmess(int x)
 {
   return p_shm != NULL &&
-         (   vim_strchr(p_shm, x) != NULL
-             || (vim_strchr(p_shm, 'a') != NULL
-                 && vim_strchr((char_u *)SHM_A, x) != NULL));
+         (vim_strchr(p_shm, x) != NULL
+          || (vim_strchr(p_shm, 'a') != NULL
+              && vim_strchr((char_u *)SHM_ALL_ABBREVIATIONS, x) != NULL));
 }
 
 /*
@@ -6156,6 +6184,7 @@ static void paste_option_changed(void)
 {
   static int old_p_paste = FALSE;
   static int save_sm = 0;
+  static int save_sta = 0;
   static int save_ru = 0;
   static int save_ri = 0;
   static int save_hkmap = 0;
@@ -6172,40 +6201,44 @@ static void paste_option_changed(void)
         buf->b_p_wm_nopaste = buf->b_p_wm;
         buf->b_p_sts_nopaste = buf->b_p_sts;
         buf->b_p_ai_nopaste = buf->b_p_ai;
+        buf->b_p_et_nopaste = buf->b_p_et;
       }
 
-      /* save global options */
+      // save global options
       save_sm = p_sm;
+      save_sta = p_sta;
       save_ru = p_ru;
       save_ri = p_ri;
       save_hkmap = p_hkmap;
-      /* save global values for local buffer options */
+      // save global values for local buffer options
+      p_ai_nopaste = p_ai;
+      p_et_nopaste = p_et;
+      p_sts_nopaste = p_sts;
       p_tw_nopaste = p_tw;
       p_wm_nopaste = p_wm;
-      p_sts_nopaste = p_sts;
-      p_ai_nopaste = p_ai;
     }
 
-    /*
-     * Always set the option values, also when 'paste' is set when it is
-     * already on.
-     */
-    /* set options for each buffer */
+    // Always set the option values, also when 'paste' is set when it is
+    // already on.
+    // set options for each buffer
     FOR_ALL_BUFFERS(buf) {
-      buf->b_p_tw = 0;              /* textwidth is 0 */
-      buf->b_p_wm = 0;              /* wrapmargin is 0 */
-      buf->b_p_sts = 0;             /* softtabstop is 0 */
-      buf->b_p_ai = 0;              /* no auto-indent */
+      buf->b_p_tw = 0;              // textwidth is 0
+      buf->b_p_wm = 0;              // wrapmargin is 0
+      buf->b_p_sts = 0;             // softtabstop is 0
+      buf->b_p_ai = 0;              // no auto-indent
+      buf->b_p_et = 0;              // no expandtab
     }
 
-    /* set global options */
-    p_sm = 0;                       /* no showmatch */
-    if (p_ru)
-      status_redraw_all();          /* redraw to remove the ruler */
-    p_ru = 0;                       /* no ruler */
-    p_ri = 0;                       /* no reverse insert */
-    p_hkmap = 0;                    /* no Hebrew keyboard */
-    /* set global values for local buffer options */
+    // set global options
+    p_sm = 0;                       // no showmatch
+    p_sta = 0;                      // no smarttab
+    if (p_ru) {
+      status_redraw_all();          // redraw to remove the ruler
+    }
+    p_ru = 0;                       // no ruler
+    p_ri = 0;                       // no reverse insert
+    p_hkmap = 0;                    // no Hebrew keyboard
+    // set global values for local buffer options
     p_tw = 0;
     p_wm = 0;
     p_sts = 0;
@@ -6221,20 +6254,24 @@ static void paste_option_changed(void)
       buf->b_p_wm = buf->b_p_wm_nopaste;
       buf->b_p_sts = buf->b_p_sts_nopaste;
       buf->b_p_ai = buf->b_p_ai_nopaste;
+      buf->b_p_et = buf->b_p_et_nopaste;
     }
 
     /* restore global options */
     p_sm = save_sm;
-    if (p_ru != save_ru)
-      status_redraw_all();          /* redraw to draw the ruler */
+    p_sta = save_sta;
+    if (p_ru != save_ru) {
+      status_redraw_all();          // redraw to draw the ruler
+    }
     p_ru = save_ru;
     p_ri = save_ri;
     p_hkmap = save_hkmap;
-    /* set global values for local buffer options */
+    // set global values for local buffer options
+    p_ai = p_ai_nopaste;
+    p_et = p_et_nopaste;
+    p_sts = p_sts_nopaste;
     p_tw = p_tw_nopaste;
     p_wm = p_wm_nopaste;
-    p_sts = p_sts_nopaste;
-    p_ai = p_ai_nopaste;
   }
 
   old_p_paste = p_paste;

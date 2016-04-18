@@ -1380,13 +1380,15 @@ int vgetc(void)
   } else {
     mod_mask = 0x0;
     last_recorded_len = 0;
-    for (;; ) {                 /* this is done twice if there are modifiers */
-      if (mod_mask) {           /* no mapping after modifier has been read */
+    for (;; ) {                 // this is done twice if there are modifiers
+      bool did_inc = false;
+      if (mod_mask) {           // no mapping after modifier has been read
         ++no_mapping;
         ++allow_keys;
+        did_inc = true;         // mod_mask may change value
       }
-      c = vgetorpeek(TRUE);
-      if (mod_mask) {
+      c = vgetorpeek(true);
+      if (did_inc) {
         --no_mapping;
         --allow_keys;
       }
@@ -2913,9 +2915,9 @@ do_map (
                 did_it = TRUE;
               }
             }
-            if (mp->m_mode == 0) {              /* entry can be deleted */
-              map_free(mpp);
-              continue;                         /* continue with *mpp */
+            if (mp->m_mode == 0) {              // entry can be deleted
+              mapblock_free(mpp);
+              continue;                         // continue with *mpp
             }
 
             /*
@@ -3010,7 +3012,7 @@ theend:
  * Delete one entry from the abbrlist or maphash[].
  * "mpp" is a pointer to the m_next field of the PREVIOUS entry!
  */
-static void map_free(mapblock_T **mpp)
+static void mapblock_free(mapblock_T **mpp)
 {
   mapblock_T  *mp;
 
@@ -3078,7 +3080,7 @@ int get_map_mode(char_u **cmdp, int forceit)
  * Clear all mappings or abbreviations.
  * 'abbr' should be FALSE for mappings, TRUE for abbreviations.
  */
-void map_clear(char_u *cmdp, char_u *arg, int forceit, int abbr)
+void map_clear_mode(char_u *cmdp, char_u *arg, int forceit, int abbr)
 {
   int mode;
   int local;
@@ -3130,8 +3132,8 @@ map_clear_int (
       mp = *mpp;
       if (mp->m_mode & mode) {
         mp->m_mode &= ~mode;
-        if (mp->m_mode == 0) {       /* entry can be deleted */
-          map_free(mpp);
+        if (mp->m_mode == 0) {       // entry can be deleted
+          mapblock_free(mpp);
           continue;
         }
         /*

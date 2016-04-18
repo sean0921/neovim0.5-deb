@@ -763,8 +763,8 @@ void ex_diffupdate(exarg_T *eap)
   // Make a difference between the first buffer and every other.
   for (idx_new = idx_orig + 1; idx_new < DB_COUNT; ++idx_new) {
     buf_T *buf = curtab->tp_diffbuf[idx_new];
-    if (buf == NULL) {
-      continue;
+    if (buf == NULL || buf->b_ml.ml_mfp == NULL) {
+      continue;  // skip buffer that isn't loaded
     }
 
     if (diff_write(buf, tmp_new) == FAIL) {
@@ -819,8 +819,8 @@ static void diff_file(char_u *tmp_orig, char_u *tmp_new, char_u *tmp_diff)
                  (diff_flags & DIFF_IWHITE) ? "-b " : "",
                  (diff_flags & DIFF_ICASE) ? "-i " : "",
                  tmp_orig, tmp_new);
-    append_redir(cmd, (int)len, p_srr, tmp_diff);
-    block_autocmds(); /* Avoid ShellCmdPost stuff */
+    append_redir(cmd, len, p_srr, tmp_diff);
+    block_autocmds();  // Avoid ShellCmdPost stuff
     (void)call_shell(
         cmd,
         kShellOptFilter | kShellOptSilent | kShellOptDoOut,
@@ -1057,27 +1057,28 @@ void diff_win_options(win_T *wp, int addbuf)
   newFoldLevel();
   curwin = old_curwin;
 
-  wp->w_p_diff = TRUE;
-
   // Use 'scrollbind' and 'cursorbind' when available
-  if (!wp->w_p_diff_saved) {
+  if (!wp->w_p_diff) {
     wp->w_p_scb_save = wp->w_p_scb;
   }
   wp->w_p_scb = TRUE;
 
-  if (!wp->w_p_diff_saved) {
+  if (!wp->w_p_diff) {
     wp->w_p_crb_save = wp->w_p_crb;
   }
   wp->w_p_crb = TRUE;
 
-  if (!wp->w_p_diff_saved) {
+  if (!wp->w_p_diff) {
     wp->w_p_wrap_save = wp->w_p_wrap;
   }
   wp->w_p_wrap = FALSE;
   curwin = wp;
   curbuf = curwin->w_buffer;
 
-  if (!wp->w_p_diff_saved) {
+  if (!wp->w_p_diff) {
+    if (wp->w_p_diff_saved) {
+      free_string_option(wp->w_p_fdm_save);
+    }
     wp->w_p_fdm_save = vim_strsave(wp->w_p_fdm);
   }
   set_string_option_direct((char_u *)"fdm", -1, (char_u *)"diff",
@@ -1085,7 +1086,7 @@ void diff_win_options(win_T *wp, int addbuf)
   curwin = old_curwin;
   curbuf = curwin->w_buffer;
 
-  if (!wp->w_p_diff_saved) {
+  if (!wp->w_p_diff) {
     wp->w_p_fdc_save = wp->w_p_fdc;
     wp->w_p_fen_save = wp->w_p_fen;
     wp->w_p_fdl_save = wp->w_p_fdl;
@@ -1104,6 +1105,8 @@ void diff_win_options(win_T *wp, int addbuf)
   // Saved the current values, to be restored in ex_diffoff().
   wp->w_p_diff_saved = TRUE;
 
+  wp->w_p_diff = true;
+
   if (addbuf) {
     diff_buf_add(wp->w_buffer);
   }
@@ -1116,68 +1119,50 @@ void diff_win_options(win_T *wp, int addbuf)
 /// @param eap
 void ex_diffoff(exarg_T *eap)
 {
-  win_T *old_curwin = curwin;
-  int diffwin = FALSE;
+  int diffwin = false;
 
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
     if (eap->forceit ? wp->w_p_diff : (wp == curwin)) {
-      // Set 'diff', 'scrollbind' off and 'wrap' on. If option values
-      // were saved in diff_win_options() restore them.
-      wp->w_p_diff = FALSE;
-
-      if (wp->w_p_scb) {
-        wp->w_p_scb = wp->w_p_diff_saved ? wp->w_p_scb_save : FALSE;
-      }
-
-      if (wp->w_p_crb) {
-        wp->w_p_crb = wp->w_p_diff_saved ? wp->w_p_crb_save : FALSE;
-      }
-
-      if (!wp->w_p_wrap) {
-        wp->w_p_wrap = wp->w_p_diff_saved ? wp->w_p_wrap_save : TRUE;
-      }
-      curwin = wp;
-      curbuf = curwin->w_buffer;
+      // Set 'diff' off. If option values were saved in
+      // diff_win_options(), restore the ones whose settings seem to have
+      // been left over from diff mode.
+      wp->w_p_diff = false;
 
       if (wp->w_p_diff_saved) {
+        if (wp->w_p_scb) {
+          wp->w_p_scb = wp->w_p_scb_save;
+        }
+
+        if (wp->w_p_crb) {
+          wp->w_p_crb = wp->w_p_crb_save;
+        }
+
+        if (!wp->w_p_wrap) {
+          wp->w_p_wrap = wp->w_p_wrap_save;
+        }
+
         free_string_option(wp->w_p_fdm);
-        wp->w_p_fdm = wp->w_p_fdm_save;
-        wp->w_p_fdm_save = empty_option;
-      } else {
-        set_string_option_direct((char_u *)"fdm", -1,
-                                 (char_u *)"manual", OPT_LOCAL | OPT_FREE, 0);
-      }
-      curwin = old_curwin;
-      curbuf = curwin->w_buffer;
-
-      if (wp->w_p_fdc == diff_foldcolumn) {
-        wp->w_p_fdc = wp->w_p_diff_saved ? wp->w_p_fdc_save : 0;
-      }
-
-      if ((wp->w_p_fdl == 0)
-          && wp->w_p_diff_saved) {
-        wp->w_p_fdl = wp->w_p_fdl_save;
-      }
-
-      if (wp->w_p_fen) {
+        wp->w_p_fdm = vim_strsave(wp->w_p_fdm_save);
+        if (wp->w_p_fdc == diff_foldcolumn) {
+          wp->w_p_fdc = wp->w_p_fdc_save;
+        }
+        if (wp->w_p_fdl == 0) {
+          wp->w_p_fdl = wp->w_p_fdl_save;
+        }
         // Only restore 'foldenable' when 'foldmethod' is not
         // "manual", otherwise we continue to show the diff folds.
-        if (foldmethodIsManual(wp) || !wp->w_p_diff_saved) {
-          wp->w_p_fen = FALSE;
-        } else {
-          wp->w_p_fen = wp->w_p_fen_save;
+        if (wp->w_p_fen) {
+          wp->w_p_fen = foldmethodIsManual(wp) ? false : wp->w_p_fen_save;
         }
+
+        foldUpdateAll(wp);
+
+        // make sure topline is not halfway through a fold
+        changed_window_setting_win(wp);
       }
-
-      foldUpdateAll(wp);
-
-      // make sure topline is not halfway through a fold
-      changed_window_setting_win(wp);
 
       // Note: 'sbo' is not restored, it's a global option.
       diff_buf_adjust(wp);
-
-      wp->w_p_diff_saved = FALSE;
     }
     diffwin |= wp->w_p_diff;
   }
@@ -1546,37 +1531,37 @@ int diff_check(win_T *wp, linenr_T lnum)
   return maxcount - dp->df_count[idx];
 }
 
-/// Compare two entries in diff "*dp" and return TRUE if they are equal.
+/// Compare two entries in diff "dp" and return true if they are equal.
 ///
-/// @param dp
-/// @param idx1 First entry in diff "*dp"
-/// @param idx2 Second entry in diff "*dp"
+/// @param  dp    diff
+/// @param  idx1  first entry in diff "dp"
+/// @param  idx2  second entry in diff "dp"
 ///
-/// @return return TRUE if two entires are equal.
-static int diff_equal_entry(diff_T *dp, int idx1, int idx2)
+/// @return true if two entires are equal.
+static bool diff_equal_entry(diff_T *dp, int idx1, int idx2)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(1)
 {
   if (dp->df_count[idx1] != dp->df_count[idx2]) {
-    return FALSE;
+    return false;
   }
 
   if (diff_check_sanity(curtab, dp) == FAIL) {
-    return FALSE;
+    return false;
   }
 
-  int i;
-  for (i = 0; i < dp->df_count[idx1]; ++i) {
+  for (int i = 0; i < dp->df_count[idx1]; i++) {
     char_u *line = vim_strsave(ml_get_buf(curtab->tp_diffbuf[idx1],
-                                          dp->df_lnum[idx1] + i, FALSE));
+                                          dp->df_lnum[idx1] + i, false));
 
     int cmp = diff_cmp(line, ml_get_buf(curtab->tp_diffbuf[idx2],
-                                        dp->df_lnum[idx2] + i, FALSE));
+                                        dp->df_lnum[idx2] + i, false));
     xfree(line);
 
     if (cmp != 0) {
-      return FALSE;
+      return false;
     }
   }
-  return TRUE;
+  return true;
 }
 
 /// Compare strings "s1" and "s2" according to 'diffopt'.
@@ -1845,28 +1830,30 @@ int diffopt_changed(void)
   return OK;
 }
 
-/// Return TRUE if 'diffopt' contains "horizontal".
-///
-/// @return TRUE if 'diffopt' contains "horizontal"
-int diffopt_horizontal(void)
+/// Check that "diffopt" contains "horizontal".
+bool diffopt_horizontal(void)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
   return (diff_flags & DIFF_HORIZONTAL) != 0;
 }
 
 /// Find the difference within a changed line.
 ///
-/// @param startp first char of the change
-/// @param endp last char of the change
+/// @param  wp      window whose current buffer to check
+/// @param  lnum    line number to check within the buffer
+/// @param  startp  first char of the change
+/// @param  endp    last char of the change
 ///
-/// @returns TRUE if the line was added, no other buffer has it.
-int diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
+/// @return true if the line was added, no other buffer has it.
+bool diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
+  FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
   char_u *line_new;
   int si_org;
   int si_new;
   int ei_org;
   int ei_new;
-  int added = TRUE;
+  bool added = true;
 
   // Make a copy of the line, the next ml_get() will invalidate it.
   char_u *line_org = vim_strsave(ml_get_buf(wp->w_buffer, lnum, FALSE));
@@ -1875,7 +1862,7 @@ int diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
   if (idx == DB_COUNT) {
     // cannot happen
     xfree(line_org);
-    return FALSE;
+    return false;
   }
 
   // search for a change that includes "lnum" in the list of diffblocks.
@@ -1888,7 +1875,7 @@ int diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
 
   if ((dp == NULL) || (diff_check_sanity(curtab, dp) == FAIL)) {
     xfree(line_org);
-    return FALSE;
+    return false;
   }
 
   int off = lnum - dp->df_lnum[idx];
@@ -1899,7 +1886,7 @@ int diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
       if (off >= dp->df_count[i]) {
         continue;
       }
-      added = FALSE;
+      added = false;
       line_new = ml_get_buf(curtab->tp_diffbuf[i],
                             dp->df_lnum[i] + off, FALSE);
 
@@ -1971,21 +1958,22 @@ int diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
   return added;
 }
 
-/// Return TRUE if line "lnum" is not close to a diff block, this line should
+/// Check that line "lnum" is not close to a diff block, this line should
 /// be in a fold.
 ///
-/// @param wp
-/// @param lnum
+/// @param  wp    window containing the buffer to check
+/// @param  lnum  line number to check within the buffer
 ///
-/// @return FALSE if there are no diff blocks at all in this window.
-int diff_infold(win_T *wp, linenr_T lnum)
+/// @return false if there are no diff blocks at all in this window.
+bool diff_infold(win_T *wp, linenr_T lnum)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(1)
 {
-  int other = FALSE;
+  bool other = false;
   diff_T *dp;
 
   // Return if 'diff' isn't set.
   if (!wp->w_p_diff) {
-    return FALSE;
+    return false;
   }
 
   int idx = -1;
@@ -1994,13 +1982,13 @@ int diff_infold(win_T *wp, linenr_T lnum)
     if (curtab->tp_diffbuf[i] == wp->w_buffer) {
       idx = i;
     } else if (curtab->tp_diffbuf[i] != NULL) {
-      other = TRUE;
+      other = true;
     }
   }
 
   // return here if there are no diffs in the window
   if ((idx == -1) || !other) {
-    return FALSE;
+    return false;
   }
 
   if (curtab->tp_diff_invalid) {
@@ -2010,7 +1998,7 @@ int diff_infold(win_T *wp, linenr_T lnum)
 
   // Return if there are no diff blocks.  All lines will be folded.
   if (curtab->tp_first_diff == NULL) {
-    return TRUE;
+    return true;
   }
 
   for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next) {
@@ -2021,10 +2009,10 @@ int diff_infold(win_T *wp, linenr_T lnum)
 
     // If this change ends before the line we have a match.
     if (dp->df_lnum[idx] + dp->df_count[idx] + diff_context > lnum) {
-      return FALSE;
+      return false;
     }
   }
-  return TRUE;
+  return true;
 }
 
 /// "dp" and "do" commands.
@@ -2387,12 +2375,11 @@ static void diff_fold_update(diff_T *dp, int skip_idx)
   }
 }
 
-/// Checks if the buffer is in diff-mode.
+/// Checks that the buffer is in diff-mode.
 ///
-/// @param buf The buffer to check.
-///
-/// @return TRUE if buffer "buf" is in diff-mode.
+/// @param  buf  buffer to check.
 bool diff_mode_buf(buf_T *buf)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(1)
 {
   FOR_ALL_TABS(tp) {
     if (diff_buf_idx_tp(buf, tp) != DB_COUNT) {

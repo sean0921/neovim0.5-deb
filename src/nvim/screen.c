@@ -2184,6 +2184,10 @@ win_line (
   int prev_c1 = 0;                      /* first composing char for prev_c */
   int did_line_attr = 0;
 
+  bool has_bufhl = false;                // this buffer has highlight matches
+  int bufhl_attr = 0;                   // attributes desired by bufhl
+  bufhl_lineinfo_T bufhl_info;          // bufhl data for this line
+
   /* draw_state: items that are drawn in sequence: */
 #define WL_START        0               /* nothing done yet */
 # define WL_CMDLINE     WL_START + 1    /* cmdline window column */
@@ -2199,11 +2203,13 @@ win_line (
   int syntax_seqnr    = 0;
   int prev_syntax_id  = 0;
   int conceal_attr    = hl_attr(HLF_CONCEAL);
-  int is_concealing   = FALSE;
-  int boguscols       = 0;              /* nonexistent columns added to force
-                                           wrapping */
-  int vcol_off        = 0;              /* offset for concealed characters */
-  int did_wcol        = FALSE;
+  int is_concealing   = false;
+  int boguscols       = 0;              ///< nonexistent columns added to
+                                        ///< force wrapping
+  int vcol_off        = 0;              ///< offset for concealed characters
+  int did_wcol        = false;
+  int match_conc      = false;          ///< cchar for match functions
+  int has_match_conc  = false;          ///< match wants to conceal
   int old_boguscols = 0;
 # define VCOL_HLC (vcol - vcol_off)
 # define FIX_FOR_BOGUSCOLS \
@@ -2240,6 +2246,11 @@ win_line (
       has_syntax = TRUE;
       extra_check = TRUE;
     }
+  }
+
+  if (bufhl_start_line(wp->w_buffer, lnum, &bufhl_info)) {
+    has_bufhl = true;
+    extra_check = true;
   }
 
   /* Check for columns to display for 'colorcolumn'. */
@@ -2430,13 +2441,18 @@ win_line (
     }
   }
 
-  /* find start of trailing whitespace */
-  if (wp->w_p_list && lcs_trail) {
-    trailcol = (colnr_T)STRLEN(ptr);
-    while (trailcol > (colnr_T)0 && ascii_iswhite(ptr[trailcol - 1]))
-      --trailcol;
-    trailcol += (colnr_T) (ptr - line);
-    extra_check = TRUE;
+  if (wp->w_p_list) {
+    if (lcs_space || lcs_trail) {
+      extra_check = true;
+    }
+    // find start of trailing whitespace
+    if (lcs_trail) {
+      trailcol = (colnr_T)STRLEN(ptr);
+      while (trailcol > (colnr_T)0 && ascii_iswhite(ptr[trailcol - 1])) {
+        trailcol--;
+      }
+      trailcol += (colnr_T) (ptr - line);
+    }
   }
 
   /*
@@ -2633,11 +2649,10 @@ win_line (
     extra_check = true;
   }
 
-  /*
-   * Repeat for the whole displayed line.
-   */
+  // Repeat for the whole displayed line.
   for (;; ) {
-    /* Skip this quickly when working on the text. */
+    has_match_conc = false;
+    // Skip this quickly when working on the text.
     if (draw_state != WL_LINE) {
       if (draw_state == WL_CMDLINE - 1 && n_extra == 0) {
         draw_state = WL_CMDLINE;
@@ -2884,8 +2899,16 @@ win_line (
                 shl->endcol = tmp_col;
               }
               shl->attr_cur = shl->attr;
+              if (cur != NULL && syn_name2id((char_u *)"Conceal")
+                  == cur->hlg_id) {
+                has_match_conc = true;
+                match_conc = cur->conceal_char;
+              } else {
+                has_match_conc = match_conc = false;
+              }
             } else if (v == (long)shl->endcol) {
               shl->attr_cur = 0;
+              prev_syntax_id = 0;
 
               next_search_hl(wp, shl, lnum, (colnr_T)v, cur);
               pos_inprogress = !(cur == NULL || cur->pos.cur == 0);
@@ -3201,27 +3224,7 @@ win_line (
         }
 
       }
-      ++ptr;
-
-      // 'list': change char 160 to lcs_nbsp and space to lcs_space.
-      if (wp->w_p_list
-          && (((c == 160 || (mb_utf8 && (mb_c == 160 || mb_c == 0x202f)))
-               && lcs_nbsp)
-              || (c == ' ' && lcs_space && ptr - line <=  trailcol))) {
-        c = (c == ' ') ? lcs_space : lcs_nbsp;
-        if (area_attr == 0 && search_attr == 0) {
-          n_attr = 1;
-          extra_attr = hl_attr(HLF_8);
-          saved_attr2 = char_attr;           /* save current attr */
-        }
-        mb_c = c;
-        if (enc_utf8 && (*mb_char2len)(c) > 1) {
-          mb_utf8 = TRUE;
-          u8cc[0] = 0;
-          c = 0xc0;
-        } else
-          mb_utf8 = FALSE;
-      }
+      ptr++;
 
       if (extra_check) {
         bool can_spell = true;
@@ -3341,6 +3344,17 @@ win_line (
             char_attr = hl_combine_attr(spell_attr, char_attr);
         }
 
+        if (has_bufhl && v > 0) {
+          bufhl_attr = bufhl_get_attr(&bufhl_info, (colnr_T)v);
+          if (bufhl_attr != 0) {
+            if (!attr_pri) {
+              char_attr = hl_combine_attr(char_attr, bufhl_attr);
+            } else {
+              char_attr = hl_combine_attr(bufhl_attr, char_attr);
+            }
+          }
+        }
+
         if (wp->w_buffer->terminal) {
           char_attr = hl_combine_attr(char_attr, term_attrs[vcol]);
         }
@@ -3365,6 +3379,28 @@ win_line (
             if (!wp->w_p_list) {
               c = ' ';
             }
+          }
+        }
+
+        // 'list': change char 160 to lcs_nbsp and space to lcs_space.
+        if (wp->w_p_list
+            && (((c == 160
+                  || (mb_utf8 && (mb_c == 160 || mb_c == 0x202f)))
+                 && lcs_nbsp)
+                || (c == ' ' && lcs_space && ptr - line <= trailcol))) {
+          c = (c == ' ') ? lcs_space : lcs_nbsp;
+          if (area_attr == 0 && search_attr == 0) {
+            n_attr = 1;
+            extra_attr = hl_attr(HLF_8);
+            saved_attr2 = char_attr;  // save current attr
+          }
+          mb_c = c;
+          if (enc_utf8 && (*mb_char2len)(c) > 1) {
+            mb_utf8 = true;
+            u8cc[0] = 0;
+            c = 0xc0;
+          } else {
+            mb_utf8 = false;
           }
         }
 
@@ -3602,24 +3638,28 @@ win_line (
         }
       }
 
-      if (   wp->w_p_cole > 0
-             && (wp != curwin || lnum != wp->w_cursor.lnum ||
-                 conceal_cursor_line(wp))
-             && (syntax_flags & HL_CONCEAL) != 0
-             && !(lnum_in_visual_area
-                  && vim_strchr(wp->w_p_cocu, 'v') == NULL)) {
+      if (wp->w_p_cole > 0
+          && (wp != curwin || lnum != wp->w_cursor.lnum ||
+              conceal_cursor_line(wp))
+          && ((syntax_flags & HL_CONCEAL) != 0 || has_match_conc)
+          && !(lnum_in_visual_area
+               && vim_strchr(wp->w_p_cocu, 'v') == NULL)) {
         char_attr = conceal_attr;
         if (prev_syntax_id != syntax_seqnr
-            && (syn_get_sub_char() != NUL || wp->w_p_cole == 1)
+            && (syn_get_sub_char() != NUL || match_conc
+                || wp->w_p_cole == 1)
             && wp->w_p_cole != 3) {
-          /* First time at this concealed item: display one
-           * character. */
-          if (syn_get_sub_char() != NUL)
+          // First time at this concealed item: display one
+          // character.
+          if (match_conc) {
+            c = match_conc;
+          } else if (syn_get_sub_char() != NUL) {
             c = syn_get_sub_char();
-          else if (lcs_conceal != NUL)
+          } else if (lcs_conceal != NUL) {
             c = lcs_conceal;
-          else
+          } else {
             c = ' ';
+          }
 
           prev_syntax_id = syntax_seqnr;
 
@@ -6740,8 +6780,8 @@ int showmode(void)
     if (Recording
         && edit_submode == NULL             /* otherwise it gets too long */
         ) {
-      MSG_PUTS_ATTR(_("recording"), attr);
-      need_clear = TRUE;
+      recording_mode(attr);
+      need_clear = true;
     }
 
     mode_displayed = TRUE;
@@ -6780,23 +6820,30 @@ static void msg_pos_mode(void)
   msg_row = Rows - 1;
 }
 
-/*
- * Delete mode message.  Used when ESC is typed which is expected to end
- * Insert mode (but Insert mode didn't end yet!).
- * Caller should check "mode_displayed".
- */
-void unshowmode(int force)
+/// Delete mode message.  Used when ESC is typed which is expected to end
+/// Insert mode (but Insert mode didn't end yet!).
+/// Caller should check "mode_displayed".
+void unshowmode(bool force)
 {
-  /*
-   * Don't delete it right now, when not redrawing or inside a mapping.
-   */
-  if (!redrawing() || (!force && char_avail() && !KeyTyped))
-    redraw_cmdline = TRUE;              /* delete mode later */
-  else {
+  // Don't delete it right now, when not redrawing or inside a mapping.
+  if (!redrawing() || (!force && char_avail() && !KeyTyped)) {
+    redraw_cmdline = true;  // delete mode later
+  } else {
     msg_pos_mode();
-    if (Recording)
-      MSG_PUTS_ATTR(_("recording"), hl_attr(HLF_CM));
+    if (Recording) {
+      recording_mode(hl_attr(HLF_CM));
+    }
     msg_clr_eos();
+  }
+}
+
+static void recording_mode(int attr)
+{
+  MSG_PUTS_ATTR(_("recording"), attr);
+  if (!shortmess(SHM_RECORDING)) {
+    char_u s[4];
+    vim_snprintf((char *)s, ARRAY_SIZE(s), " @%c", Recording);
+    MSG_PUTS_ATTR(s, attr);
   }
 }
 

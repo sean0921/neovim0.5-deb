@@ -50,8 +50,8 @@ achieve special effects.  These options come in three forms:
 :se[t] {option}&vim	Reset option to its Vim default value.
 
 :se[t] all&		Set all options, except terminal options, to their
-			default value.  The values of 'term', 'lines' and
-			'columns' are not changed.
+			default value.  The values of 'lines' and 'columns'
+			are not changed.
 
 						*:set-args* *E487* *E521*
 :se[t] {option}={value}		or
@@ -772,14 +772,13 @@ A jump table for the options with a short description can be found at |Q_op|.
 	putting a ":gui" command in the gvimrc file, before where the value
 	of 'background' is used (e.g., before ":syntax on").
 
-	For Windows the default is "dark".
-	For other systems "dark" is used when 'term' is "linux",
-	"screen.linux", "cygwin" or "putty", or $COLORFGBG suggests a dark
-	background.  Otherwise the default is "light".
+	For Windows the default is "dark". "dark" should be used if $COLORFGBG
+	suggests a dark	background (not yet implemented). Otherwise the default
+	is "light".
 
 	Normally this option would be set in the vimrc file.  Possibly
 	depending on the terminal name.  Example: >
-		:if &term == "xterm"
+		:if $TERM == "xterm"
 		:  set background=dark
 		:endif
 <	When this option is set, the default settings for the highlight groups
@@ -1361,7 +1360,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			option, yank and delete operations (but not put)
 			will additionally copy the text into register
 			'*'. See |nvim-clipboard|.
-<
+
 						*clipboard-autoselect*
 	autoselect	Works like the 'a' flag in 'guioptions': If present,
 			then whenever Visual mode is started, or the Visual
@@ -5539,6 +5538,9 @@ A jump table for the options with a short description can be found at |Q_op|.
 	  c	don't give |ins-completion-menu| messages.  For example,
 		"-- XXX completion (YYY)", "match 1 of 2", "The only match",
 		"Pattern not found", "Back at original", etc.
+	  q	use "recording" instead of "recording @a"
+	  F	don't give the file info when editing a file, like `:silent`
+		was used for the command
 
 	This gives you the opportunity to avoid that a change between buffers
 	requires you to hit <Enter>, but still gives as useful a message as
@@ -6177,6 +6179,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	   split	If included, split the current window before loading
 			a buffer for a |quickfix| command that display errors.
 			Otherwise: do not split, use current window.
+	   vsplit	Just like "split" but split vertically.
 	   newtab	Like "split", but open a new tab page.  Overrules
 			"split" when both are present.
 
@@ -6370,17 +6373,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	mapping which should not change the tagstack.
 
 						*'term'* *E529* *E530* *E531*
-'term'			string	(default is $TERM, if that fails:
-				      in the GUI: "builtin_gui"
-					  on Mac: "mac-ansi"
-					 on Unix: "ansi"
-				       on Windows: "win32")
-			global
-	Name of the terminal.  Used for choosing the terminal control
-	characters.  Environment variables are expanded |:set_env|.
-	For example: >
-		:set term=$TERM
-<	See |termcap|.
+'term'			Removed. |vim-differences| {Nvim}
 
 						*'termbidi'* *'tbidi'*
 						*'notermbidi'* *'notbidi'*
@@ -6560,9 +6553,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 'ttyscroll' 'tsl'	Removed. |vim-differences| {Nvim}
 
 						*'ttytype'* *'tty'*
-'ttytype' 'tty'		string	(default from $TERM)
-			global
-	Alias for 'term', see above.
+'ttytype' 'tty'		Alias for 'term'. Removed. |vim-differences| {Nvim}
 
 						*'undodir'* *'udir'* *E926*
 'undodir' 'udir'	string	(default "$XDG_DATA_HOME/nvim/undo")

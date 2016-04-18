@@ -1538,9 +1538,11 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
         curbuf->b_visual_mode_eval = VIsual_mode;
       }
 
-      /* In Select mode, a linewise selection is operated upon like a
-       * characterwise selection. */
-      if (VIsual_select && VIsual_mode == 'V') {
+      // In Select mode, a linewise selection is operated upon like a
+      // characterwise selection.
+      // Special case: gH<Del> deletes the last line.
+      if (VIsual_select && VIsual_mode == 'V'
+          && cap->oap->op_type != OP_DELETE) {
         if (lt(VIsual, curwin->w_cursor)) {
           VIsual.col = 0;
           curwin->w_cursor.col =
@@ -1676,20 +1678,15 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
             && (include_line_break || !virtual_op)
             ) {
           oap->inclusive = false;
-          /* Try to include the newline, unless it's an operator
-           * that works on lines only. */
-          if (*p_sel != 'o' && !op_on_lines(oap->op_type)) {
-            if (oap->end.lnum < curbuf->b_ml.ml_line_count) {
-              ++oap->end.lnum;
-              oap->end.col = 0;
-              oap->end.coladd = 0;
-              ++oap->line_count;
-            } else {
-              /* Cannot move below the last line, make the op
-               * inclusive to tell the operation to include the
-               * line break. */
-              oap->inclusive = true;
-            }
+          // Try to include the newline, unless it's an operator
+          // that works on lines only.
+          if (*p_sel != 'o'
+              && !op_on_lines(oap->op_type)
+              && oap->end.lnum < curbuf->b_ml.ml_line_count) {
+            oap->end.lnum++;
+            oap->end.col = 0;
+            oap->end.coladd = 0;
+            oap->line_count++;
           }
         }
       }
@@ -2347,9 +2344,12 @@ do_mouse (
   if (mouse_row == 0 && firstwin->w_winrow > 0) {
     if (is_drag) {
       if (in_tab_line) {
-        tabpage_move(tab_page_click_defs[mouse_col].type == kStlClickTabClose
-                     ? 9999
-                     : tab_page_click_defs[mouse_col].tabnr - 1);
+        if (tab_page_click_defs[mouse_col].type == kStlClickTabClose) {
+          tabpage_move(9999);
+        } else {
+          int tabnr = tab_page_click_defs[mouse_col].tabnr;
+          tabpage_move(tabnr < tabpage_index(curtab) ? tabnr - 1 : tabnr);
+        }
       }
       return false;
     }
@@ -4099,6 +4099,7 @@ dozet:
 
   case 't':   scroll_cursor_top(0, true);
     redraw_later(VALID);
+    set_fraction(curwin);
     break;
 
   /* "z." and "zz": put cursor in middle of screen */
@@ -4107,6 +4108,7 @@ dozet:
 
   case 'z':   scroll_cursor_halfway(true);
     redraw_later(VALID);
+    set_fraction(curwin);
     break;
 
   /* "z^", "z-" and "zb": put cursor at bottom of screen */
@@ -4127,6 +4129,7 @@ dozet:
 
   case 'b':   scroll_cursor_bot(0, true);
     redraw_later(VALID);
+    set_fraction(curwin);
     break;
 
   /* "zH" - scroll screen right half-page */
@@ -6955,10 +6958,16 @@ static void n_opencmd(cmdarg_T *cap)
                        (cap->cmdchar == 'o' ? 1 : 0))
             )
         && open_line(cap->cmdchar == 'O' ? BACKWARD : FORWARD,
-            has_format_option(FO_OPEN_COMS) ? OPENLINE_DO_COM :
-            0, 0)) {
-      if (curwin->w_p_cole > 0 && oldline != curwin->w_cursor.lnum)
+                     has_format_option(FO_OPEN_COMS)
+                     ? OPENLINE_DO_COM : 0,
+                     0)) {
+      if (curwin->w_p_cole > 0 && oldline != curwin->w_cursor.lnum) {
         update_single_line(curwin, oldline);
+      }
+      if (curwin->w_p_cul) {
+        // force redraw of cursorline
+        curwin->w_valid &= ~VALID_CROW;
+      }
       invoke_edit(cap, false, cap->cmdchar, true);
     }
   }
@@ -7742,6 +7751,10 @@ static void nv_put(cmdarg_T *cap)
     if (was_visual) {
       curbuf->b_visual.vi_start = curbuf->b_op_start;
       curbuf->b_visual.vi_end = curbuf->b_op_end;
+      // need to adjust cursor position
+      if (*p_sel == 'e') {
+        inc(&curbuf->b_visual.vi_end);
+      }
     }
 
     /* When all lines were selected and deleted do_put() leaves an empty
@@ -7776,7 +7789,7 @@ static void nv_open(cmdarg_T *cap)
     n_opencmd(cap);
 }
 
-// calculate start/end virtual columns for operating in block mode
+// Calculate start/end virtual columns for operating in block mode.
 static void get_op_vcol(
     oparg_T *oap,
     colnr_T redo_VIsual_vcol,
@@ -7786,7 +7799,8 @@ static void get_op_vcol(
   colnr_T start;
   colnr_T end;
 
-  if (VIsual_mode != Ctrl_V) {
+  if (VIsual_mode != Ctrl_V
+      || (!initial && oap->end.col < curwin->w_width)) {
     return;
   }
 
@@ -7798,20 +7812,23 @@ static void get_op_vcol(
   }
 
   getvvcol(curwin, &(oap->start), &oap->start_vcol, NULL, &oap->end_vcol);
-  getvvcol(curwin, &(oap->end), &start, NULL, &end);
+  if (!redo_VIsual_busy) {
+    getvvcol(curwin, &(oap->end), &start, NULL, &end);
 
-  if (start < oap->start_vcol) {
-    oap->start_vcol = start;
-  }
-  if (end > oap->end_vcol) {
-    if (initial && *p_sel == 'e'
-        && start >= 1
-        && start - 1 >= oap->end_vcol) {
-      oap->end_vcol = start - 1;
-    } else {
-      oap->end_vcol = end;
+    if (start < oap->start_vcol) {
+      oap->start_vcol = start;
+    }
+    if (end > oap->end_vcol) {
+      if (initial && *p_sel == 'e'
+          && start >= 1
+          && start - 1 >= oap->end_vcol) {
+        oap->end_vcol = start - 1;
+      } else {
+        oap->end_vcol = end;
+      }
     }
   }
+
   // if '$' was used, get oap->end_vcol from longest line
   if (curwin->w_curswant == MAXCOL) {
     curwin->w_cursor.col = MAXCOL;

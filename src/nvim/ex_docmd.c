@@ -381,15 +381,14 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline,
     suppress_errthrow = FALSE;
   }
 
-  /*
-   * If requested, store and reset the global values controlling the
-   * exception handling (used when debugging).  Otherwise clear it to avoid
-   * a bogus compiler warning when the optimizer uses inline functions...
-   */
-  if (flags & DOCMD_EXCRESET)
+  // If requested, store and reset the global values controlling the
+  // exception handling (used when debugging).  Otherwise clear it to avoid
+  // a bogus compiler warning when the optimizer uses inline functions...
+  if (flags & DOCMD_EXCRESET) {
     save_dbg_stuff(&debug_saved);
-  else
-    memset(&debug_saved, 0, 1);
+  } else {
+    memset(&debug_saved, 0, sizeof(debug_saved));
+  }
 
   initial_trylevel = trylevel;
 
@@ -1702,9 +1701,9 @@ static char_u * do_one_cmd(char_u **cmdlinep,
     p = vim_strnsave(ea.cmd, p - ea.cmd);
     int ret = apply_autocmds(EVENT_CMDUNDEFINED, p, p, TRUE, NULL);
     xfree(p);
-    if (ret && !aborting()) {
-      p = find_command(&ea, NULL);
-    }
+    // If the autocommands did something and didn't cause an error, try
+    // finding the command again.
+    p = (ret && !aborting()) ? find_command(&ea, NULL) : NULL;
   }
 
   if (p == NULL) {
@@ -2348,8 +2347,11 @@ static char_u *find_command(exarg_T *eap, int *full)
     eap->cmdidx = CMD_k;
     ++p;
   } else if (p[0] == 's'
-             && ((p[1] == 'c' && p[2] != 's' && p[2] != 'r'
-                  && p[3] != 'i' && p[4] != 'p')
+             && ((p[1] == 'c'
+                  && (p[2] == NUL
+                      || (p[2] != 's' && p[2] != 'r'
+                          && (p[3] == NUL
+                              || (p[3] != 'i' && p[4] != 'p')))))
                  || p[1] == 'g'
                  || (p[1] == 'i' && p[2] != 'm' && p[2] != 'l' && p[2] != 'g')
                  || p[1] == 'I'
@@ -2676,16 +2678,25 @@ set_one_cmd_context (
     p = cmd + 1;
   } else {
     p = cmd;
-    while (ASCII_ISALPHA(*p) || *p == '*')        /* Allow * wild card */
-      ++p;
-    /* check for non-alpha command */
-    if (p == cmd && vim_strchr((char_u *)"@*!=><&~#", *p) != NULL)
-      ++p;
-    /* for python 3.x: ":py3*" commands completion */
+    while (ASCII_ISALPHA(*p) || *p == '*') {  // Allow * wild card
+      p++;
+    }
+    // a user command may contain digits
+    if (ASCII_ISUPPER(cmd[0])) {
+      while (ASCII_ISALNUM(*p) || *p == '*') {
+        p++;
+      }
+    }
+    // for python 3.x: ":py3*" commands completion
     if (cmd[0] == 'p' && cmd[1] == 'y' && p == cmd + 2 && *p == '3') {
-      ++p;
-      while (ASCII_ISALPHA(*p) || *p == '*')
-        ++p;
+      p++;
+      while (ASCII_ISALPHA(*p) || *p == '*') {
+        p++;
+      }
+    }
+    // check for non-alpha command
+    if (p == cmd && vim_strchr((char_u *)"@*!=><&~#", *p) != NULL) {
+      p++;
     }
     len = (int)(p - cmd);
 
@@ -2699,9 +2710,11 @@ set_one_cmd_context (
               (size_t)len) == 0)
         break;
 
-    if (cmd[0] >= 'A' && cmd[0] <= 'Z')
-      while (ASCII_ISALNUM(*p) || *p == '*')            /* Allow * wild card */
-        ++p;
+    if (cmd[0] >= 'A' && cmd[0] <= 'Z') {
+      while (ASCII_ISALNUM(*p) || *p == '*') {  // Allow * wild card
+        p++;
+      }
+    }
   }
 
   /*
@@ -4307,7 +4320,7 @@ static void ex_unmap(exarg_T *eap)
  */
 static void ex_mapclear(exarg_T *eap)
 {
-  map_clear(eap->cmd, eap->arg, eap->forceit, FALSE);
+  map_clear_mode(eap->cmd, eap->arg, eap->forceit, false);
 }
 
 /*
@@ -4315,7 +4328,7 @@ static void ex_mapclear(exarg_T *eap)
  */
 static void ex_abclear(exarg_T *eap)
 {
-  map_clear(eap->cmd, eap->arg, TRUE, TRUE);
+  map_clear_mode(eap->cmd, eap->arg, true, true);
 }
 
 static void ex_autocmd(exarg_T *eap)
@@ -6277,10 +6290,8 @@ void ex_splitview(exarg_T *eap)
   if (eap->cmdidx == CMD_tabedit
       || eap->cmdidx == CMD_tabfind
       || eap->cmdidx == CMD_tabnew) {
-    if (win_new_tabpage(cmdmod.tab != 0 ? cmdmod.tab
-            : eap->addr_count == 0 ? 0
-            : (int)eap->line2 + 1) != FAIL) {
-      apply_autocmds(EVENT_TABNEW, eap->arg, eap->arg,  FALSE, curbuf); 
+    if (win_new_tabpage(cmdmod.tab != 0 ? cmdmod.tab : eap->addr_count == 0
+                        ? 0 : (int)eap->line2 + 1, eap->arg) != FAIL) {
       do_exedit(eap, old_curwin);
       apply_autocmds(EVENT_TABNEWENTERED, NULL, NULL, FALSE, curbuf);
 
@@ -8280,16 +8291,22 @@ static char_u *arg_all(void)
           retval[len] = ' ';
         ++len;
       }
-      for (; *p != NUL; ++p) {
-        if (*p == ' ' || *p == '\\') {
-          /* insert a backslash */
-          if (retval != NULL)
+      for (; *p != NUL; p++) {
+        if (*p == ' '
+#ifndef BACKSLASH_IN_FILENAME
+            || *p == '\\'
+#endif
+            ) {
+          // insert a backslash
+          if (retval != NULL) {
             retval[len] = '\\';
-          ++len;
+          }
+          len++;
         }
-        if (retval != NULL)
+        if (retval != NULL) {
           retval[len] = *p;
-        ++len;
+        }
+        len++;
       }
     }
 
@@ -8765,19 +8782,18 @@ static int ses_do_frame(frame_T *fr)
   return FALSE;
 }
 
-/*
- * Return non-zero if window "wp" is to be stored in the Session.
- */
+/// Return non-zero if window "wp" is to be stored in the Session.
 static int ses_do_win(win_T *wp)
 {
   if (wp->w_buffer->b_fname == NULL
-      /* When 'buftype' is "nofile" can't restore the window contents. */
-      || bt_nofile(wp->w_buffer)
-      )
+      // When 'buftype' is "nofile" can't restore the window contents.
+      || (!wp->w_buffer->terminal && bt_nofile(wp->w_buffer))) {
     return ssop_flags & SSOP_BLANK;
-  if (wp->w_buffer->b_help)
+  }
+  if (wp->w_buffer->b_help) {
     return ssop_flags & SSOP_HELP;
-  return TRUE;
+  }
+  return true;
 }
 
 /*
@@ -9213,9 +9229,9 @@ char_u *get_behave_arg(expand_T *xp, int idx)
   return NULL;
 }
 
-static int filetype_detect = FALSE;
-static int filetype_plugin = FALSE;
-static int filetype_indent = FALSE;
+static TriState filetype_detect = kNone;
+static TriState filetype_plugin = kNone;
+static TriState filetype_indent = kNone;
 
 /*
  * ":filetype [plugin] [indent] {on,off,detect}"
@@ -9229,27 +9245,27 @@ static int filetype_indent = FALSE;
 static void ex_filetype(exarg_T *eap)
 {
   char_u      *arg = eap->arg;
-  int plugin = FALSE;
-  int indent = FALSE;
+  bool plugin = false;
+  bool indent = false;
 
   if (*eap->arg == NUL) {
     /* Print current status. */
     smsg("filetype detection:%s  plugin:%s  indent:%s",
-        filetype_detect ? "ON" : "OFF",
-        filetype_plugin ? (filetype_detect ? "ON" : "(on)") : "OFF",
-        filetype_indent ? (filetype_detect ? "ON" : "(on)") : "OFF");
+         filetype_detect == kTrue ? "ON" : "OFF",
+         filetype_plugin == kTrue ? (filetype_detect == kTrue ? "ON" : "(on)") : "OFF",   // NOLINT(whitespace/line_length)
+         filetype_indent == kTrue ? (filetype_detect == kTrue ? "ON" : "(on)") : "OFF");  // NOLINT(whitespace/line_length)
     return;
   }
 
   /* Accept "plugin" and "indent" in any order. */
   for (;; ) {
     if (STRNCMP(arg, "plugin", 6) == 0) {
-      plugin = TRUE;
+      plugin = true;
       arg = skipwhite(arg + 6);
       continue;
     }
     if (STRNCMP(arg, "indent", 6) == 0) {
-      indent = TRUE;
+      indent = true;
       arg = skipwhite(arg + 6);
       continue;
     }
@@ -9257,15 +9273,15 @@ static void ex_filetype(exarg_T *eap)
   }
   if (STRCMP(arg, "on") == 0 || STRCMP(arg, "detect") == 0) {
     if (*arg == 'o' || !filetype_detect) {
-      source_runtime((char_u *)FILETYPE_FILE, TRUE);
-      filetype_detect = TRUE;
+      source_runtime((char_u *)FILETYPE_FILE, true);
+      filetype_detect = kTrue;
       if (plugin) {
-        source_runtime((char_u *)FTPLUGIN_FILE, TRUE);
-        filetype_plugin = TRUE;
+        source_runtime((char_u *)FTPLUGIN_FILE, true);
+        filetype_plugin = kTrue;
       }
       if (indent) {
-        source_runtime((char_u *)INDENT_FILE, TRUE);
-        filetype_indent = TRUE;
+        source_runtime((char_u *)INDENT_FILE, true);
+        filetype_indent = kTrue;
       }
     }
     if (*arg == 'd') {
@@ -9275,19 +9291,35 @@ static void ex_filetype(exarg_T *eap)
   } else if (STRCMP(arg, "off") == 0) {
     if (plugin || indent) {
       if (plugin) {
-        source_runtime((char_u *)FTPLUGOF_FILE, TRUE);
-        filetype_plugin = FALSE;
+        source_runtime((char_u *)FTPLUGOF_FILE, true);
+        filetype_plugin = kFalse;
       }
       if (indent) {
-        source_runtime((char_u *)INDOFF_FILE, TRUE);
-        filetype_indent = FALSE;
+        source_runtime((char_u *)INDOFF_FILE, true);
+        filetype_indent = kFalse;
       }
     } else {
-      source_runtime((char_u *)FTOFF_FILE, TRUE);
-      filetype_detect = FALSE;
+      source_runtime((char_u *)FTOFF_FILE, true);
+      filetype_detect = kFalse;
     }
   } else
     EMSG2(_(e_invarg2), arg);
+}
+
+/// Do ":filetype plugin indent on" if user did not already do some
+/// permutation thereof.
+void filetype_maybe_enable(void)
+{
+  if (filetype_detect == kNone
+      && filetype_plugin == kNone
+      && filetype_indent == kNone) {
+    source_runtime((char_u *)FILETYPE_FILE, true);
+    filetype_detect = kTrue;
+    source_runtime((char_u *)FTPLUGIN_FILE, true);
+    filetype_plugin = kTrue;
+    source_runtime((char_u *)INDENT_FILE, true);
+    filetype_indent = kTrue;
+  }
 }
 
 /*
@@ -9327,59 +9359,62 @@ static void ex_nohlsearch(exarg_T *eap)
   redraw_all_later(SOME_VALID);
 }
 
-/*
- * ":[N]match {group} {pattern}"
- * Sets nextcmd to the start of the next command, if any.  Also called when
- * skipping commands to find the next command.
- */
+// ":[N]match {group} {pattern}"
+// Sets nextcmd to the start of the next command, if any.  Also called when
+// skipping commands to find the next command.
 static void ex_match(exarg_T *eap)
 {
-  char_u      *p;
-  char_u      *g = NULL;
-  char_u      *end;
+  char_u *p;
+  char_u *g = NULL;
+  char_u *end;
   int c;
   int id;
 
-  if (eap->line2 <= 3)
+  if (eap->line2 <= 3) {
     id = eap->line2;
-  else {
+  } else {
     EMSG(e_invcmd);
     return;
   }
 
-  /* First clear any old pattern. */
-  if (!eap->skip)
-    match_delete(curwin, id, FALSE);
+  // First clear any old pattern.
+  if (!eap->skip) {
+    match_delete(curwin, id, false);
+  }
 
-  if (ends_excmd(*eap->arg))
+  if (ends_excmd(*eap->arg)) {
     end = eap->arg;
-  else if ((STRNICMP(eap->arg, "none", 4) == 0
-            && (ascii_iswhite(eap->arg[4]) || ends_excmd(eap->arg[4]))))
+  } else if ((STRNICMP(eap->arg, "none", 4) == 0
+              && (ascii_iswhite(eap->arg[4]) || ends_excmd(eap->arg[4])))) {
     end = eap->arg + 4;
-  else {
+  } else {
     p = skiptowhite(eap->arg);
-    if (!eap->skip)
+    if (!eap->skip) {
       g = vim_strnsave(eap->arg, (int)(p - eap->arg));
+    }
     p = skipwhite(p);
     if (*p == NUL) {
-      /* There must be two arguments. */
+      // There must be two arguments.
+      xfree(g);
       EMSG2(_(e_invarg2), eap->arg);
       return;
     }
-    end = skip_regexp(p + 1, *p, TRUE, NULL);
+    end = skip_regexp(p + 1, *p, true, NULL);
     if (!eap->skip) {
       if (*end != NUL && !ends_excmd(*skipwhite(end + 1))) {
+        xfree(g);
         eap->errmsg = e_trailing;
         return;
       }
       if (*end != *p) {
+        xfree(g);
         EMSG2(_(e_invarg2), p);
         return;
       }
 
       c = *end;
       *end = NUL;
-      match_add(curwin, g, p + 1, 10, id, NULL);
+      match_add(curwin, g, p + 1, 10, id, NULL, NULL);
       xfree(g);
       *end = c;
     }

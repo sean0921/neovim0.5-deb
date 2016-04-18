@@ -1,8 +1,9 @@
 
 local helpers = require('test.functional.helpers')
+local Screen = require('test.functional.ui.screen')
 local clear, feed = helpers.clear, helpers.feed
 local eval, eq, neq = helpers.eval, helpers.eq, helpers.neq
-local execute, source = helpers.execute, helpers.source
+local execute, source, expect = helpers.execute, helpers.source, helpers.expect
 
 describe('completion', function()
   before_each(function()
@@ -100,4 +101,103 @@ describe('completion', function()
       eq('', eval('getline(3)'))
     end)
   end)
+
+  describe("refresh:always", function()
+    before_each(function()
+      source([[
+        function! TestCompletion(findstart, base) abort
+          if a:findstart
+            let line = getline('.')
+            let start = col('.') - 1
+            while start > 0 && line[start - 1] =~ '\a'
+              let start -= 1
+            endwhile
+            return start
+          else
+            let ret = []
+            for m in split("January February March April May June July August September October November December")
+              if m =~ a:base  " match by regex
+                call add(ret, m)
+              endif
+            endfor
+            return {'words':ret, 'refresh':'always'}
+          endif
+        endfunction
+
+        set completeopt=menuone,noselect
+        set completefunc=TestCompletion
+      ]])
+    end )
+
+    it('completes on each input char', function ()
+      feed('i<C-x><C-u>gu<Down><C-y>')
+      expect('August')
+    end)
+    it("repeats correctly after backspace #2674", function ()
+      feed('o<C-x><C-u>Ja<BS><C-n><C-n><Esc>')
+      feed('.')
+      expect([[
+        
+        June
+        June]])
+    end)
+  end)
+
+  it('disables folding during completion', function ()
+    execute("set foldmethod=indent")
+    feed('i<Tab>foo<CR><Tab>bar<Esc>ggA<C-x><C-l>')
+    eq(-1, eval('foldclosed(1)'))
+  end)
+
+  it('popupmenu is not interrupted by events', function ()
+    local screen = Screen.new(40, 8)
+    screen:attach()
+    screen:set_default_attr_ignore({{bold=true, foreground=Screen.colors.Blue}})
+    screen:set_default_attr_ids({
+      [1] = {background = Screen.colors.LightMagenta},
+      [2] = {background = Screen.colors.Grey},
+      [3] = {bold = true},
+      [4] = {bold = true, foreground = Screen.colors.SeaGreen},
+    })
+
+    feed('ifoobar fooegg<cr>f<c-p>')
+    screen:expect([[
+      foobar fooegg                           |
+      fooegg^                                  |
+      {1:foobar         }                         |
+      {2:fooegg         }                         |
+      ~                                       |
+      ~                                       |
+      ~                                       |
+      {3:-- }{4:match 1 of 2}                         |
+    ]])
+
+    eval('1 + 1')
+    -- popupmenu still visible
+    screen:expect([[
+      foobar fooegg                           |
+      fooegg^                                  |
+      {1:foobar         }                         |
+      {2:fooegg         }                         |
+      ~                                       |
+      ~                                       |
+      ~                                       |
+      {3:-- }{4:match 1 of 2}                         |
+    ]])
+
+    feed('<c-p>')
+    -- Didn't restart completion: old matches still used
+    screen:expect([[
+      foobar fooegg                           |
+      foobar^                                  |
+      {2:foobar         }                         |
+      {1:fooegg         }                         |
+      ~                                       |
+      ~                                       |
+      ~                                       |
+      {3:-- }{4:match 2 of 2}                         |
+    ]])
+  end)
+
 end)
+

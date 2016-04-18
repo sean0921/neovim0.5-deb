@@ -60,6 +60,11 @@ file(GLOB NEOVIM_SOURCES *.c os/*.c api/*.c api/private/*.c msgpack_rpc/*.c
 file(GLOB_RECURSE NEOVIM_HEADERS *.h)
 file(GLOB UNIT_TEST_FIXTURES ${PROJECT_SOURCE_DIR}/test/unit/fixtures/*.c)
 
+# Sort file lists to ensure generated files are created in the same order from
+# build to build.
+list(SORT NEOVIM_SOURCES)
+list(SORT NEOVIM_HEADERS)
+
 foreach(sfile ${NEOVIM_SOURCES})
   get_filename_component(f ${sfile} NAME)
   if(${f} MATCHES "^(regexp_nfa.c)$")
@@ -72,11 +77,9 @@ list(REMOVE_ITEM NEOVIM_SOURCES ${to_remove})
 # Handle legacy files that don't yet pass -Wconversion.
 set(CONV_SOURCES
   buffer.c
-  charset.c
   diff.c
   edit.c
   eval.c
-  ex_cmds2.c
   ex_cmds.c
   ex_docmd.c
   ex_getln.c
@@ -87,8 +90,6 @@ set(CONV_SOURCES
   message.c
   misc1.c
   ops.c
-  path.c
-  quickfix.c
   regexp.c
   screen.c
   search.c

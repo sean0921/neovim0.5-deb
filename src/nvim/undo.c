@@ -4,29 +4,29 @@
  * The saved lines are stored in a list of lists (one for each buffer):
  *
  * b_u_oldhead------------------------------------------------+
- *							      |
- *							      V
- *		  +--------------+    +--------------+	  +--------------+
- * b_u_newhead--->| u_header	 |    | u_header     |	  | u_header	 |
- *		  |	uh_next------>|     uh_next------>|	uh_next---->NULL
- *	   NULL<--------uh_prev  |<---------uh_prev  |<---------uh_prev  |
- *		  |	uh_entry |    |     uh_entry |	  |	uh_entry |
- *		  +--------|-----+    +--------|-----+	  +--------|-----+
- *			   |		       |		   |
- *			   V		       V		   V
- *		  +--------------+    +--------------+	  +--------------+
- *		  | u_entry	 |    | u_entry      |	  | u_entry	 |
- *		  |	ue_next  |    |     ue_next  |	  |	ue_next  |
- *		  +--------|-----+    +--------|-----+	  +--------|-----+
- *			   |		       |		   |
- *			   V		       V		   V
- *		  +--------------+	      NULL		  NULL
- *		  | u_entry	 |
- *		  |	ue_next  |
- *		  +--------|-----+
- *			   |
- *			   V
- *			  etc.
+ *                                                            |
+ *                                                            V
+ *                +--------------+    +--------------+    +--------------+
+ * b_u_newhead--->| u_header     |    | u_header     |    | u_header     |
+ *                |     uh_next------>|     uh_next------>|     uh_next---->NULL
+ *         NULL<--------uh_prev  |<---------uh_prev  |<---------uh_prev  |
+ *                |     uh_entry |    |     uh_entry |    |     uh_entry |
+ *                +--------|-----+    +--------|-----+    +--------|-----+
+ *                         |                   |                   |
+ *                         V                   V                   V
+ *                +--------------+    +--------------+    +--------------+
+ *                | u_entry      |    | u_entry      |    | u_entry      |
+ *                |     ue_next  |    |     ue_next  |    |     ue_next  |
+ *                +--------|-----+    +--------|-----+    +--------|-----+
+ *                         |                   |                   |
+ *                         V                   V                   V
+ *                +--------------+            NULL                NULL
+ *                | u_entry      |
+ *                |     ue_next  |
+ *                +--------|-----+
+ *                         |
+ *                         V
+ *                        etc.
  *
  * Each u_entry list contains the information for one undo or redo.
  * curbuf->b_u_curhead points to the header of the last undo (the next redo),
@@ -37,30 +37,30 @@
  * uh_seq field is numbered sequentially to be able to find a newer or older
  * branch.
  *
- *		   +---------------+	+---------------+
- * b_u_oldhead --->| u_header	   |	| u_header	|
- *		   |   uh_alt_next ---->|   uh_alt_next ----> NULL
- *	   NULL <----- uh_alt_prev |<------ uh_alt_prev |
- *		   |   uh_prev	   |	|   uh_prev	|
- *		   +-----|---------+	+-----|---------+
- *			 |		      |
- *			 V		      V
- *		   +---------------+	+---------------+
- *		   | u_header	   |	| u_header	|
- *		   |   uh_alt_next |	|   uh_alt_next |
- * b_u_newhead --->|   uh_alt_prev |	|   uh_alt_prev |
- *		   |   uh_prev	   |	|   uh_prev	|
- *		   +-----|---------+	+-----|---------+
- *			 |		      |
- *			 V		      V
- *		       NULL		+---------------+    +---------------+
- *					| u_header	|    | u_header      |
- *					|   uh_alt_next ---->|	 uh_alt_next |
- *					|   uh_alt_prev |<------ uh_alt_prev |
- *					|   uh_prev	|    |	 uh_prev     |
- *					+-----|---------+    +-----|---------+
- *					      |			   |
- *					     etc.		  etc.
+ *                 +---------------+    +---------------+
+ * b_u_oldhead --->| u_header      |    | u_header      |
+ *                 |   uh_alt_next ---->|   uh_alt_next ----> NULL
+ *         NULL <----- uh_alt_prev |<------ uh_alt_prev |
+ *                 |   uh_prev     |    |   uh_prev     |
+ *                 +-----|---------+    +-----|---------+
+ *                       |                    |
+ *                       V                    V
+ *                 +---------------+    +---------------+
+ *                 | u_header      |    | u_header      |
+ *                 |   uh_alt_next |    |   uh_alt_next |
+ * b_u_newhead --->|   uh_alt_prev |    |   uh_alt_prev |
+ *                 |   uh_prev     |    |   uh_prev     |
+ *                 +-----|---------+    +-----|---------+
+ *                       |                    |
+ *                       V                    V
+ *                     NULL             +---------------+    +---------------+
+ *                                      | u_header      |    | u_header      |
+ *                                      |   uh_alt_next ---->|   uh_alt_next |
+ *                                      |   uh_alt_prev |<------ uh_alt_prev |
+ *                                      |   uh_prev     |    |   uh_prev     |
+ *                                      +-----|---------+    +-----|---------+
+ *                                            |                    |
+ *                                           etc.                 etc.
  *
  *
  * All data is allocated and will all be freed when the buffer is unloaded.
@@ -1782,7 +1782,13 @@ void undo_time(long step, int sec, int file, int absolute)
   /* "target" is the node below which we want to be.
    * Init "closest" to a value we can't reach. */
   if (absolute) {
-    target = step;
+    if (step == 0) {
+      // target 0 does not exist, got to 1 and above it.
+      target = 1;
+      above = true;
+    } else {
+      target = step;
+    }
     closest = -1;
   } else {
     /* When doing computations with time_t subtract starttime, because
