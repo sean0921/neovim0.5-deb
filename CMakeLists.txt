@@ -59,7 +59,7 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
 # version string, else it is combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
 set(NVIM_VERSION_MINOR 1)
-set(NVIM_VERSION_PATCH 3)
+set(NVIM_VERSION_PATCH 4)
 set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 file(TO_CMAKE_PATH ${CMAKE_CURRENT_LIST_DIR}/.git FORCED_GIT_DIR)
@@ -367,7 +367,7 @@ endforeach()
 
 # Find Lua interpreter
 include(LuaHelpers)
-set(LUA_DEPENDENCIES lpeg MessagePack bit)
+set(LUA_DEPENDENCIES lpeg mpack bit)
 if(NOT LUA_PRG)
   foreach(CURRENT_LUA_PRG luajit lua)
     # If LUA_PRG is set find_program() will not search

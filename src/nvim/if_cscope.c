@@ -27,7 +27,6 @@
 #include "nvim/quickfix.h"
 #include "nvim/strings.h"
 #include "nvim/tag.h"
-#include "nvim/tempfile.h"
 #include "nvim/window.h"
 #include "nvim/os/os.h"
 #include "nvim/os/input.h"
@@ -2081,12 +2080,13 @@ static int cs_show(exarg_T *eap)
       if (csinfo[i].fname == NULL)
         continue;
 
-      if (csinfo[i].ppath != NULL)
-        (void)smsg("%2zu %-5" PRId64 "  %-34s  %-32s",
-            i, (long)csinfo[i].pid, csinfo[i].fname, csinfo[i].ppath);
-      else
-        (void)smsg("%2zu %-5" PRId64 "  %-34s  <none>",
-            i, (long)csinfo[i].pid, csinfo[i].fname);
+      if (csinfo[i].ppath != NULL) {
+        (void)smsg("%2zu %-5" PRId64 "  %-34s  %-32s", i,
+                   (int64_t)csinfo[i].pid, csinfo[i].fname, csinfo[i].ppath);
+      } else {
+        (void)smsg("%2zu %-5" PRId64 "  %-34s  <none>", i,
+                   (int64_t)csinfo[i].pid, csinfo[i].fname);
+      }
     }
   }
 

@@ -2958,8 +2958,11 @@ set_one_cmd_context (
   case CMD_chdir:
   case CMD_lcd:
   case CMD_lchdir:
-    if (xp->xp_context == EXPAND_FILES)
+  case CMD_tcd:
+  case CMD_tchdir:
+    if (xp->xp_context == EXPAND_FILES) {
       xp->xp_context = EXPAND_DIRECTORIES;
+    }
     break;
   case CMD_help:
     xp->xp_context = EXPAND_HELP;
@@ -6814,36 +6817,55 @@ void free_cd_dir(void)
 
 #endif
 
-/*
- * Deal with the side effects of changing the current directory.
- * When "local" is TRUE then this was after an ":lcd" command.
- */
-void post_chdir(int local)
+/// Deal with the side effects of changing the current directory.
+///
+/// @param scope  Scope of the function call (global, tab or window).
+void post_chdir(CdScope scope)
 {
+  // The local directory of the current window is always overwritten.
   xfree(curwin->w_localdir);
   curwin->w_localdir = NULL;
-  if (local) {
-    /* If still in global directory, need to remember current
-     * directory as global directory. */
-    if (globaldir == NULL && prev_dir != NULL)
+
+  // Overwrite the local directory of the current tab page for `cd` and `tcd`
+  if (scope >= kCdScopeTab) {
+    xfree(curtab->localdir);
+    curtab->localdir = NULL;
+  }
+
+  if (scope < kCdScopeGlobal) {
+    // If still in global directory, need to remember current directory as
+    // global directory.
+    if (globaldir == NULL && prev_dir != NULL) {
       globaldir = vim_strsave(prev_dir);
-    /* Remember this local directory for the window. */
-    if (os_dirname(NameBuff, MAXPATHL) == OK)
-      curwin->w_localdir = vim_strsave(NameBuff);
-  } else {
-    /* We are now in the global directory, no need to remember its
-     * name. */
+    }
+  }
+
+  switch (scope) {
+  case kCdScopeGlobal:
+    // We are now in the global directory, no need to remember its name.
     xfree(globaldir);
     globaldir = NULL;
+    break;
+  case kCdScopeTab:
+    // Remember this local directory for the tab page.
+    if (os_dirname(NameBuff, MAXPATHL) == OK) {
+      curtab->localdir = vim_strsave(NameBuff);
+    }
+    break;
+  case kCdScopeWindow:
+    // Remember this local directory for the window.
+    if (os_dirname(NameBuff, MAXPATHL) == OK) {
+      curwin->w_localdir = vim_strsave(NameBuff);
+    }
+    break;
   }
 
   shorten_fnames(TRUE);
 }
 
 
-/*
- * ":cd", ":lcd", ":chdir" and ":lchdir".
- */
+
+/// `:cd`, `:tcd`, `:lcd`, `:chdir`, `:tchdir` and `:lchdir`.
 void ex_cd(exarg_T *eap)
 {
   char_u              *new_dir;
@@ -6884,10 +6906,25 @@ void ex_cd(exarg_T *eap)
       new_dir = NameBuff;
     }
 #endif
-    if (new_dir == NULL || vim_chdir(new_dir))
+    if (vim_chdir(new_dir)) {
       EMSG(_(e_failed));
-    else {
-      post_chdir(eap->cmdidx == CMD_lcd || eap->cmdidx == CMD_lchdir);
+    } else {
+      CdScope scope = kCdScopeGlobal;  // Depends on command invoked
+
+      switch (eap->cmdidx) {
+      case CMD_tcd:
+      case CMD_tchdir:
+        scope = kCdScopeTab;
+        break;
+      case CMD_lcd:
+      case CMD_lchdir:
+        scope = kCdScopeWindow;
+        break;
+      default:
+        break;
+      }
+
+      post_chdir(scope);
 
       /* Echo the new current directory if the command was typed. */
       if (KeyTyped || p_verbose >= 5)
@@ -7421,10 +7458,10 @@ static int mksession_nl = FALSE;    /* use NL only in put_eol() */
 static void ex_mkrc(exarg_T *eap)
 {
   FILE        *fd;
-  int failed = FALSE;
-  int view_session = FALSE;
-  int using_vdir = FALSE;               /* using 'viewdir'? */
-  char_u      *viewFile = NULL;
+  int failed = false;
+  int view_session = false;
+  int using_vdir = false;  // using 'viewdir'?
+  char *viewFile = NULL;
   unsigned    *flagp;
 
   if (eap->cmdidx == CMD_mksession || eap->cmdidx == CMD_mkview) {
@@ -7435,32 +7472,34 @@ static void ex_mkrc(exarg_T *eap)
    * short file name when 'acd' is set, that is checked later. */
   did_lcd = FALSE;
 
-  char_u *fname;
-  /* ":mkview" or ":mkview 9": generate file name with 'viewdir' */
+  char *fname;
+  // ":mkview" or ":mkview 9": generate file name with 'viewdir'
   if (eap->cmdidx == CMD_mkview
       && (*eap->arg == NUL
           || (ascii_isdigit(*eap->arg) && eap->arg[1] == NUL))) {
-    eap->forceit = TRUE;
-    fname = (char_u *)get_view_file(*eap->arg);
-    if (fname == NULL)
+    eap->forceit = true;
+    fname = get_view_file(*eap->arg);
+    if (fname == NULL) {
       return;
+    }
     viewFile = fname;
-    using_vdir = TRUE;
-  } else if (*eap->arg != NUL)
-    fname = eap->arg;
-  else if (eap->cmdidx == CMD_mkvimrc)
-    fname = (char_u *)VIMRC_FILE;
-  else if (eap->cmdidx == CMD_mksession)
-    fname = (char_u *)SESSION_FILE;
-  else
-    fname = (char_u *)EXRC_FILE;
+    using_vdir = true;
+  } else if (*eap->arg != NUL) {
+    fname = (char *) eap->arg;
+  } else if (eap->cmdidx == CMD_mkvimrc) {
+    fname = VIMRC_FILE;
+  } else if (eap->cmdidx == CMD_mksession) {
+    fname = SESSION_FILE;
+  } else {
+    fname = EXRC_FILE;
+  }
 
   /* When using 'viewdir' may have to create the directory. */
   if (using_vdir && !os_isdir(p_vdir)) {
     vim_mkdir_emsg(p_vdir, 0755);
   }
 
-  fd = open_exfile(fname, eap->forceit, WRITEBIN);
+  fd = open_exfile((char_u *) fname, eap->forceit, WRITEBIN);
   if (fd != NULL) {
     if (eap->cmdidx == CMD_mkview)
       flagp = &vop_flags;
@@ -7504,8 +7543,9 @@ static void ex_mkrc(exarg_T *eap)
             || os_chdir((char *)dirnow) != 0)
           *dirnow = NUL;
         if (*dirnow != NUL && (ssop_flags & SSOP_SESDIR)) {
-          if (vim_chdirfile(fname) == OK)
-            shorten_fnames(TRUE);
+          if (vim_chdirfile((char_u *) fname) == OK) {
+            shorten_fnames(true);
+          }
         } else if (*dirnow != NUL
                    && (ssop_flags & SSOP_CURDIR) && globaldir != NULL) {
           if (os_chdir((char *)globaldir) == 0)
@@ -7550,15 +7590,14 @@ static void ex_mkrc(exarg_T *eap)
 
     failed |= fclose(fd);
 
-    if (failed)
+    if (failed) {
       EMSG(_(e_write));
-    else if (eap->cmdidx == CMD_mksession) {
-      /* successful session write - set this_session var */
-      char_u      *tbuf;
-
-      tbuf = xmalloc(MAXPATHL);
-      if (vim_FullName((char *)fname, (char *)tbuf, MAXPATHL, FALSE) == OK)
+    } else if (eap->cmdidx == CMD_mksession) {
+      // successful session write - set this_session var
+      char *const tbuf = xmalloc(MAXPATHL);
+      if (vim_FullName(fname, tbuf, MAXPATHL, false) == OK) {
         set_vim_var_string(VV_THIS_SESSION, tbuf, -1);
+      }
       xfree(tbuf);
     }
 #ifdef MKSESSION_NL

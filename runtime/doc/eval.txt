@@ -1,4 +1,4 @@
-*eval.txt*	For Vim version 7.4.  Last change: 2015 Jun 26
+*eval.txt*	For Vim version 7.4.  Last change: 2016 Jan 16
 
 
 		  VIM REFERENCE MANUAL	  by Bram Moolenaar
@@ -916,6 +916,11 @@ just above, except that indexes out of range cause an error.  Examples: >
 Using expr8[expr1] or expr8[expr1a : expr1b] on a |Funcref| results in an
 error.
 
+Watch out for confusion between a namespace and a variable followed by a colon
+for a sublist: >
+	mylist[n:]     " uses variable n
+	mylist[s:]     " uses namespace s:, error!
+
 
 expr8.name		entry in a |Dictionary|		*expr-entry*
 
@@ -1413,6 +1418,13 @@ v:exception	The value of the exception most recently caught and not
 	:endtry
 <		Output: "caught oops".
 
+					*v:false* *false-variable*
+v:false		Special value used to put "false" in JSON and msgpack.  See 
+		|json_encode()|.  This value is converted to "false" when used 
+		as a String (e.g. in |expr5| with string concatenation 
+		operator) and to zero when used as a Number (e.g. in |expr5| 
+		or |expr7| when used with numeric operators).
+
 					*v:fcs_reason* *fcs_reason-variable*
 v:fcs_reason	The reason why the |FileChangedShell| event was triggered.
 		Can be used in an autocommand to decide what to do and/or what
@@ -1491,7 +1503,9 @@ v:hlsearch	Variable that indicates whether search highlighting is on.
 		this variable to zero acts like the |:nohlsearch| command,
 		setting it to one acts like >
 			let &hlsearch = &hlsearch
-<
+<		Note that the value is restored when returning from a
+		function. |function-search-undo|.
+
 					*v:insertmode* *insertmode-variable*
 v:insertmode	Used for the |InsertEnter| and |InsertChange| autocommand
 		events.  Values:
@@ -1549,6 +1563,13 @@ v:msgpack_types	Dictionary containing msgpack types used by |msgpackparse()|
 		and |msgpackdump()|. All types inside dictionary are fixed 
 		(not editable) empty lists. To check whether some list is one 
 		of msgpack types, use |is| operator.
+
+					*v:null* *null-variable*
+v:null		Special value used to put "null" in JSON and NIL in msgpack.  
+		See |json_encode()|.  This value is converted to "null" when 
+		used as a String (e.g. in |expr5| with string concatenation 
+		operator) and to zero when used as a Number (e.g. in |expr5| 
+		or |expr7| when used with numeric operators).
 
 					*v:oldfiles* *oldfiles-variable*
 v:oldfiles	List of file names that is loaded from the |shada| file on
@@ -1715,6 +1736,13 @@ v:throwpoint	The point where the exception most recently caught and not
 	:endtry
 <		Output: "Exception from test.vim, line 2"
 
+					*v:true* *true-variable*
+v:true		Special value used to put "true" in JSON and msgpack.  See 
+		|json_encode()|.  This value is converted to "true" when used 
+		as a String (e.g. in |expr5| with string concatenation 
+		operator) and to one when used as a Number (e.g. in |expr5| or 
+		|expr7| when used with numeric operators).
+
 						*v:val* *val-variable*
 v:val		Value of the current item of a |List| or |Dictionary|.	Only
 		valid while evaluating the expression used with |map()| and
@@ -1735,7 +1763,8 @@ v:version	Version number of Vim: Major version number times 100 plus
 v:warningmsg	Last given warning message.  It's allowed to set this variable.
 
 					*v:windowid* *windowid-variable* {Nvim}
-v:windowid	Is a no-op at the moment; the value is always set to 0.
+v:windowid	Application-specific window ID ("window handle" in MS-Windows)
+		which may be set by any attached UI. Defaults to zero.
 		Note: for windows inside Vim use |winnr()|.
 
 ==============================================================================
@@ -1772,7 +1801,7 @@ bufexists( {expr})		Number	TRUE if buffer {expr} exists
 buflisted( {expr})		Number	TRUE if buffer {expr} is listed
 bufloaded( {expr})		Number	TRUE if buffer {expr} is loaded
 bufname( {expr})		String	Name of the buffer {expr}
-bufnr( {expr})			Number	Number of the buffer {expr}
+bufnr( {expr} [, {create}])	Number	Number of the buffer {expr}
 bufwinnr( {expr})		Number	window number of buffer {expr}
 byte2line( {byte})		Number	line number at byte count {byte}
 byteidx( {expr}, {nr})		Number	byte index of {nr}'th char in {expr}
@@ -1801,7 +1830,7 @@ cursor( {lnum}, {col} [, {off}])
 				Number	move cursor to {lnum}, {col}, {off}
 cursor( {list})			Number	move cursor to position in {list}
 deepcopy( {expr} [, {noref}])	any	make a full copy of {expr}
-delete( {fname})		Number	delete file {fname}
+delete( {fname} [, {flags}])	Number	delete the file or directory {fname}
 dictwatcheradd( {dict}, {pattern}, {callback})
 				Start watching a dictionary
 dictwatcherdel( {dict}, {pattern}, {callback})
@@ -1851,12 +1880,13 @@ getbufvar( {expr}, {varname} [, {def}])
 				any	variable {varname} in buffer {expr}
 getchar( [expr])		Number	get one character from the user
 getcharmod( )			Number	modifiers for the last typed character
+getcharsearch()			Dict	last character search
 getcmdline()			String	return the current command-line
 getcmdpos()			Number	return cursor position in command-line
 getcmdtype()			String	return current command-line type
 getcmdwintype()			String	return current command-line window type
 getcurpos()			List	position of the cursor
-getcwd()			String	the current working directory
+getcwd( [{scope}])		String	the current working directory
 getfontname( [{name}])		String	name of font being used
 getfperm( {fname})		String	file permissions of file {fname}
 getfsize( {fname})		Number	size in bytes of file {fname}
@@ -1924,6 +1954,8 @@ jobstart( {cmd}[, {opts}])	Number	Spawns {cmd} as a job
 jobstop( {job})			Number	Stops a job
 jobwait( {ids}[, {timeout}])	Number	Wait for a set of jobs
 join( {list} [, {sep}])		String	join {list} items into one String
+json_decode( {expr})		any	Convert {expr} from JSON
+json_encode( {expr})		String	Convert {expr} to JSON
 keys( {dict})			List	keys in {dict}
 len( {expr})			Number	the length of {expr}
 libcall( {lib}, {func}, {arg})	String	call {func} in library {lib} with {arg}
@@ -2214,17 +2246,17 @@ assert_equal({expected}, {actual}, [, {msg}])
 
 assert_false({actual}, [, {msg}])				*assert_false()*
 		When {actual} is not false an error message is added to
-		|v:errors|, like with |assert_equal()|..
-		A value is false when it is zero. When "{actual}" is not a
-		number the assert fails.
+		|v:errors|, like with |assert_equal()|.
+		A value is false when it is zero or |v:false|. When "{actual}" 
+		is not a number or |v:false| the assert fails.
 		When {msg} is omitted an error in the form "Expected False but
 		got {actual}" is produced.
 
 assert_true({actual}, [, {msg}])				*assert_true()*
 		When {actual} is not true an error message is added to
-		|v:errors|, like with |assert_equal()|..
-		A value is true when it is a non-zeron number.  When {actual}
-		is not a number the assert fails.
+		|v:errors|, like with |assert_equal()|.
+		A value is true when it is a non-zero number or |v:true|.  
+		When {actual} is not a number or |v:true| the assert fails.
 		When {msg} is omitted an error in the form "Expected True but
 		got {actual}" is produced.
 
@@ -2738,13 +2770,19 @@ deepcopy({expr}[, {noref}])				*deepcopy()* *E698*
 		{noref} set to 1 will fail.
 		Also see |copy()|.
 
-delete({fname})							*delete()*
-		Deletes the file by the name {fname}.  The result is a Number,
-		which is 0 if the file was deleted successfully, and non-zero
-		when the deletion failed.
-		Use |remove()| to delete an item from a |List|.
-		To delete a line from the buffer use |:delete|.  Use |:exe|
-		when the line number is in a variable.
+delete({fname} [, {flags}])					*delete()*
+		Without {flags} or with {flags} empty: Deletes the file by the
+		name {fname}.  This also works when {fname} is a symbolic link.
+		A symbolic link itself is deleted, not what it points to.
+
+		When {flags} is "d": Deletes the directory by the name
+		{fname}.  This fails when directory {fname} is not empty.
+
+		When {flags} is "rf": Deletes the directory by the name
+		{fname} and everything in it, recursively.  BE CAREFUL!
+
+		The result is a Number, which is 0 if the delete operation was
+		successful and -1 when the deletion failed or partly failed.
 
 dictwatcheradd({dict}, {pattern}, {callback})		      *dictwatcheradd()*
 		Adds a watcher to a dictionary. A dictionary watcher is
@@ -2818,9 +2856,8 @@ diff_hlID({lnum}, {col})				*diff_hlID()*
 empty({expr})						*empty()*
 		Return the Number 1 if {expr} is empty, zero otherwise.
 		A |List| or |Dictionary| is empty when it does not have any
-		items.	A Number is empty when its value is zero.
-		For a long |List| this is much faster than comparing the
-		length with zero.
+		items.  A Number is empty when its value is zero.  Special 
+		variable is empty when it is |v:false| or |v:null|.
 
 escape({string}, {chars})				*escape()*
 		Escape the characters in {chars} that occur in {string} with a
@@ -3528,9 +3565,18 @@ getcurpos()	Get the position of the cursor.  This is like getpos('.'), but
 			MoveTheCursorAround
 			call setpos('.', save_cursor)
 <
-							*getcwd()*
-getcwd()	The result is a String, which is the name of the current
-		working directory.
+getcwd([{window}[, {tab}]])				*getcwd()*
+		With no arguments the result is a String, which is the name of
+		the current effective working directory. With {window} or
+		{tab} the working directory of that scope is returned.
+		Tabs and windows are identified by their respective numbers,
+		0 means current tab or window. Missing argument implies 0.
+		Thus the following are equivalent: >
+			getcwd()
+			getcwd(0)
+			getcwd(0, 0)
+<		If {window} is -1 it is ignored, only the tab is resolved.
+
 
 getfsize({fname})					*getfsize()*
 		The result is a Number, which is the size in bytes of the
@@ -3865,9 +3911,18 @@ has_key({dict}, {key})					*has_key()*
 		The result is a Number, which is 1 if |Dictionary| {dict} has
 		an entry with key {key}.  Zero otherwise.
 
-haslocaldir()						*haslocaldir()*
-		The result is a Number, which is 1 when the current
-		window has set a local path via |:lcd|, and 0 otherwise.
+haslocaldir([{window}[, {tab}]])			*haslocaldir()*
+		The result is a Number, which is 1 when the specified tabpage
+		or window has a local path set via |:lcd| or |:tcd|, and
+		0 otherwise.
+
+		Tabs and windows are identified by their respective numbers,
+		0 means current tab or window. Missing argument implies 0.
+		Thus the following are equivalent: >
+			haslocaldir()
+			haslocaldir(0)
+			haslocaldir(0, 0)
+<		If {window} is -1 it is ignored, only the tab is resolved.
 
 hasmapto({what} [, {mode} [, {abbr}]])			*hasmapto()*
 		The result is a Number, which is 1 if there is a mapping that
@@ -4283,6 +4338,46 @@ join({list} [, {sep}])					*join()*
 		converted into a string like with |string()|.
 		The opposite function is |split()|.
 
+json_decode({expr})					*json_decode()*
+		Convert {expr} from JSON object.  Accepts |readfile()|-style 
+		list as the input, as well as regular string.  May output any 
+		Vim value.  When 'encoding' is not UTF-8 string is converted 
+		from UTF-8 to 'encoding', failing conversion fails 
+		json_decode().  In the following cases it will output 
+		|msgpack-special-dict|:
+		1. Dictionary contains duplicate key.
+		2. Dictionary contains empty key.
+		3. String contains NUL byte.  Two special dictionaries: for 
+		   dictionary and for string will be emitted in case string 
+		   with NUL byte was a dictionary key.
+
+		Note: function treats its input as UTF-8 always regardless of 
+		'encoding' value.  This is needed because JSON source is 
+		supposed to be external (e.g. |readfile()|) and JSON standard 
+		allows only a few encodings, of which UTF-8 is recommended and 
+		the only one required to be supported.  Non-UTF-8 characters 
+		are an error.
+
+json_encode({expr})					*json_encode()*
+		Convert {expr} into a JSON string.  Accepts 
+		|msgpack-special-dict| as the input.  Converts from 'encoding' 
+		to UTF-8 when encoding strings.  Will not convert |Funcref|s, 
+		mappings with non-string keys (can be created as 
+		|msgpack-special-dict|), values with self-referencing 
+		containers, strings which contain non-UTF-8 characters, 
+		pseudo-UTF-8 strings which contain codepoints reserved for 
+		surrogate pairs (such strings are not valid UTF-8 strings).  
+		When converting 'encoding' is taken into account, if it is not 
+		"utf-8", then conversion is performed before encoding strings.  
+		Non-printable characters are converted into "\u1234" escapes 
+		or special escapes like "\t", other are dumped as-is.
+
+		Note: all characters above U+0079 are considered non-printable 
+		when 'encoding' is not UTF-8.  This function always outputs 
+		UTF-8 strings as required by the standard thus when 'encoding' 
+		is not unicode resulting string will look incorrect if 
+		"\u1234" notation is not used.
+
 keys({dict})						*keys()*
 		Return a |List| with all the keys of {dict}.  The |List| is in
 		arbitrary order.
@@ -4594,7 +4689,7 @@ match({expr}, {pat}[, {start}[, {count}]])			*match()*
 		done like 'magic' is set and 'cpoptions' is empty.
 
 					*matchadd()* *E798* *E799* *E801*
-matchadd({group}, {pattern}[, {priority}[, {id}]])
+matchadd({group}, {pattern}[, {priority}[, {id} [, {dict}]]])
 		Defines a pattern to be highlighted in the current window (a
 		"match").  It will be highlighted with {group}.  Returns an
 		identification number (ID), which can be used to delete the
@@ -4602,6 +4697,8 @@ matchadd({group}, {pattern}[, {priority}[, {id}]])
 		Matching is case sensitive and magic, unless case sensitivity
 		or magicness are explicitly overridden in {pattern}.  The
 		'magic', 'smartcase' and 'ignorecase' options are not used.
+		The "Conceal" value is special, it causes the match to be
+		concealed.
 
 		The optional {priority} argument assigns a priority to the
 		match.	A match with a high priority will have its
@@ -4808,7 +4905,7 @@ msgpackdump({list})				   {Nvim} *msgpackdump()*
 		(dictionary with zero items is represented by 0x80 byte in
 		messagepack).
 
-		Limitations:					*E951* *E952*
+		Limitations:				*E951* *E952* *E953*
 		1. |Funcref|s cannot be dumped.
 		2. Containers that reference themselves cannot be dumped.
 		3. Dictionary keys are always dumped as STR strings.
@@ -4843,9 +4940,13 @@ msgpackparse({list})				   {Nvim} *msgpackparse()*
 		   contains name of the key from |v:msgpack_types|):
 
 		Key	Value ~
-		nil	Zero, ignored when dumping.
-		boolean	One or zero. When dumping it is only checked that 
-			value is a |Number|.
+		nil	Zero, ignored when dumping.  This value cannot 
+			possibly appear in |msgpackparse()| output in Neovim 
+			versions which have |v:null|.
+		boolean	One or zero.  When dumping it is only checked that 
+			value is a |Number|.  This value cannot possibly 
+			appear in |msgpackparse()| output in Neovim versions 
+			which have |v:true| and |v:false|.
 		integer	|List| with four numbers: sign (-1 or 1), highest two 
 			bits, number with bits from 62nd to 31st, lowest 31 
 			bits. I.e. to get actual number one will need to use 
@@ -5176,7 +5277,7 @@ readfile({fname} [, {binary} [, {max}]])
 		separated with CR will result in a single long line (unless a
 		NL appears somewhere).
 		All NUL characters are replaced with a NL character.
-		When {binary/append} contains "b" binary mode is used:
+		When {binary} contains "b" binary mode is used:
 		- When the last line ends in a NL an extra empty list item is
 		  added.
 		- No CR characters are removed.
@@ -5700,7 +5801,7 @@ setbufvar({expr}, {varname}, {val})			*setbufvar()*
 			:call setbufvar("todo", "myvar", "foobar")
 <		This function is not available in the |sandbox|.
 
-setcharsearch()						*setcharsearch()*
+setcharsearch({dict})					*setcharsearch()*
 		Set the current character search information to {dict},
 		which contains one or more of the following entries:
 
@@ -6144,7 +6245,8 @@ split({expr} [, {pattern} [, {keepempty}]])			*split()*
 			:let words = split(getline('.'), '\W\+')
 <		To split a string in individual characters: >
 			:for c in split(mystring, '\zs')
-<		If you want to keep the separator you can also use '\zs': >
+<		If you want to keep the separator you can also use '\zs' at
+		the end of the pattern: >
 			:echo split('abc:def:ghi', ':\zs')
 <			['abc:', 'def:', 'ghi'] ~
 		Splitting a table where the first element can be empty: >
@@ -6199,6 +6301,24 @@ strchars({expr} [, {skipcc}])					*strchars()*
 		counted separately.
 		When {skipcc} set to 1, Composing characters are ignored.
 		Also see |strlen()|, |strdisplaywidth()| and |strwidth()|.
+
+		
+		{skipcc} is only available after 7.4.755.  For backward
+		compatibility, you can define a wrapper function: >
+		    if has("patch-7.4.755")
+		      function s:strchars(str, skipcc)
+			return strchars(a:str, a:skipcc)
+		      endfunction
+		    else
+		      function s:strchars(str, skipcc)
+			if a:skipcc
+			  return strlen(substitute(a:str, ".", "x", "g"))
+			else
+			  return strchars(a:str)
+			endif
+		      endfunction
+		    endif
+<
 
 strdisplaywidth({expr}[, {col}])			*strdisplaywidth()*
 		The result is a Number, which is the number of display cells
@@ -6396,6 +6516,9 @@ synID({lnum}, {col}, {trans})				*synID()*
 
 		{col} is 1 for the leftmost column, {lnum} is 1 for the first
 		line.  'synmaxcol' applies, in a longer line zero is returned.
+		Note that when the position is after the last character,
+		that's where the cursor can be in Insert mode, synID() returns
+		zero.
 
 		When {trans} is non-zero, transparent items are reduced to the
 		item that they reveal.	This is useful when wanting to know
@@ -6701,12 +6824,14 @@ trunc({expr})							*trunc()*
 
 type({expr})							*type()*
 		The result is a Number, depending on the type of {expr}:
-			Number:	    0
-			String:	    1
+			Number:     0
+			String:     1
 			Funcref:    2
-			List:	    3
+			List:       3
 			Dictionary: 4
-			Float:	    5
+			Float:      5
+			Boolean:    6 (|v:true| and |v:false|)
+			Null:       7 (|v:null|)
 		To avoid the magic numbers it should be used this way: >
 			:if type(myvar) == type(0)
 			:if type(myvar) == type("")
@@ -6714,6 +6839,10 @@ type({expr})							*type()*
 			:if type(myvar) == type([])
 			:if type(myvar) == type({})
 			:if type(myvar) == type(0.0)
+			:if type(myvar) == type(v:true)
+<		In place of checking for |v:null| type it is better to check 
+		for |v:null| directly as it is the only value of this type: >
+			:if myvar is v:null
 
 undofile({name})					*undofile()*
 		Return the name of the undo file that would be used for a file

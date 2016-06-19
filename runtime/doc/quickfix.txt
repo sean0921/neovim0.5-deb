@@ -1,4 +1,4 @@
-*quickfix.txt*  For Vim version 7.4.  Last change: 2014 Mar 27
+*quickfix.txt*  For Vim version 7.4.  Last change: 2015 Sep 08
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -302,16 +302,22 @@ EXECUTE A COMMAND IN ALL THE BUFFERS IN QUICKFIX OR LOCATION LIST:
 				etc.
 <			When the current file can't be |abandon|ed and the [!]
 			is not present, the command fails.
-			When an error is detected on one buffer, further
-			buffers will not be visited.
+			When an error is detected excecution stops.
 			The last buffer (or where an error occurred) becomes
 			the current buffer.
 			{cmd} can contain '|' to concatenate several commands.
+
 			Only valid entries in the quickfix list are used.
+			A range can be used to select entries, e.g.: >
+				:10,$cdo cmd
+<			To skip entries 1 to 9.
+
 			Note: While this command is executing, the Syntax
 			autocommand event is disabled by adding it to
 			'eventignore'.  This considerably speeds up editing
 			each buffer.
+			{not in Vi} {not available when compiled without the
+			|+listcmds| feature}
 			Also see |:bufdo|, |:tabdo|, |:argdo|, |:windo|,
 			|:ldo|, |:cfdo| and |:lfdo|.
 
@@ -323,20 +329,9 @@ EXECUTE A COMMAND IN ALL THE BUFFERS IN QUICKFIX OR LOCATION LIST:
 				:cnfile
 				:{cmd}
 				etc.
-<			When the current file can't be |abandon|ed and the [!]
-			is not present, the command fails.
-			When an error is detected on one buffer, further
-			buffers will not be visited.
-			The last buffer (or where an error occurred) becomes
-			the current buffer.
-			{cmd} can contain '|' to concatenate several commands.
-			Only valid entries in the quickfix list are used.
-			Note: While this command is executing, the Syntax
-			autocommand event is disabled by adding it to
-			'eventignore'.  This considerably speeds up editing
-			each buffer.
-			Also see |:bufdo|, |:tabdo|, |:argdo|, |:windo|,
-			|:cdo|, |:ldo| and |:lfdo|.
+<			Otherwise it works the same as `:cdo`.
+			{not in Vi} {not available when compiled without the
+			|+listcmds| feature}
 
 							*:ldo*
 :ld[o][!] {cmd}		Execute {cmd} in each valid entry in the location list
@@ -347,20 +342,10 @@ EXECUTE A COMMAND IN ALL THE BUFFERS IN QUICKFIX OR LOCATION LIST:
 				:lnext
 				:{cmd}
 				etc.
-<			When the current file can't be |abandon|ed and the [!]
-			is not present, the command fails.
-			When an error is detected on one buffer, further
-			buffers will not be visited.
-			The last buffer (or where an error occurred) becomes
-			the current buffer.
-			{cmd} can contain '|' to concatenate several commands.
-			Only valid entries in the location list are used.
-			Note: While this command is executing, the Syntax
-			autocommand event is disabled by adding it to
-			'eventignore'.  This considerably speeds up editing
-			each buffer.
-			Also see |:bufdo|, |:tabdo|, |:argdo|, |:windo|,
-			|:cdo|, |:cfdo| and |:lfdo|.
+<			Only valid entries in the location list are used.
+			Otherwise it works the same as `:cdo`.
+			{not in Vi} {not available when compiled without the
+			|+listcmds| feature}
 
 							*:lfdo*
 :lfdo[!] {cmd}		Execute {cmd} in each file in the location list for
@@ -371,20 +356,9 @@ EXECUTE A COMMAND IN ALL THE BUFFERS IN QUICKFIX OR LOCATION LIST:
 				:lnfile
 				:{cmd}
 				etc.
-<			When the current file can't be |abandon|ed and the [!]
-			is not present, the command fails.
-			When an error is detected on one buffer, further
-			buffers will not be visited.
-			The last buffer (or where an error occurred) becomes
-			the current buffer.
-			{cmd} can contain '|' to concatenate several commands.
-			Only valid entries in the location list are used.
-			Note: While this command is executing, the Syntax
-			autocommand event is disabled by adding it to
-			'eventignore'.  This considerably speeds up editing
-			each buffer.
-			Also see |:bufdo|, |:tabdo|, |:argdo|, |:windo|,
-			|:cdo|, |:ldo| and |:cfdo|.
+<			Otherwise it works the same as `:ldo`.
+			{not in Vi} {not available when compiled without the
+			|+listcmds| feature}
 
 =============================================================================
 2. The error window					*quickfix-window*

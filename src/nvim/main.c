@@ -238,8 +238,8 @@ int main(int argc, char **argv)
   check_and_set_isatty(&params);
 
   // Get the name with which Nvim was invoked, with and without path.
-  set_vim_var_string(VV_PROGPATH, (char_u *)argv[0], -1);
-  set_vim_var_string(VV_PROGNAME, path_tail((char_u *)argv[0]), -1);
+  set_vim_var_string(VV_PROGPATH, argv[0], -1);
+  set_vim_var_string(VV_PROGNAME, (char *) path_tail((char_u *) argv[0]), -1);
 
   event_init();
   /*
@@ -335,7 +335,7 @@ int main(int argc, char **argv)
   source_startup_scripts(&params);
 
   // If using the runtime (-u is not NONE), enable syntax & filetype plugins.
-  if (params.use_vimrc != NULL && strcmp(params.use_vimrc, "NONE") != 0) {
+  if (params.use_vimrc == NULL || strcmp(params.use_vimrc, "NONE") != 0) {
     // Does ":filetype plugin indent on".
     filetype_maybe_enable();
     // Sources syntax/syntax.vim, which calls `:filetype on`.
@@ -753,6 +753,7 @@ static void command_line_scan(mparm_T *parmp)
               putchar(b->data[i]);
             }
 
+            msgpack_packer_free(p);
             mch_exit(0);
           } else if (STRICMP(argv[0] + argv_idx, "headless") == 0) {
             parmp->headless = true;
@@ -1140,10 +1141,11 @@ scripterror:
   /* If there is a "+123" or "-c" command, set v:swapcommand to the first
    * one. */
   if (parmp->n_commands > 0) {
-    p = xmalloc(STRLEN(parmp->commands[0]) + 3);
-    sprintf((char *)p, ":%s\r", parmp->commands[0]);
-    set_vim_var_string(VV_SWAPCOMMAND, p, -1);
-    xfree(p);
+    const size_t swcmd_len = STRLEN(parmp->commands[0]) + 3;
+    char *const swcmd = xmalloc(swcmd_len);
+    snprintf(swcmd, swcmd_len, ":%s\r", parmp->commands[0]);
+    set_vim_var_string(VV_SWAPCOMMAND, swcmd, -1);
+    xfree(swcmd);
   }
   TIME_MSG("parsing arguments");
 }

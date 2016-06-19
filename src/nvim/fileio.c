@@ -45,7 +45,6 @@
 #include "nvim/search.h"
 #include "nvim/sha256.h"
 #include "nvim/strings.h"
-#include "nvim/tempfile.h"
 #include "nvim/ui.h"
 #include "nvim/types.h"
 #include "nvim/undo.h"
@@ -2139,9 +2138,10 @@ readfile_charconvert (
   else {
     close(*fdp);                /* close the input file, ignore errors */
     *fdp = -1;
-    if (eval_charconvert(fenc, enc_utf8 ? (char_u *)"utf-8" : p_enc,
-            fname, tmpname) == FAIL)
+    if (eval_charconvert((char *) fenc, enc_utf8 ? "utf-8" : (char *) p_enc,
+                         (char *) fname, (char *) tmpname) == FAIL) {
       errmsg = (char_u *)_("Conversion with 'charconvert' failed");
+    }
     if (errmsg == NULL && (*fdp = os_open((char *)tmpname, O_RDONLY, 0)) < 0) {
       errmsg = (char_u *)_("can't read output of 'charconvert'");
     }
@@ -3435,9 +3435,9 @@ restore_backup:
      * with 'charconvert' to (overwrite) the output file.
      */
     if (end != 0) {
-      if (eval_charconvert(enc_utf8 ? (char_u *)"utf-8" : p_enc, fenc,
-              wfname, fname) == FAIL) {
-        write_info.bw_conv_error = TRUE;
+      if (eval_charconvert(enc_utf8 ? "utf-8" : (char *) p_enc, (char *) fenc,
+                           (char *) wfname, (char *) fname) == FAIL) {
+        write_info.bw_conv_error = true;
         end = 0;
       }
     }
@@ -4740,7 +4740,6 @@ buf_check_timestamp (
 {
   int retval = 0;
   char_u      *path;
-  char_u      *tbuf;
   char        *mesg = NULL;
   char        *mesg2 = "";
   int helpmesg = FALSE;
@@ -4810,19 +4809,17 @@ buf_check_timestamp (
       else
         reason = "time";
 
-      /*
-       * Only give the warning if there are no FileChangedShell
-       * autocommands.
-       * Avoid being called recursively by setting "busy".
-       */
-      busy = TRUE;
-      set_vim_var_string(VV_FCS_REASON, (char_u *)reason, -1);
-      set_vim_var_string(VV_FCS_CHOICE, (char_u *)"", -1);
-      ++allbuf_lock;
+      // Only give the warning if there are no FileChangedShell
+      // autocommands.
+      // Avoid being called recursively by setting "busy".
+      busy = true;
+      set_vim_var_string(VV_FCS_REASON, reason, -1);
+      set_vim_var_string(VV_FCS_CHOICE, "", -1);
+      allbuf_lock++;
       n = apply_autocmds(EVENT_FILECHANGEDSHELL,
-          buf->b_fname, buf->b_fname, FALSE, buf);
-      --allbuf_lock;
-      busy = FALSE;
+                         buf->b_fname, buf->b_fname, false, buf);
+      allbuf_lock--;
+      busy = false;
       if (n) {
         if (!buf_valid(buf))
           EMSG(_("E246: FileChangedShell autocommand deleted buffer"));
@@ -4876,35 +4873,39 @@ buf_check_timestamp (
 
   if (mesg != NULL) {
     path = home_replace_save(buf, buf->b_fname);
-    if (!helpmesg)
+    if (!helpmesg) {
       mesg2 = "";
-    tbuf = xmalloc(STRLEN(path) + STRLEN(mesg) + STRLEN(mesg2) + 2);
-    sprintf((char *)tbuf, mesg, path);
-    /* Set warningmsg here, before the unimportant and output-specific
-     * mesg2 has been appended. */
+    }
+    const size_t tbuf_len = STRLEN(path) + STRLEN(mesg) + STRLEN(mesg2) + 2;
+    char *const tbuf = xmalloc(tbuf_len);
+    snprintf(tbuf, tbuf_len, mesg, path);
+    // Set warningmsg here, before the unimportant and output-specific
+    // mesg2 has been appended.
     set_vim_var_string(VV_WARNINGMSG, tbuf, -1);
     if (can_reload) {
       if (*mesg2 != NUL) {
-        STRCAT(tbuf, "\n");
-        STRCAT(tbuf, mesg2);
+        strncat(tbuf, "\n", tbuf_len);
+        strncat(tbuf, mesg2, tbuf_len);
       }
-      if (do_dialog(VIM_WARNING, (char_u *)_("Warning"), tbuf,
-                    (char_u *)_("&OK\n&Load File"), 1, NULL, TRUE) == 2)
-        reload = TRUE;
+      if (do_dialog(VIM_WARNING, (char_u *) _("Warning"), (char_u *) tbuf,
+                    (char_u *) _("&OK\n&Load File"), 1, NULL, true) == 2) {
+        reload = true;
+      }
     } else if (State > NORMAL_BUSY || (State & CMDLINE) || already_warned) {
       if (*mesg2 != NUL) {
-        STRCAT(tbuf, "; ");
-        STRCAT(tbuf, mesg2);
+        strncat(tbuf, "; ", tbuf_len);
+        strncat(tbuf, mesg2, tbuf_len);
       }
       EMSG(tbuf);
       retval = 2;
     } else {
       if (!autocmd_busy) {
         msg_start();
-        msg_puts_attr(tbuf, hl_attr(HLF_E) + MSG_HIST);
-        if (*mesg2 != NUL)
+        msg_puts_attr((char_u *) tbuf, hl_attr(HLF_E) + MSG_HIST);
+        if (*mesg2 != NUL) {
           msg_puts_attr((char_u *)mesg2,
                         hl_attr(HLF_W) + MSG_HIST);
+        }
         msg_clr_eos();
         (void)msg_end();
         if (emsg_silent == 0) {
@@ -5113,6 +5114,147 @@ void forward_slash(char_u *fname)
       *p = '/';
 }
 #endif
+
+/// Name of Vim's own temp dir. Ends in a slash.
+static char_u *vim_tempdir = NULL;
+
+/// Create a directory for private use by this instance of Neovim.
+/// This is done once, and the same directory is used for all temp files.
+/// This method avoids security problems because of symlink attacks et al.
+/// It's also a bit faster, because we only need to check for an existing
+/// file when creating the directory and not for each temp file.
+static void vim_maketempdir(void)
+{
+  static const char *temp_dirs[] = TEMP_DIR_NAMES;
+  // Try the entries in `TEMP_DIR_NAMES` to create the temp directory.
+  char_u template[TEMP_FILE_PATH_MAXLEN];
+  char_u path[TEMP_FILE_PATH_MAXLEN];
+  for (size_t i = 0; i < ARRAY_SIZE(temp_dirs); i++) {
+    // Expand environment variables, leave room for "/nvimXXXXXX/999999999"
+    expand_env((char_u *)temp_dirs[i], template, TEMP_FILE_PATH_MAXLEN - 22);
+    if (!os_isdir(template)) {  // directory doesn't exist
+      continue;
+    }
+
+    add_pathsep((char *)template);
+    // Concatenate with temporary directory name pattern
+    STRCAT(template, "nvimXXXXXX");
+
+    if (os_mkdtemp((const char *)template, (char *)path) != 0) {
+      continue;
+    }
+
+    if (vim_settempdir((char *)path)) {
+      // Successfully created and set temporary directory so stop trying.
+      break;
+    } else {
+      // Couldn't set `vim_tempdir` to `path` so remove created directory.
+      os_rmdir((char *)path);
+    }
+  }
+}
+
+/// Delete "name" and everything in it, recursively.
+/// @param name The path which should be deleted.
+/// @return 0 for success, -1 if some file was not deleted.
+int delete_recursive(char_u *name)
+{
+  int result = 0;
+
+  if (os_isrealdir(name)) {
+    snprintf((char *)NameBuff, MAXPATHL, "%s/*", name);  // NOLINT
+
+    char_u **files;
+    int file_count;
+    char_u *exp = vim_strsave(NameBuff);
+    if (gen_expand_wildcards(1, &exp, &file_count, &files,
+                             EW_DIR | EW_FILE | EW_SILENT | EW_ALLLINKS
+                             | EW_DODOT | EW_EMPTYOK) == OK) {
+      for (int i = 0; i < file_count; i++) {
+        if (delete_recursive(files[i]) != 0) {
+          result = -1;
+        }
+      }
+      FreeWild(file_count, files);
+    } else {
+      result = -1;
+    }
+
+    xfree(exp);
+    os_rmdir((char *)name);
+  } else {
+    result = os_remove((char *)name) == 0 ? 0 : -1;
+  }
+
+  return result;
+}
+
+/// Delete the temp directory and all files it contains.
+void vim_deltempdir(void)
+{
+  if (vim_tempdir != NULL) {
+    // remove the trailing path separator
+    path_tail(vim_tempdir)[-1] = NUL;
+    delete_recursive(vim_tempdir);
+    xfree(vim_tempdir);
+    vim_tempdir = NULL;
+  }
+}
+
+/// Get the name of temp directory. This directory would be created on the first
+/// call to this function.
+char_u *vim_gettempdir(void)
+{
+  if (vim_tempdir == NULL) {
+    vim_maketempdir();
+  }
+
+  return vim_tempdir;
+}
+
+/// Set Neovim own temporary directory name to `tempdir`. This directory should
+/// be already created. Expand this name to a full path and put it in
+/// `vim_tempdir`. This avoids that using `:cd` would confuse us.
+///
+/// @param tempdir must be no longer than MAXPATHL.
+///
+/// @return false if we run out of memory.
+static bool vim_settempdir(char *tempdir)
+{
+  char *buf = verbose_try_malloc(MAXPATHL + 2);
+  if (!buf) {
+    return false;
+  }
+  vim_FullName(tempdir, buf, MAXPATHL, false);
+  add_pathsep(buf);
+  vim_tempdir = (char_u *)xstrdup(buf);
+  xfree(buf);
+  return true;
+}
+
+/// Return a unique name that can be used for a temp file.
+///
+/// @note The temp file is NOT created.
+///
+/// @return pointer to the temp file name or NULL if Neovim can't create
+///         temporary directory for its own temporary files.
+char_u *vim_tempname(void)
+{
+  // Temp filename counter.
+  static uint32_t temp_count;
+
+  char_u *tempdir = vim_gettempdir();
+  if (!tempdir) {
+    return NULL;
+  }
+
+  // There is no need to check if the file exists, because we own the directory
+  // and nobody else creates a file in it.
+  char_u template[TEMP_FILE_PATH_MAXLEN];
+  snprintf((char *)template, TEMP_FILE_PATH_MAXLEN,
+           "%s%" PRIu32, tempdir, temp_count++);
+  return vim_strsave(template);
+}
 
 
 /*

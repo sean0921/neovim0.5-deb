@@ -65,7 +65,7 @@ get_vim_sources() {
 
   if [[ ! -d ${VIM_SOURCE_DIR} ]]; then
     echo "Cloning Vim sources into '${VIM_SOURCE_DIR}'."
-    git clone --depth=1000 https://github.com/vim/vim.git "${VIM_SOURCE_DIR}"
+    git clone https://github.com/vim/vim.git "${VIM_SOURCE_DIR}"
     cd "${VIM_SOURCE_DIR}"
   else
     if [[ ! -d "${VIM_SOURCE_DIR}/.git" ]]; then
@@ -84,6 +84,11 @@ get_vim_sources() {
 commit_message() {
   printf 'vim-patch:%s\n\n%s\n\n%s' "${vim_version}" \
     "${vim_message}" "${vim_commit_url}"
+}
+
+find_git_remote() {
+  git remote -v \
+    | awk '$2 ~ /github.com[:/]neovim\/neovim/ && $3 == "(fetch)" {print $1}'
 }
 
 assign_commit_details() {
@@ -132,21 +137,23 @@ get_vim_patch() {
   local neovim_branch="${BRANCH_PREFIX}${vim_version}"
 
   cd "${NEOVIM_SOURCE_DIR}"
+  local git_remote=$(find_git_remote)
   local checked_out_branch="$(git rev-parse --abbrev-ref HEAD)"
+
   if [[ "${checked_out_branch}" == ${BRANCH_PREFIX}* ]]; then
     echo "✔ Current branch '${checked_out_branch}' seems to be a vim-patch"
     echo "  branch; not creating a new branch."
   else
     echo
-    echo "Fetching 'upstream/master'."
-    output="$(git fetch upstream master 2>&1)" &&
+    echo "Fetching '${git_remote}/master'."
+    output="$(git fetch "${git_remote}" master 2>&1)" &&
       echo "✔ ${output}" ||
       (echo "✘ ${output}"; false)
 
     echo
-    echo "Creating new branch '${neovim_branch}' based on 'upstream/master'."
+    echo "Creating new branch '${neovim_branch}' based on '${git_remote}/master'."
     cd "${NEOVIM_SOURCE_DIR}"
-    output="$(git checkout -b "${neovim_branch}" upstream/master 2>&1)" &&
+    output="$(git checkout -b "${neovim_branch}" "${git_remote}/master" 2>&1)" &&
       echo "✔ ${output}" ||
       (echo "✘ ${output}"; false)
   fi
@@ -195,8 +202,9 @@ submit_pr() {
     exit 1
   fi
 
-  local pr_body="$(git log --reverse --format='#### %s%n%n%b%n' upstream/master..HEAD)"
-  local patches=("$(git log --reverse --format='%s' upstream/master..HEAD)")
+  local git_remote=$(find_git_remote)
+  local pr_body="$(git log --reverse --format='#### %s%n%n%b%n' ${git_remote}/master..HEAD)"
+  local patches=("$(git log --reverse --format='%s' ${git_remote}/master..HEAD)")
   patches=(${patches[@]//vim-patch:}) # Remove 'vim-patch:' prefix for each item in array.
   local pr_title="${patches[@]}" # Create space-separated string from array.
   pr_title="${pr_title// /,}" # Replace spaces with commas.
@@ -243,7 +251,7 @@ list_vim_patches() {
       local patch_number="${vim_tag:5}" # Remove prefix like "v7.4."
       # Tagged Vim patch, check version.c:
       is_missing="$(sed -n '/static int included_patches/,/}/p' "${NEOVIM_SOURCE_DIR}/src/nvim/version.c" |
-        grep -x -e "[[:space:]]*//[[:space:]]${patch_number} NA" -e "[[:space:]]*${patch_number}," >/dev/null && echo "false" || echo "true")"
+        grep -x -e "[[:space:]]*//[[:space:]]${patch_number} NA.*" -e "[[:space:]]*${patch_number}," >/dev/null && echo "false" || echo "true")"
       vim_commit="${vim_tag#v}"
     else
       # Untagged Vim patch (e.g. runtime updates), check the Neovim git log:
