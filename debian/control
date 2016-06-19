@@ -19,7 +19,7 @@ Build-Depends: autoconf,
                libvterm-dev,
                lua-bitop,
                lua-lpeg,
-               lua-messagepack,
+               lua-mpack,
                ninja-build,
                pkg-config
 Standards-Version: 3.9.8
