@@ -5,6 +5,13 @@ set -e
 case "$1" in
   remove|deconfigure)
     update-alternatives --remove editor /usr/bin/nvim
+    update-alternatives --remove ex /usr/bin/ex.nvim
+    update-alternatives --remove rvim /usr/bin/rvim.nvim
+    update-alternatives --remove rview /usr/bin/rview.nvim
+    update-alternatives --remove vi /usr/bin/nvim
+    update-alternatives --remove vim /usr/bin/nvim
+    update-alternatives --remove view /usr/bin/view.nvim
+    update-alternatives --remove vimdiff /usr/bin/vimdiff.nvim
     ;;
 
   upgrade|failed-upgrade)

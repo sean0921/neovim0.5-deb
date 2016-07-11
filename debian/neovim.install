@@ -1,1 +1,2 @@
 debian/tmp/usr/bin/nvim
+debian/scripts/* usr/bin/
