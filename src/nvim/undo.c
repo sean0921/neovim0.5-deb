@@ -712,7 +712,7 @@ char *u_get_undo_file_name(const char *const buf_ffname, const bool reading)
 
     // When reading check if the file exists.
     if (undo_file_name != NULL
-        && (!reading || os_file_exists((char_u *)undo_file_name))) {
+        && (!reading || os_path_exists((char_u *)undo_file_name))) {
       break;
     }
     xfree(undo_file_name);
@@ -1094,7 +1094,7 @@ void u_write_undo(const char *const name, const bool forceit, buf_T *const buf,
 
   /* If the undo file already exists, verify that it actually is an undo
    * file, and delete it. */
-  if (os_file_exists((char_u *)file_name)) {
+  if (os_path_exists((char_u *)file_name)) {
     if (name == NULL || !forceit) {
       /* Check we can read it and it's an undo file. */
       fd = os_open(file_name, O_RDONLY, 0);
@@ -2876,9 +2876,7 @@ static char_u *u_save_line(linenr_T lnum)
 /// @return true if the buffer has changed
 bool bufIsChanged(buf_T *buf)
 {
-  return
-    !bt_dontwrite(buf) &&
-    (buf->b_changed || file_ff_differs(buf, true));
+  return !bt_dontwrite(buf) && (buf->b_changed || file_ff_differs(buf, true));
 }
 
 /// Check if the 'modified' flag is set, or 'ff' has changed (only need to
@@ -2888,9 +2886,8 @@ bool bufIsChanged(buf_T *buf)
 /// @return true if the current buffer has changed
 bool curbufIsChanged(void)
 {
-  return
-    !bt_dontwrite(curbuf) &&
-    (curbuf->b_changed || file_ff_differs(curbuf, true));
+  return (!bt_dontwrite(curbuf)
+          && (curbuf->b_changed || file_ff_differs(curbuf, true)));
 }
 
 /*

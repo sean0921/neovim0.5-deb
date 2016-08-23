@@ -467,22 +467,23 @@ int emsg(char_u *s)
 {
   int attr;
   char_u      *p;
-  int ignore = FALSE;
+  int ignore = false;
   int severe;
 
-  /* Skip this if not giving error messages at the moment. */
-  if (emsg_not_now())
-    return TRUE;
+  // Skip this if not giving error messages at the moment.
+  if (emsg_not_now()) {
+    return true;
+  }
 
-  called_emsg = TRUE;
-  ex_exitval = 1;
+  called_emsg = true;
+  if (emsg_silent == 0) {
+    ex_exitval = 1;
+  }
 
-  /*
-   * If "emsg_severe" is TRUE: When an error exception is to be thrown,
-   * prefer this message over previous messages for the same command.
-   */
+  // If "emsg_severe" is TRUE: When an error exception is to be thrown,
+  // prefer this message over previous messages for the same command.
   severe = emsg_severe;
-  emsg_severe = FALSE;
+  emsg_severe = false;
 
   if (!emsg_off || vim_strchr(p_debug, 't') != NULL) {
     /*
@@ -492,10 +493,11 @@ int emsg(char_u *s)
      * when the message should be ignored completely (used for the
      * interrupt message).
      */
-    if (cause_errthrow(s, severe, &ignore) == TRUE) {
-      if (!ignore)
-        did_emsg = TRUE;
-      return TRUE;
+    if (cause_errthrow(s, severe, &ignore) == true) {
+      if (!ignore) {
+        did_emsg = true;
+      }
+      return true;
     }
 
     // set "v:errmsg", also when using ":silent! cmd"
@@ -510,41 +512,43 @@ int emsg(char_u *s)
       p = get_emsg_source();
       if (p != NULL) {
         STRCAT(p, "\n");
-        redir_write(p, -1);
+        redir_write(p, STRLEN(p));
         xfree(p);
       }
       p = get_emsg_lnum();
       if (p != NULL) {
         STRCAT(p, "\n");
-        redir_write(p, -1);
+        redir_write(p, STRLEN(p));
         xfree(p);
       }
-      redir_write(s, -1);
-      return TRUE;
+      redir_write(s, STRLEN(s));
+      return true;
     }
 
-    /* Reset msg_silent, an error causes messages to be switched back on. */
+    // Reset msg_silent, an error causes messages to be switched back on.
     msg_silent = 0;
     cmd_silent = FALSE;
 
-    if (global_busy)                    /* break :global command */
-      ++global_busy;
+    if (global_busy) {        // break :global command
+      global_busy++;
+    }
 
-    if (p_eb)
-      beep_flush();                     /* also includes flush_buffers() */
-    else
-      flush_buffers(FALSE);             /* flush internal buffers */
-    did_emsg = TRUE;                    /* flag for DoOneCmd() */
+    if (p_eb) {
+      beep_flush();           // also includes flush_buffers()
+    } else {
+      flush_buffers(false);   // flush internal buffers
+    }
+    did_emsg = true;          // flag for DoOneCmd()
   }
 
-  emsg_on_display = TRUE;       /* remember there is an error message */
-  ++msg_scroll;                 /* don't overwrite a previous message */
-  attr = hl_attr(HLF_E);        /* set highlight mode for error messages */
-  if (msg_scrolled != 0)
-    need_wait_return = TRUE;        /* needed in case emsg() is called after
-                                     * wait_return has reset need_wait_return
-                                     * and a redraw is expected because
-                                     * msg_scrolled is non-zero */
+  emsg_on_display = true;     // remember there is an error message
+  msg_scroll++;               // don't overwrite a previous message
+  attr = hl_attr(HLF_E);      // set highlight mode for error messages
+  if (msg_scrolled != 0) {
+    need_wait_return = true;  // needed in case emsg() is called after
+  }                           // wait_return has reset need_wait_return
+                              // and a redraw is expected because
+                              // msg_scrolled is non-zero
 
   /*
    * Display name and line number for the source of the error.
@@ -698,15 +702,8 @@ int delete_first_msg(void)
 void ex_messages(exarg_T *eap)
 {
   struct msg_hist *p;
-  const char      *s;
 
   msg_hist_off = TRUE;
-
-  s = os_getenv("LANG");
-  if (s)
-    msg_attr((char_u *)
-        _("Messages maintainer: Bram Moolenaar <Bram@vim.org>"),
-        hl_attr(HLF_T));
 
   for (p = first_msg_hist; p != NULL && !got_int; p = p->next)
     if (p->msg != NULL)
@@ -784,11 +781,13 @@ void wait_return(int redraw)
 
     State = HITRETURN;
     setmouse();
-    /* Avoid the sequence that the user types ":" at the hit-return prompt
-     * to start an Ex command, but the file-changed dialog gets in the
-     * way. */
-    if (need_check_timestamps)
-      check_timestamps(FALSE);
+    cmdline_row = msg_row;
+    // Avoid the sequence that the user types ":" at the hit-return prompt
+    // to start an Ex command, but the file-changed dialog gets in the
+    // way.
+    if (need_check_timestamps) {
+      check_timestamps(false);
+    }
 
     hit_return_msg();
 
@@ -1507,51 +1506,44 @@ void msg_puts_attr(char_u *s, int attr)
   msg_puts_attr_len(s, -1, attr);
 }
 
-/*
- * Like msg_puts_attr(), but with a maximum length "maxlen" (in bytes).
- * When "maxlen" is -1 there is no maximum length.
- * When "maxlen" is >= 0 the message is not put in the history.
- */
+/// Like msg_puts_attr(), but with a maximum length "maxlen" (in bytes).
+/// When "maxlen" is -1 there is no maximum length.
+/// When "maxlen" is >= 0 the message is not put in the history.
 static void msg_puts_attr_len(char_u *str, int maxlen, int attr)
 {
-  /*
-   * If redirection is on, also write to the redirection file.
-   */
+  // If redirection is on, also write to the redirection file.
   redir_write(str, maxlen);
 
-  /*
-   * Don't print anything when using ":silent cmd".
-   */
-  if (msg_silent != 0)
+  // Don't print anything when using ":silent cmd".
+  if (msg_silent != 0) {
     return;
+  }
 
-  /* if MSG_HIST flag set, add message to history */
+  // if MSG_HIST flag set, add message to history
   if ((attr & MSG_HIST) && maxlen < 0) {
     add_msg_hist(str, -1, attr);
     attr &= ~MSG_HIST;
   }
 
-  /*
-   * When writing something to the screen after it has scrolled, requires a
-   * wait-return prompt later.  Needed when scrolling, resetting
-   * need_wait_return after some prompt, and then outputting something
-   * without scrolling
-   */
-  if (msg_scrolled != 0 && !msg_scrolled_ign)
-    need_wait_return = TRUE;
-  msg_didany = TRUE;            /* remember that something was outputted */
+  // When writing something to the screen after it has scrolled, requires a
+  // wait-return prompt later.  Needed when scrolling, resetting
+  // need_wait_return after some prompt, and then outputting something
+  // without scrolling
+  if (msg_scrolled != 0 && !msg_scrolled_ign) {
+    need_wait_return = true;
+  }
+  msg_didany = true;  // remember that something was outputted
 
-  /*
-   * If there is no valid screen, use fprintf so we can see error messages.
-   * If termcap is not active, we may be writing in an alternate console
-   * window, cursor positioning may not work correctly (window size may be
-   * different, e.g. for Win32 console) or we just don't know where the
-   * cursor is.
-   */
-  if (msg_use_printf())
-    msg_puts_printf(str, maxlen);
-  else
-    msg_puts_display(str, maxlen, attr, FALSE);
+  // If there is no valid screen, use fprintf so we can see error messages.
+  // If termcap is not active, we may be writing in an alternate console
+  // window, cursor positioning may not work correctly (window size may be
+  // different, e.g. for Win32 console) or we just don't know where the
+  // cursor is.
+  if (msg_use_printf()) {
+    msg_puts_printf((char *)str, maxlen);
+  } else {
+    msg_puts_display(str, maxlen, attr, false);
+  }
 }
 
 /*
@@ -1570,39 +1562,31 @@ static void msg_puts_display(char_u *str, int maxlen, int attr, int recurse)
   int wrap;
   int did_last_char;
 
-  did_wait_return = FALSE;
+  did_wait_return = false;
   while ((maxlen < 0 || (int)(s - str) < maxlen) && *s != NUL) {
-    /*
-     * We are at the end of the screen line when:
-     * - When outputting a newline.
-     * - When outputting a character in the last column.
-     */
-    if (!recurse && msg_row >= Rows - 1 && (*s == '\n' || (
-                                              cmdmsg_rl
-                                              ? (
-                                                msg_col <= 1
-                                                || (*s == TAB && msg_col <= 7)
-                                                || (has_mbyte &&
-                                                    (*mb_ptr2cells)(s) > 1 &&
-                                                    msg_col <= 2)
-                                                )
-                                              :
-                                              (msg_col + t_col >= Columns - 1
-                                               || (*s == TAB && msg_col +
-                                                   t_col >= ((Columns - 1) & ~7))
-                                               || (has_mbyte &&
-                                                   (*mb_ptr2cells)(s) > 1
-                                                   && msg_col + t_col >=
-                                                   Columns - 2)
-                                              )))) {
-      /*
-       * The screen is scrolled up when at the last row (some terminals
-       * scroll automatically, some don't.  To avoid problems we scroll
-       * ourselves).
-       */
-      if (t_col > 0)
-        /* output postponed text */
+    // We are at the end of the screen line when:
+    // - When outputting a newline.
+    // - When outputting a character in the last column.
+    if (!recurse && msg_row >= Rows - 1
+        && (*s == '\n' || (cmdmsg_rl
+                           ? (msg_col <= 1
+                              || (*s == TAB && msg_col <= 7)
+                              || (has_mbyte
+                                  && (*mb_ptr2cells)(s) > 1
+                                  && msg_col <= 2))
+                           : (msg_col + t_col >= Columns - 1
+                              || (*s == TAB
+                                  && msg_col + t_col >= ((Columns - 1) & ~7))
+                              || (has_mbyte
+                                  && (*mb_ptr2cells)(s) > 1
+                                  && msg_col + t_col >= Columns - 2))))) {
+      // The screen is scrolled up when at the last row (some terminals
+      // scroll automatically, some don't.  To avoid problems we scroll
+      // ourselves).
+      if (t_col > 0) {
+        // output postponed text
         t_puts(&t_col, t_s, s, attr);
+      }
 
       /* When no more prompt and no more room, truncate here */
       if (msg_no_more && lines_left == 0)
@@ -1709,18 +1693,15 @@ static void msg_puts_display(char_u *str, int maxlen, int attr, int recurse)
         cw = 1;
         l = 1;
       }
-      /* When drawing from right to left or when a double-wide character
-       * doesn't fit, draw a single character here.  Otherwise collect
-       * characters and draw them all at once later. */
-      if (
-        cmdmsg_rl
-        ||
-        (cw > 1 && msg_col + t_col >= Columns - 1)
-        ) {
-        if (l > 1)
+      // When drawing from right to left or when a double-wide character
+      // doesn't fit, draw a single character here.  Otherwise collect
+      // characters and draw them all at once later.
+      if (cmdmsg_rl || (cw > 1 && msg_col + t_col >= Columns - 1)) {
+        if (l > 1) {
           s = screen_puts_mbyte(s, l, attr) - 1;
-        else
+        } else {
           msg_screen_putchar(*s, attr);
+        }
       } else {
         /* postpone this character until later */
         if (t_col == 0)
@@ -1936,46 +1917,46 @@ int msg_use_printf(void)
   return !embedded_mode && !ui_active();
 }
 
-/*
- * Print a message when there is no valid screen.
- */
-static void msg_puts_printf(char_u *str, int maxlen)
+/// Print a message when there is no valid screen.
+static void msg_puts_printf(char *str, int maxlen)
 {
-  char_u      *s = str;
-  char_u buf[4];
-  char_u      *p;
+  char *s = str;
+  char buf[4];
+  char *p;
 
   while (*s != NUL && (maxlen < 0 || (int)(s - str) < maxlen)) {
     if (!(silent_mode && p_verbose == 0)) {
-      /* NL --> CR NL translation (for Unix, not for "--version") */
-      /* NL --> CR translation (for Mac) */
+      // NL --> CR NL translation (for Unix, not for "--version")
       p = &buf[0];
-      if (*s == '\n' && !info_message)
+      if (*s == '\n' && !info_message) {
         *p++ = '\r';
+      }
       *p++ = *s;
       *p = '\0';
-      if (info_message)         /* informative message, not an error */
-        mch_msg((char *)buf);
-      else
-        mch_errmsg((char *)buf);
+      if (info_message) {
+        mch_msg(buf);
+      } else {
+        mch_errmsg(buf);
+      }
     }
 
-    /* primitive way to compute the current column */
+    // primitive way to compute the current column
     if (cmdmsg_rl) {
-      if (*s == '\r' || *s == '\n')
+      if (*s == '\r' || *s == '\n') {
         msg_col = Columns - 1;
-      else
-        --msg_col;
+      } else {
+        msg_col--;
+      }
     } else {
-      if (*s == '\r' || *s == '\n')
+      if (*s == '\r' || *s == '\n') {
         msg_col = 0;
-      else
-        ++msg_col;
+      } else {
+        msg_col++;
+      }
     }
-    ++s;
+    s++;
   }
-  msg_didout = TRUE;        /* assume that line is not empty */
-
+  msg_didout = true;  // assume that line is not empty
 }
 
 /*
@@ -1987,6 +1968,7 @@ static void msg_puts_printf(char_u *str, int maxlen)
  */
 static int do_more_prompt(int typed_char)
 {
+  static bool entered = false;
   int used_typed_char = typed_char;
   int oldState = State;
   int c;
@@ -1995,6 +1977,13 @@ static int do_more_prompt(int typed_char)
   msgchunk_T  *mp_last = NULL;
   msgchunk_T  *mp;
   int i;
+
+  // We get called recursively when a timer callback outputs a message. In
+  // that case don't show another prompt. Also when at the hit-Enter prompt.
+  if (entered || State == HITRETURN) {
+      return false;
+  }
+  entered = true;
 
   if (typed_char == 'G') {
     /* "g<": Find first line on the last page. */
@@ -2170,9 +2159,11 @@ static int do_more_prompt(int typed_char)
   if (quit_more) {
     msg_row = Rows - 1;
     msg_col = 0;
-  } else if (cmdmsg_rl)
+  } else if (cmdmsg_rl) {
     msg_col = Columns - 1;
+  }
 
+  entered = false;
   return retval;
 }
 
@@ -2394,6 +2385,19 @@ static void redir_write(char_u *str, int maxlen)
   char_u      *s = str;
   static int cur_col = 0;
 
+  if (maxlen == 0) {
+    return;
+  }
+
+  // Append output for execute().
+  if (capture_ga) {
+    size_t len = 0;
+    while (str[len] && (maxlen < 0 ? 1 : (len < (size_t)maxlen))) {
+      len++;
+    }
+    ga_concat_len(capture_ga, (const char *)str, len);
+  }
+
   /* Don't do anything for displaying prompts and the like. */
   if (redir_off)
     return;
@@ -2406,22 +2410,27 @@ static void redir_write(char_u *str, int maxlen)
     /* If the string doesn't start with CR or NL, go to msg_col */
     if (*s != '\n' && *s != '\r') {
       while (cur_col < msg_col) {
-        if (redir_reg)
-          write_reg_contents(redir_reg, (char_u *)" ", -1, TRUE);
-        else if (redir_vname)
+        if (redir_reg) {
+          write_reg_contents(redir_reg, (char_u *)" ", 1, true);
+        } else if (redir_vname) {
           var_redir_str((char_u *)" ", -1);
-        else if (redir_fd != NULL)
+        } else if (redir_fd != NULL) {
           fputs(" ", redir_fd);
-        if (verbose_fd != NULL)
+        }
+        if (verbose_fd != NULL) {
           fputs(" ", verbose_fd);
-        ++cur_col;
+        }
+        cur_col++;
       }
     }
 
-    if (redir_reg)
-      write_reg_contents(redir_reg, s, maxlen, TRUE);
-    if (redir_vname)
+    if (redir_reg) {
+      size_t len = maxlen == -1 ? STRLEN(s) : (size_t)maxlen;
+      write_reg_contents(redir_reg, s, len, true);
+    }
+    if (redir_vname) {
       var_redir_str(s, maxlen);
+    }
 
     /* Write and adjust the current column. */
     while (*s != NUL && (maxlen < 0 || (int)(s - str) < maxlen)) {
@@ -3382,8 +3391,8 @@ int vim_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap,
           // leave negative numbers for sprintf to handle, to
           // avoid handling tricky cases like (short int)-32768
         } else if (alternate_form) {
-          if (arg_sign != 0 && (fmt_spec == 'x' || fmt_spec == 'X' ||
-                                fmt_spec == 'b' || fmt_spec == 'B')) {
+          if (arg_sign != 0 && (fmt_spec == 'x' || fmt_spec == 'X'
+                                || fmt_spec == 'b' || fmt_spec == 'B')) {
             tmp[str_arg_l++] = '0';
             tmp[str_arg_l++] = fmt_spec;
           }

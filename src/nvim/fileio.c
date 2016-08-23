@@ -282,11 +282,9 @@ readfile (
   int error = FALSE;                    /* errors encountered */
   int ff_error = EOL_UNKNOWN;           /* file format with errors */
   long linerest = 0;                    /* remaining chars in line */
-#ifdef UNIX
   int perm = 0;
+#ifdef UNIX
   int swap_mode = -1;                   /* protection bits for swap file */
-#else
-  int perm;
 #endif
   int fileformat = 0;                   /* end-of-line format */
   int keep_fileformat = FALSE;
@@ -418,23 +416,21 @@ readfile (
     }
   }
 
-  if (!read_stdin && !read_buffer) {
-#ifdef UNIX
-    /*
-     * On Unix it is possible to read a directory, so we have to
-     * check for it before os_open().
-     */
+  if (!read_buffer && !read_stdin) {
     perm = os_getperm(fname);
-    if (perm >= 0 && !S_ISREG(perm)                 /* not a regular file ... */
+#ifdef UNIX
+    // On Unix it is possible to read a directory, so we have to
+    // check for it before os_open().
+    if (perm >= 0 && !S_ISREG(perm)                 // not a regular file ...
 # ifdef S_ISFIFO
-        && !S_ISFIFO(perm)                          /* ... or fifo */
+        && !S_ISFIFO(perm)                          // ... or fifo
 # endif
 # ifdef S_ISSOCK
-        && !S_ISSOCK(perm)                          /* ... or socket */
+        && !S_ISSOCK(perm)                          // ... or socket
 # endif
 # ifdef OPEN_CHR_FILES
         && !(S_ISCHR(perm) && is_dev_fd_file(fname))
-        /* ... or a character special file named /dev/fd/<n> */
+        // ... or a character special file named /dev/fd/<n>
 # endif
         ) {
       if (S_ISDIR(perm))
@@ -493,44 +489,31 @@ readfile (
     curbuf->b_flags &= ~(BF_NEW | BF_NEW_W);
   }
 
-  /*
-   * Check readonly by trying to open the file for writing.
-   * If this fails, we know that the file is readonly.
-   */
-  file_readonly = FALSE;
+  // Check readonly.
+  file_readonly = false;
   if (!read_buffer && !read_stdin) {
-    if (!newfile || readonlymode) {
-      file_readonly = TRUE;
-    } else if ((fd = os_open((char *)fname, O_RDWR, 0)) < 0) {
-      // opening in readwrite mode failed => file is readonly
-      file_readonly = TRUE;
+    if (!newfile || readonlymode || !(perm & 0222)
+        || !os_file_is_writable((char *)fname)) {
+      file_readonly = true;
     }
-    if (file_readonly == TRUE) {
-      // try to open readonly
-      fd = os_open((char *)fname, O_RDONLY, 0);
-    }
+    fd = os_open((char *)fname, O_RDONLY, 0);
   }
 
-  if (fd < 0) {                     /* cannot open at all */
+  if (fd < 0) {                     // cannot open at all
     msg_scroll = msg_save;
 #ifndef UNIX
-    /*
-     * On non-unix systems we can't open a directory, check here.
-     */
-    perm = os_getperm(fname);      /* check if the file exists */
+    // On non-unix systems we can't open a directory, check here.
     if (os_isdir(fname)) {
       filemess(curbuf, sfname, (char_u *)_("is a directory"), 0);
-      curbuf->b_p_ro = TRUE;            /* must use "w!" now */
-    } else
+      curbuf->b_p_ro = true;        // must use "w!" now
+    } else {
 #endif
     if (!newfile) {
       return FAIL;
     }
-    if (perm == UV_ENOENT) {
-      /*
-       * Set the 'new-file' flag, so that when the file has
-       * been created by someone else, a ":w" will complain.
-       */
+    if (perm == UV_ENOENT) {  // check if the file exists
+      // Set the 'new-file' flag, so that when the file has
+      // been created by someone else, a ":w" will complain.
       curbuf->b_flags |= BF_NEW;
 
       /* Create a swap file now, so that other Vims are warned
@@ -581,6 +564,9 @@ readfile (
 
     return FAIL;
   }
+#ifndef UNIX
+  }
+#endif
 
   /*
    * Only set the 'ro' flag for readonly files the first time they are
@@ -605,13 +591,14 @@ readfile (
    * Don't do this for a "nofile" or "nowrite" buffer type. */
   if (!bt_dontwrite(curbuf)) {
     check_need_swap(newfile);
-    if (!read_stdin && (curbuf != old_curbuf
-                        || (using_b_ffname && (old_b_ffname != curbuf->b_ffname))
-                        || (using_b_fname &&
-                            (old_b_fname != curbuf->b_fname)))) {
+    if (!read_stdin
+        && (curbuf != old_curbuf
+            || (using_b_ffname && (old_b_ffname != curbuf->b_ffname))
+            || (using_b_fname && (old_b_fname != curbuf->b_fname)))) {
       EMSG(_(e_auchangedbuf));
-      if (!read_buffer)
+      if (!read_buffer) {
         close(fd);
+      }
       return FAIL;
     }
 #ifdef UNIX
@@ -1748,8 +1735,9 @@ failed:
 #ifdef HAVE_FD_CLOEXEC
   else {
     int fdflags = fcntl(fd, F_GETFD);
-    if (fdflags >= 0 && (fdflags & FD_CLOEXEC) == 0)
-      fcntl(fd, F_SETFD, fdflags | FD_CLOEXEC);
+    if (fdflags >= 0 && (fdflags & FD_CLOEXEC) == 0) {
+      (void)fcntl(fd, F_SETFD, fdflags | FD_CLOEXEC);
+    }
   }
 #endif
   xfree(buffer);
@@ -2576,7 +2564,7 @@ buf_write (
         errmsg = (char_u *)_("is a directory");
         goto fail;
       }
-      if (mch_nodetype(fname) != NODE_WRITABLE) {
+      if (os_nodetype((char *)fname) != NODE_WRITABLE) {
         errnum = (char_u *)"E503: ";
         errmsg = (char_u *)_("is not a file or writable device");
         goto fail;
@@ -2588,11 +2576,11 @@ buf_write (
       perm = -1;
     }
   }
-#else /* !UNIX */
+#else /* win32 */
       /*
        * Check for a writable device name.
        */
-  c = mch_nodetype(fname);
+  c = os_nodetype((char *)fname);
   if (c == NODE_OTHER) {
     errnum = (char_u *)"E503: ";
     errmsg = (char_u *)_("is not a file or writable device");
@@ -2688,7 +2676,6 @@ buf_write (
     } else if ((bkc & BKC_AUTO)) {          /* "auto" */
       int i;
 
-# ifdef UNIX
       /*
        * Don't rename the file when:
        * - it's a hard link
@@ -2699,9 +2686,7 @@ buf_write (
           || !os_fileinfo_link((char *)fname, &file_info)
           || !os_fileinfo_id_equal(&file_info, &file_info_old)) {
         backup_copy = TRUE;
-      } else
-# endif
-      {
+      } else {
         /*
          * Check if we can create a file and set the owner/group to
          * the ones from the original file.
@@ -2991,14 +2976,15 @@ nobackup:
            * delete an existing one, try to use another name.
            * Change one character, just before the extension.
            */
-          if (!p_bk && os_file_exists(backup)) {
+          if (!p_bk && os_path_exists(backup)) {
             p = backup + STRLEN(backup) - 1 - STRLEN(backup_ext);
             if (p < backup)             /* empty file name ??? */
               p = backup;
             *p = 'z';
-            while (*p > 'a' && os_file_exists(backup))
-              --*p;
-            /* They all exist??? Must be something wrong! */
+            while (*p > 'a' && os_path_exists(backup)) {
+              (*p)--;
+            }
+            // They all exist??? Must be something wrong!
             if (*p == 'a') {
               xfree(backup);
               backup = NULL;
@@ -3225,12 +3211,12 @@ restore_backup:
            * This may not work if the vim_rename() fails.
            * In that case we leave the copy around.
            */
-          /* If file does not exist, put the copy in its place */
-          if (!os_file_exists(fname)) {
+          // If file does not exist, put the copy in its place
+          if (!os_path_exists(fname)) {
             vim_rename(backup, fname);
           }
-          /* if original file does exist throw away the copy */
-          if (os_file_exists(fname)) {
+          // if original file does exist throw away the copy
+          if (os_path_exists(fname)) {
             os_remove((char *)backup);
           }
         } else {
@@ -3239,8 +3225,8 @@ restore_backup:
         }
       }
 
-      /* if original file no longer exists give an extra warning */
-      if (!newfile && !os_file_exists(fname)) {
+      // if original file no longer exists give an extra warning
+      if (!newfile && !os_path_exists(fname)) {
         end = 0;
       }
     }
@@ -3598,9 +3584,9 @@ restore_backup:
        * If the original file does not exist yet
        * the current backup file becomes the original file
        */
-      if (org == NULL)
+      if (org == NULL) {
         EMSG(_("E205: Patchmode: can't save original file"));
-      else if (!os_file_exists((char_u *)org)) {
+      } else if (!os_path_exists((char_u *)org)) {
         vim_rename(backup, (char_u *)org);
         xfree(backup);                   /* don't delete the file */
         backup = NULL;
@@ -4372,8 +4358,8 @@ char *modname(const char *fname, const char *ext, bool prepend_dot)
   // (we need the full path in case :cd is used).
   if (fname == NULL || *fname == NUL) {
     retval = xmalloc(MAXPATHL + extlen + 3);  // +3 for PATHSEP, "_" (Win), NUL
-    if (os_dirname((char_u *)retval, MAXPATHL) == FAIL ||
-        (fnamelen = strlen(retval)) == 0) {
+    if (os_dirname((char_u *)retval, MAXPATHL) == FAIL
+        || (fnamelen = strlen(retval)) == 0) {
       xfree(retval);
       return NULL;
     }
@@ -4515,9 +4501,11 @@ int vim_rename(char_u *from, char_u *to)
     if (STRLEN(from) >= MAXPATHL - 5)
       return -1;
     STRCPY(tempname, from);
-    for (n = 123; n < 99999; ++n) {
-      sprintf((char *)path_tail(tempname), "%d", n);
-      if (!os_file_exists(tempname)) {
+    for (n = 123; n < 99999; n++) {
+      char * tail = (char *)path_tail(tempname);
+      snprintf(tail, (MAXPATHL + 1) - (tail - (char *)tempname - 1), "%d", n);
+
+      if (!os_path_exists(tempname)) {
         if (os_rename(from, tempname) == OK) {
           if (os_rename(tempname, to) == OK)
             return 0;
@@ -4864,7 +4852,7 @@ buf_check_timestamp (
     }
 
   } else if ((buf->b_flags & BF_NEW) && !(buf->b_flags & BF_NEW_W)
-             && os_file_exists(buf->b_ffname)) {
+             && os_path_exists(buf->b_ffname)) {
     retval = 1;
     mesg = _("W13: Warning: File \"%s\" has been created after editing started");
     buf->b_flags |= BF_NEW_W;
@@ -5099,19 +5087,23 @@ void write_lnum_adjust(linenr_T offset)
 }
 
 #if defined(BACKSLASH_IN_FILENAME)
-/*
- * Convert all backslashes in fname to forward slashes in-place.
- */
+/// Convert all backslashes in fname to forward slashes in-place,
+/// unless when it looks like a URL.
 void forward_slash(char_u *fname)
 {
   char_u      *p;
 
-  for (p = fname; *p != NUL; ++p)
-    /* The Big5 encoding can have '\' in the trail byte. */
-    if (enc_dbcs != 0 && (*mb_ptr2len)(p) > 1)
-      ++p;
-    else if (*p == '\\')
+  if (path_with_url(fname)) {
+    return;
+  }
+  for (p = fname; *p != NUL; p++) {
+    // The Big5 encoding can have '\' in the trail byte.
+    if (enc_dbcs != 0 && (*mb_ptr2len)(p) > 1) {
+      p++;
+    } else if (*p == '\\') {
       *p = '/';
+    }
+  }
 }
 #endif
 

@@ -17,21 +17,19 @@
 # include "event/rstream.c.generated.h"
 #endif
 
-void rstream_init_fd(Loop *loop, Stream *stream, int fd, size_t bufsize,
-    void *data)
+void rstream_init_fd(Loop *loop, Stream *stream, int fd, size_t bufsize)
   FUNC_ATTR_NONNULL_ARG(1)
   FUNC_ATTR_NONNULL_ARG(2)
 {
-  stream_init(loop, stream, fd, NULL, data);
+  stream_init(loop, stream, fd, NULL);
   rstream_init(stream, bufsize);
 }
 
-void rstream_init_stream(Stream *stream, uv_stream_t *uvstream, size_t bufsize,
-    void *data)
+void rstream_init_stream(Stream *stream, uv_stream_t *uvstream, size_t bufsize)
   FUNC_ATTR_NONNULL_ARG(1)
   FUNC_ATTR_NONNULL_ARG(2)
 {
-  stream_init(NULL, stream, -1, uvstream, data);
+  stream_init(NULL, stream, -1, uvstream);
   rstream_init(stream, bufsize);
 }
 
@@ -48,10 +46,11 @@ void rstream_init(Stream *stream, size_t bufsize)
 /// Starts watching for events from a `Stream` instance.
 ///
 /// @param stream The `Stream` instance
-void rstream_start(Stream *stream, stream_read_cb cb)
+void rstream_start(Stream *stream, stream_read_cb cb, void *data)
   FUNC_ATTR_NONNULL_ARG(1)
 {
   stream->read_cb = cb;
+  stream->cb_data = data;
   if (stream->uvstream) {
     uv_read_start(stream->uvstream, alloc_cb, read_cb);
   } else {
@@ -81,7 +80,7 @@ static void on_rbuffer_nonfull(RBuffer *buf, void *data)
 {
   Stream *stream = data;
   assert(stream->read_cb);
-  rstream_start(stream, stream->read_cb);
+  rstream_start(stream, stream->read_cb, stream->cb_data);
 }
 
 // Callbacks used by libuv
@@ -99,6 +98,10 @@ static void alloc_cb(uv_handle_t *handle, size_t suggested, uv_buf_t *buf)
 static void read_cb(uv_stream_t *uvstream, ssize_t cnt, const uv_buf_t *buf)
 {
   Stream *stream = uvstream->data;
+
+  if (cnt > 0) {
+    stream->num_bytes += (size_t)cnt;
+  }
 
   if (cnt <= 0) {
     if (cnt != UV_ENOBUFS
@@ -175,7 +178,7 @@ static void read_event(void **argv)
   if (stream->read_cb) {
     size_t count = (uintptr_t)argv[1];
     bool eof = (uintptr_t)argv[2];
-    stream->read_cb(stream, stream->buffer, count, stream->data, eof);
+    stream->read_cb(stream, stream->buffer, count, stream->cb_data, eof);
   }
   stream->pending_reqs--;
   if (stream->closed && !stream->pending_reqs) {
@@ -185,10 +188,6 @@ static void read_event(void **argv)
 
 static void invoke_read_cb(Stream *stream, size_t count, bool eof)
 {
-  if (stream->closed) {
-    return;
-  }
-
   // Don't let the stream be closed before the event is processed.
   stream->pending_reqs++;
 

@@ -1691,8 +1691,11 @@ static void printdigraph(digr_T *dp)
       msg_putchar('\n');
     }
 
-    if (msg_col) {
-      while (msg_col % list_width != 0) {
+
+    // Make msg_col a multiple of list_width by using spaces.
+    if (msg_col % list_width != 0) {
+      int spaces = (msg_col / list_width + 1) * list_width - msg_col;
+      while (spaces--) {
         msg_putchar(' ');
       }
     }
@@ -1757,12 +1760,12 @@ char_u* keymap_init(void)
     vim_snprintf(buf, buflen, "keymap/%s_%s.vim",
                  curbuf->b_p_keymap, p_enc);
 
-    if (source_runtime((char_u *)buf, FALSE) == FAIL) {
+    if (source_runtime((char_u *)buf, 0) == FAIL) {
       // try finding "keymap/'keymap'.vim" in 'runtimepath'
       vim_snprintf(buf, buflen, "keymap/%s.vim",
                    curbuf->b_p_keymap);
 
-      if (source_runtime((char_u *)buf, FALSE) == FAIL) {
+      if (source_runtime((char_u *)buf, 0) == FAIL) {
         xfree(buf);
         return (char_u *)N_("E544: Keymap file not found");
       }

@@ -136,26 +136,6 @@ void mch_free_acl(vim_acl_T aclent)
 }
 #endif
 
-/*
- * Check what "name" is:
- * NODE_NORMAL: file or directory (or doesn't exist)
- * NODE_WRITABLE: writable device, socket, fifo, etc.
- * NODE_OTHER: non-writable things
- */
-int mch_nodetype(char_u *name)
-{
-  struct stat st;
-
-  if (stat((char *)name, &st))
-    return NODE_NORMAL;
-  if (S_ISREG(st.st_mode) || S_ISDIR(st.st_mode))
-    return NODE_NORMAL;
-  if (S_ISBLK(st.st_mode))      /* block device isn't writable */
-    return NODE_OTHER;
-  /* Everything else is writable? */
-  return NODE_WRITABLE;
-}
-
 void mch_exit(int r)
 {
   exiting = true;
@@ -586,19 +566,22 @@ int mch_expand_wildcards(int num_pat, char_u **pat, int *num_file,
   /*
    * Move the file names to allocated memory.
    */
-  for (j = 0, i = 0; i < *num_file; ++i) {
-    /* Require the files to exist.	Helps when using /bin/sh */
-    if (!(flags & EW_NOTFOUND) && !os_file_exists((*file)[i]))
+  for (j = 0, i = 0; i < *num_file; i++) {
+    // Require the files to exist. Helps when using /bin/sh
+    if (!(flags & EW_NOTFOUND) && !os_path_exists((*file)[i])) {
       continue;
+    }
 
     /* check if this entry should be included */
     dir = (os_isdir((*file)[i]));
     if ((dir && !(flags & EW_DIR)) || (!dir && !(flags & EW_FILE)))
       continue;
 
-    /* Skip files that are not executable if we check for that. */
-    if (!dir && (flags & EW_EXEC) && !os_can_exe((*file)[i], NULL))
+    // Skip files that are not executable if we check for that.
+    if (!dir && (flags & EW_EXEC)
+        && !os_can_exe((*file)[i], NULL, !(flags & EW_SHELLCMD))) {
       continue;
+    }
 
     p = xmalloc(STRLEN((*file)[i]) + 1 + dir);
     STRCPY(p, (*file)[i]);

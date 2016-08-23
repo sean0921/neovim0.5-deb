@@ -27,12 +27,15 @@ if(NOT HAVE_SYS_WAIT_H AND UNIX)
 endif()
 check_include_files(sys/utsname.h HAVE_SYS_UTSNAME_H)
 check_include_files(utime.h HAVE_UTIME_H)
+check_include_files(sys/uio.h HAVE_SYS_UIO_H)
 
 # Functions
 check_function_exists(fseeko HAVE_FSEEKO)
 check_function_exists(getpwent HAVE_GETPWENT)
 check_function_exists(getpwnam HAVE_GETPWNAM)
 check_function_exists(getpwuid HAVE_GETPWUID)
+check_function_exists(uv_translate_sys_error HAVE_UV_TRANSLATE_SYS_ERROR)
+check_function_exists(readv HAVE_READV)
 
 if(Iconv_FOUND)
   set(HAVE_ICONV 1)
@@ -67,6 +70,14 @@ if(HAVE_LANGINFO_H)
   check_symbol_exists(CODESET "langinfo.h" HAVE_NL_LANGINFO_CODESET)
 endif()
 
+check_include_files("endian.h" HAVE_ENDIAN_H)
+check_include_files("sys/endian.h" HAVE_SYS_ENDIAN_H)
+
+set(ENDIAN_INCLUDE_FILE "endian.h")
+if(HAVE_SYS_ENDIAN_H AND NOT HAVE_ENDIAN_H)
+  set(ENDIAN_INCLUDE_FILE "sys/endian.h")
+endif()
+
 set(SI "#include <stdint.h>\n")
 set(MS "int main(int argc,char**argv)\n{\n  uint64_t i=0x0102030405060708ULL;")
 set(ME "}")
@@ -74,7 +85,7 @@ check_c_source_compiles("
   #define _BSD_SOURCE 1
   #define _DEFAULT_SOURCE 1
   ${SI}
-  #include <endian.h>
+  #include <${ENDIAN_INCLUDE_FILE}>
   #ifndef be64toh
   # error No be64toh macros
   #endif

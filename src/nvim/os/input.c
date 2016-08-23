@@ -60,8 +60,8 @@ void input_start(int fd)
   }
 
   global_fd = fd;
-  rstream_init_fd(&loop, &read_stream, fd, READ_BUFFER_SIZE, NULL);
-  rstream_start(&read_stream, read_cb);
+  rstream_init_fd(&main_loop, &read_stream, fd, READ_BUFFER_SIZE);
+  rstream_start(&read_stream, read_cb, NULL);
 }
 
 void input_stop(void)
@@ -71,7 +71,7 @@ void input_stop(void)
   }
 
   rstream_stop(&read_stream);
-  stream_close(&read_stream, NULL);
+  stream_close(&read_stream, NULL, NULL);
 }
 
 static void cursorhold_event(void **argv)
@@ -87,8 +87,8 @@ static void create_cursorhold_event(void)
   // have been called(inbuf_poll would return kInputAvail)
   // TODO(tarruda): Cursorhold should be implemented as a timer set during the
   // `state_check` callback for the states where it can be triggered.
-  assert(!events_enabled || queue_empty(loop.events));
-  queue_put(loop.events, cursorhold_event, 0);
+  assert(!events_enabled || queue_empty(main_loop.events));
+  queue_put(main_loop.events, cursorhold_event, 0);
 }
 
 // Low level input function
@@ -147,7 +147,7 @@ bool os_char_avail(void)
 void os_breakcheck(void)
 {
   if (!got_int) {
-    loop_poll_events(&loop, 0);
+    loop_poll_events(&main_loop, 0);
   }
 }
 
@@ -175,8 +175,9 @@ size_t input_enqueue(String keys)
   char *ptr = keys.data, *end = ptr + keys.size;
 
   while (rbuffer_space(input_buffer) >= 6 && ptr < end) {
-    uint8_t buf[6] = {0};
-    unsigned int new_size = trans_special((uint8_t **)&ptr, buf, true);
+    uint8_t buf[6] = { 0 };
+    unsigned int new_size = trans_special((const uint8_t **)&ptr, keys.size,
+                                          buf, true);
 
     if (new_size) {
       new_size = handle_mouse_event(&ptr, buf, new_size);
@@ -265,29 +266,32 @@ static unsigned int handle_mouse_event(char **ptr, uint8_t *buf,
   }
 
   static int orig_num_clicks = 0;
-  static int orig_mouse_code = 0;
-  static int orig_mouse_col = 0;
-  static int orig_mouse_row = 0;
-  static uint64_t orig_mouse_time = 0;  // time of previous mouse click
-  uint64_t mouse_time = os_hrtime();    // time of current mouse click
+  if (mouse_code != KE_LEFTRELEASE && mouse_code != KE_RIGHTRELEASE
+      && mouse_code != KE_MIDDLERELEASE) {
+      static int orig_mouse_code = 0;
+      static int orig_mouse_col = 0;
+      static int orig_mouse_row = 0;
+      static uint64_t orig_mouse_time = 0;  // time of previous mouse click
+      uint64_t mouse_time = os_hrtime();    // time of current mouse click (ns)
 
-  // compute the time elapsed since the previous mouse click and
-  // convert p_mouse from ms to ns
-  uint64_t timediff = mouse_time - orig_mouse_time;
-  uint64_t mouset = (uint64_t)p_mouset * 1000000;
-  if (mouse_code == orig_mouse_code
-      && timediff < mouset
-      && orig_num_clicks != 4
-      && orig_mouse_col == mouse_col
-      && orig_mouse_row == mouse_row) {
-    orig_num_clicks++;
-  } else {
-    orig_num_clicks = 1;
+      // compute the time elapsed since the previous mouse click and
+      // convert p_mouse from ms to ns
+      uint64_t timediff = mouse_time - orig_mouse_time;
+      uint64_t mouset = (uint64_t)p_mouset * 1000000;
+      if (mouse_code == orig_mouse_code
+          && timediff < mouset
+          && orig_num_clicks != 4
+          && orig_mouse_col == mouse_col
+          && orig_mouse_row == mouse_row) {
+        orig_num_clicks++;
+      } else {
+        orig_num_clicks = 1;
+      }
+      orig_mouse_code = mouse_code;
+      orig_mouse_col = mouse_col;
+      orig_mouse_row = mouse_row;
+      orig_mouse_time = mouse_time;
   }
-  orig_mouse_code = mouse_code;
-  orig_mouse_col = mouse_col;
-  orig_mouse_row = mouse_row;
-  orig_mouse_time = mouse_time;
 
   uint8_t modifiers = 0;
   if (orig_num_clicks == 2) {
@@ -321,7 +325,7 @@ static bool input_poll(int ms)
     prof_inchar_enter();
   }
 
-  LOOP_PROCESS_EVENTS_UNTIL(&loop, NULL, ms, input_ready() || input_eof);
+  LOOP_PROCESS_EVENTS_UNTIL(&main_loop, NULL, ms, input_ready() || input_eof);
 
   if (do_profiling == PROF_YES && ms) {
     prof_inchar_exit();
@@ -402,9 +406,9 @@ static int push_event_key(uint8_t *buf, int maxlen)
 // Check if there's pending input
 static bool input_ready(void)
 {
-  return typebuf_was_filled ||                 // API call filled typeahead
-         rbuffer_size(input_buffer) ||         // Input buffer filled
-         pending_events();                     // Events must be processed
+  return (typebuf_was_filled             // API call filled typeahead
+          || rbuffer_size(input_buffer)  // Input buffer filled
+          || pending_events());          // Events must be processed
 }
 
 // Exit because of an input read error.
@@ -418,5 +422,5 @@ static void read_error_exit(void)
 
 static bool pending_events(void)
 {
-  return events_enabled && !queue_empty(loop.events);
+  return events_enabled && !queue_empty(main_loop.events);
 }

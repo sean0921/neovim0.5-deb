@@ -1,4 +1,4 @@
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local clear, execute, feed = helpers.clear, helpers.execute, helpers.feed
 local eq, neq, eval = helpers.eq, helpers.neq, helpers.eval
 
@@ -22,7 +22,7 @@ describe('&encoding', function()
   end)
 
   it('can be changed before startup', function()
-    clear('set enc=latin1')
+    clear('--cmd', 'set enc=latin1')
     execute('set encoding=utf-8')
     -- error message expected
     feed('<cr>')
@@ -32,7 +32,7 @@ describe('&encoding', function()
 
   it('is not changed by `set all&`', function()
     -- we need to set &encoding to something non-default. Use 'latin1'
-    clear('set enc=latin1')
+    clear('--cmd', 'set enc=latin1')
     execute('set all&')
     eq('latin1', eval('&encoding'))
     eq(4, eval('strwidth("Bär")'))

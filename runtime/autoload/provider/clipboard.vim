@@ -52,19 +52,23 @@ elseif executable('lemonade')
   let s:paste['+'] = 'lemonade paste'
   let s:copy['*'] = 'lemonade copy'
   let s:paste['*'] = 'lemonade paste'
+elseif executable('doitclient')
+  let s:copy['+'] = 'doitclient wclip'
+  let s:paste['+'] = 'doitclient wclip -r'
+  let s:copy['*'] = s:copy['+']
+  let s:paste['*'] = s:paste['+']
 else
-  echom 'clipboard: No clipboard tool available. See :help nvim-clipboard'
+  echom 'clipboard: No clipboard tool available. See :help clipboard'
   finish
 endif
 
 let s:clipboard = {}
 
 function! s:clipboard.get(reg)
-  let reg = a:reg == '"' ? '+' : a:reg
-  if s:selections[reg].owner > 0
-    return s:selections[reg].data
+  if s:selections[a:reg].owner > 0
+    return s:selections[a:reg].data
   end
-  return s:try_cmd(s:paste[reg])
+  return s:try_cmd(s:paste[a:reg])
 endfunction
 
 function! s:clipboard.set(lines, regtype, reg)
@@ -89,6 +93,7 @@ function! s:clipboard.set(lines, regtype, reg)
   let selection.data = [a:lines, a:regtype]
   let argv = split(s:copy[a:reg], " ")
   let selection.detach = s:cache_enabled
+  let selection.cwd = "/"
   let jobid = jobstart(argv, selection)
   if jobid <= 0
     echohl WarningMsg

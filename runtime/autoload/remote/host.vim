@@ -1,7 +1,5 @@
 let s:hosts = {}
 let s:plugin_patterns = {}
-let s:remote_plugins_manifest = fnamemodify(expand($MYVIMRC, 1), ':h')
-      \.'/.'.fnamemodify($MYVIMRC, ':t').'-rplugin~'
 let s:plugins_for_host = {}
 
 
@@ -120,9 +118,59 @@ function! remote#host#RegisterPlugin(host, path, specs) abort
 endfunction
 
 
+" Get the path to the rplugin manifest file.
+function! s:GetManifestPath() abort
+  let manifest_base = ''
+
+  if exists('$NVIM_RPLUGIN_MANIFEST')
+    return fnamemodify($NVIM_RPLUGIN_MANIFEST, ':p')
+  endif
+
+  let dest = has('win32') ? '$LOCALAPPDATA' : '$XDG_DATA_HOME'
+  if !exists(dest)
+    let dest = has('win32') ? '~/AppData/Local' : '~/.local/share'
+  endif
+
+  let dest = fnamemodify(expand(dest), ':p')
+  if !empty(dest) && !filereadable(dest)
+    let dest .= ('/' ==# dest[-1:] ? '' : '/') . 'nvim'
+    call mkdir(dest, 'p', 0700)
+    let manifest_base = dest
+  endif
+
+  return manifest_base.'/rplugin.vim'
+endfunction
+
+
+" Old manifest file based on known script locations.
+function! s:GetOldManifestPath() abort
+  let prefix = exists('$MYVIMRC')
+        \ ? $MYVIMRC
+        \ : matchstr(get(split(execute('scriptnames'), '\n'), 0, ''), '\f\+$')
+  return fnamemodify(expand(prefix, 1), ':h')
+        \.'/.'.fnamemodify(prefix, ':t').'-rplugin~'
+endfunction
+
+
+function! s:GetManifest() abort
+  let manifest = s:GetManifestPath()
+
+  if !filereadable(manifest)
+    " Check if an old manifest file exists and move it to the new location.
+    let old_manifest = s:GetOldManifestPath()
+    if filereadable(old_manifest)
+      call rename(old_manifest, manifest)
+    endif
+  endif
+
+  return manifest
+endfunction
+
+
 function! remote#host#LoadRemotePlugins() abort
-  if filereadable(s:remote_plugins_manifest)
-    exe 'source '.s:remote_plugins_manifest
+  let manifest = s:GetManifest()
+  if filereadable(manifest)
+    execute 'source' fnameescape(manifest)
   endif
 endfunction
 
@@ -130,7 +178,9 @@ endfunction
 function! remote#host#LoadRemotePluginsEvent(event, pattern) abort
   autocmd! nvim-rplugin
   call remote#host#LoadRemotePlugins()
-  execute 'silent doautocmd <nomodeline>' a:event a:pattern
+  if exists('#'.a:event.'#'.a:pattern)  " Avoid 'No matching autocommands'.
+    execute 'silent doautocmd <nomodeline>' a:event a:pattern
+  endif
 endfunction
 
 
@@ -140,6 +190,7 @@ function! s:RegistrationCommands(host) abort
   call remote#host#RegisterClone(host_id, a:host)
   let pattern = s:plugin_patterns[a:host]
   let paths = globpath(&rtp, 'rplugin/'.a:host.'/'.pattern, 0, 1)
+  let paths = map(paths, 'tr(v:val,"\\","/")') " Normalize slashes #4795
   if empty(paths)
     return []
   endif
@@ -193,9 +244,9 @@ function! remote#host#UpdateRemotePlugins() abort
       endtry
     endif
   endfor
-  call writefile(commands, s:remote_plugins_manifest)
-  echomsg printf('remote/host: generated the manifest file in "%s"',
-        \ s:remote_plugins_manifest)
+  call writefile(commands, s:GetManifest())
+  echomsg printf('remote/host: generated rplugin manifest: %s',
+        \ s:GetManifest())
 endfunction
 
 
@@ -209,12 +260,11 @@ endfunction
 
 function! remote#host#LoadErrorForHost(host, log) abort
   return 'Failed to load '. a:host . ' host. '.
-    \ 'You can try to see what happened '.
-    \ 'by starting Neovim with the environment variable '.
-    \ a:log . ' set to a file and opening the generated '.
-    \ 'log file. Also, the host stderr will be available '.
-    \ 'in Neovim log, so it may contain useful information. '.
-    \ 'See also ~/.nvimlog.'
+        \ 'You can try to see what happened '.
+        \ 'by starting Neovim with the environment variable '.
+        \ a:log . ' set to a file and opening the generated '.
+        \ 'log file. Also, the host stderr is available '.
+        \ 'in messages.'
 endfunction
 
 

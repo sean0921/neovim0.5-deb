@@ -2,6 +2,11 @@
 " When the script is successful the .res file will be created.
 " Errors are appended to the test.log file.
 "
+" To execute only specific test functions, add a second argument.  It will be
+" matched against the names of the Test_ function.  E.g.:
+"   ../vim -u NONE -S runtest.vim test_channel.vim open_delay
+" The output can be found in the "messages" file.
+"
 " The test script may contain anything, only functions that start with
 " "Test_" are special.  These will be invoked and should contain assert
 " functions.  See test_assert.vim for an example.
@@ -19,9 +24,6 @@
 "
 " If cleanup after each Test_ function is needed, define a TearDown function.
 " It will be called after each Test_ function.
-
-" Without the +eval feature we can't run these tests, bail out.
-so small.vim
 
 " Check that the screen size is at least 24 x 80 characters.
 if &lines < 24 || &columns < 80 
@@ -41,6 +43,9 @@ set nomore
 
 " Output all messages in English.
 lang mess C
+
+" Always use forward slashes.
+set shellslash
 
 " Source the test script.  First grab the file name, in case the script
 " navigates away.
@@ -62,12 +67,20 @@ else
 endif
 
 " Locate Test_ functions and execute them.
+set nomore
 redir @q
-function /^Test_
+silent function /^Test_
 redir END
 let tests = split(substitute(@q, 'function \(\k*()\)', '\1', 'g'))
 
-for test in tests
+" If there is an extra argument filter the function names against it.
+if argc() > 1
+  let tests = filter(tests, 'v:val =~ argv(1)')
+endif
+
+" Execute the tests in alphabetical order.
+for test in sort(tests)
+  echo 'Executing ' . test
   if exists("*SetUp")
     call SetUp()
   endif

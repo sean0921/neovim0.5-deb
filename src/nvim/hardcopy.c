@@ -1526,8 +1526,7 @@ static int prt_find_resource(char *name, struct prt_ps_resource_S *resource)
   vim_strcat(buffer, (char_u *)name, MAXPATHL);
   vim_strcat(buffer, (char_u *)".ps", MAXPATHL);
   resource->filename[0] = NUL;
-  retval = (do_in_runtimepath(buffer, FALSE, prt_resource_name,
-                resource->filename)
+  retval = (do_in_runtimepath(buffer, 0, prt_resource_name, resource->filename)
             && resource->filename[0] != NUL);
   xfree(buffer);
   return retval;
@@ -2190,18 +2189,19 @@ int mch_print_init(prt_settings_T *psettings, char_u *jobname, int forceit)
                              mbfont_opts[OPT_MBFONT_BOLDOBLIQUE].strlen);
     }
 
-    /* Check if need to use Courier for ASCII code range, and if so pick up
-     * the encoding to use */
-    prt_use_courier = mbfont_opts[OPT_MBFONT_USECOURIER].present &&
-                      (TOLOWER_ASC(mbfont_opts[OPT_MBFONT_USECOURIER].string[0])
-                       == 'y');
+    // Check if need to use Courier for ASCII code range, and if so pick up
+    // the encoding to use
+    prt_use_courier = (
+        mbfont_opts[OPT_MBFONT_USECOURIER].present
+        && (TOLOWER_ASC(mbfont_opts[OPT_MBFONT_USECOURIER].string[0]) == 'y'));
     if (prt_use_courier) {
-      /* Use national ASCII variant unless ASCII wanted */
-      if (mbfont_opts[OPT_MBFONT_ASCII].present &&
-          (TOLOWER_ASC(mbfont_opts[OPT_MBFONT_ASCII].string[0]) == 'y'))
+      // Use national ASCII variant unless ASCII wanted
+      if (mbfont_opts[OPT_MBFONT_ASCII].present
+          && (TOLOWER_ASC(mbfont_opts[OPT_MBFONT_ASCII].string[0]) == 'y')) {
         prt_ascii_encoding = "ascii";
-      else
+      } else {
         prt_ascii_encoding = prt_ps_mbfonts[cmap].ascii_enc;
+      }
     }
 
     prt_ps_font = &prt_ps_mb_font;
@@ -3029,10 +3029,10 @@ int mch_print_text_out(char_u *p, size_t len)
   prt_text_run += char_width;
   prt_pos_x += char_width;
 
-  /* The downside of fp - use relative error on right margin check */
+  // The downside of fp - use relative error on right margin check
   next_pos = prt_pos_x + prt_char_width;
-  need_break = (next_pos > prt_right_margin) &&
-               ((next_pos - prt_right_margin) > (prt_right_margin*1e-5));
+  need_break = ((next_pos > prt_right_margin)
+                && ((next_pos - prt_right_margin) > (prt_right_margin * 1e-5)));
 
   if (need_break)
     prt_flush_buffer();

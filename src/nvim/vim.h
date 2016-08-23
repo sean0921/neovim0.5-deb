@@ -174,6 +174,7 @@ enum {
   EXPAND_USER,
   EXPAND_SYNTIME,
   EXPAND_USER_ADDR_TYPE,
+  EXPAND_PACKADD,
 };
 
 
@@ -200,15 +201,6 @@ enum {
 #endif
 
 #define MAYBE   2           /* sometimes used for a variant on TRUE */
-
-/*
- * Motion types, used for operators and for yank/delete registers.
- */
-#define MCHAR   0               /* character-wise movement/register */
-#define MLINE   1               /* line-wise movement/register */
-#define MBLOCK  2               /* block-wise register */
-
-#define MAUTO   0xff            /* Decide between MLINE/MCHAR */
 
 #define STATUS_HEIGHT   1       /* height of a status line under a window */
 #define QF_WINHEIGHT    10      /* default height for quickfix window */
@@ -315,5 +307,13 @@ enum {
 
 # define SET_NO_HLSEARCH(flag) no_hlsearch = (flag); set_vim_var_nr( \
     VV_HLSEARCH, !no_hlsearch && p_hls)
+
+// Used for flags in do_in_path()
+#define DIP_ALL 0x01    // all matches, not just the first one
+#define DIP_DIR 0x02    // find directories instead of files
+#define DIP_ERR 0x04    // give an error message when none found
+#define DIP_START 0x08  // also use "start" directory in 'packpath'
+#define DIP_OPT 0x10    // also use "opt" directory in 'packpath'
+#define DIP_NORTP 0x20  // do not use 'runtimepath'
 
 #endif /* NVIM_VIM_H */

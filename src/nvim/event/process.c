@@ -9,7 +9,7 @@
 #include "nvim/event/wstream.h"
 #include "nvim/event/process.h"
 #include "nvim/event/libuv_process.h"
-#include "nvim/event/pty_process.h"
+#include "nvim/os/pty_process.h"
 #include "nvim/globals.h"
 #include "nvim/log.h"
 
@@ -22,11 +22,11 @@
 #define TERM_TIMEOUT 1000000000
 #define KILL_TIMEOUT (TERM_TIMEOUT * 2)
 
-#define CLOSE_PROC_STREAM(proc, stream)                             \
-  do {                                                              \
-    if (proc->stream && !proc->stream->closed) {                    \
-      stream_close(proc->stream, NULL);                             \
-    }                                                               \
+#define CLOSE_PROC_STREAM(proc, stream) \
+  do { \
+    if (proc->stream && !proc->stream->closed) { \
+      stream_close(proc->stream, NULL, NULL); \
+    } \
   } while (0)
 
 static bool process_is_tearing_down = false;
@@ -78,10 +78,8 @@ bool process_spawn(Process *proc) FUNC_ATTR_NONNULL_ALL
     return false;
   }
 
-  void *data = proc->data;
-
   if (proc->in) {
-    stream_init(NULL, proc->in, -1, (uv_stream_t *)&proc->in->uv.pipe, data);
+    stream_init(NULL, proc->in, -1, (uv_stream_t *)&proc->in->uv.pipe);
     proc->in->events = proc->events;
     proc->in->internal_data = proc;
     proc->in->internal_close_cb = on_process_stream_close;
@@ -89,7 +87,7 @@ bool process_spawn(Process *proc) FUNC_ATTR_NONNULL_ALL
   }
 
   if (proc->out) {
-    stream_init(NULL, proc->out, -1, (uv_stream_t *)&proc->out->uv.pipe, data);
+    stream_init(NULL, proc->out, -1, (uv_stream_t *)&proc->out->uv.pipe);
     proc->out->events = proc->events;
     proc->out->internal_data = proc;
     proc->out->internal_close_cb = on_process_stream_close;
@@ -97,7 +95,7 @@ bool process_spawn(Process *proc) FUNC_ATTR_NONNULL_ALL
   }
 
   if (proc->err) {
-    stream_init(NULL, proc->err, -1, (uv_stream_t *)&proc->err->uv.pipe, data);
+    stream_init(NULL, proc->err, -1, (uv_stream_t *)&proc->err->uv.pipe);
     proc->err->events = proc->events;
     proc->err->internal_data = proc;
     proc->err->internal_close_cb = on_process_stream_close;
@@ -116,23 +114,20 @@ void process_teardown(Loop *loop) FUNC_ATTR_NONNULL_ALL
   process_is_tearing_down = true;
   kl_iter(WatcherPtr, loop->children, current) {
     Process *proc = (*current)->data;
-    if (proc->detach) {
+    if (proc->detach || proc->type == kProcessTypePty) {
       // Close handles to process without killing it.
       CREATE_EVENT(loop->events, process_close_handles, 1, proc);
     } else {
-      if (proc->type == kProcessTypeUv) {
-        uv_kill(proc->pid, SIGTERM);
-        proc->term_sent = true;
-        process_stop(proc);
-      } else {  // kProcessTypePty
-        process_close_streams(proc);
-        pty_process_close_master((PtyProcess *)proc);
-      }
+      uv_kill(proc->pid, SIGTERM);
+      proc->term_sent = true;
+      process_stop(proc);
     }
   }
 
-  // Wait until all children exit
-  LOOP_PROCESS_EVENTS_UNTIL(loop, loop->events, -1, kl_empty(loop->children));
+  // Wait until all children exit and all close events are processed.
+  LOOP_PROCESS_EVENTS_UNTIL(
+      loop, loop->events, -1,
+      kl_empty(loop->children) && queue_empty(loop->events));
   pty_process_teardown(loop);
 }
 
@@ -187,9 +182,9 @@ int process_wait(Process *proc, int ms, Queue *events) FUNC_ATTR_NONNULL_ARG(1)
   // being freed) before we have a chance to get the status.
   proc->refcount++;
   LOOP_PROCESS_EVENTS_UNTIL(proc->loop, events, ms,
-      // Until...
-      got_int ||             // interrupted by the user
-      proc->refcount == 1);  // job exited
+                            // Until...
+                            got_int                   // interrupted by the user
+                            || proc->refcount == 1);  // job exited
 
   // we'll assume that a user frantically hitting interrupt doesn't like
   // the current job. Signal that it has to be killed.
@@ -315,8 +310,10 @@ static void decref(Process *proc)
 static void process_close(Process *proc)
   FUNC_ATTR_NONNULL_ARG(1)
 {
-  if (process_is_tearing_down && proc->detach && proc->closed) {
-    // If a detached process dies while tearing down it might get closed twice.
+  if (process_is_tearing_down && (proc->detach || proc->type == kProcessTypePty)
+      && proc->closed) {
+    // If a detached/pty process dies while tearing down it might get closed
+    // twice.
     return;
   }
   assert(!proc->closed);
@@ -333,9 +330,61 @@ static void process_close(Process *proc)
   }
 }
 
+/// Flush output stream.
+///
+/// @param proc     Process, for which an output stream should be flushed.
+/// @param stream   Stream to flush.
+static void flush_stream(Process *proc, Stream *stream)
+  FUNC_ATTR_NONNULL_ARG(1)
+{
+  if (!stream || stream->closed) {
+    return;
+  }
+
+  // Maximal remaining data size of terminated process is system
+  // buffer size.
+  // Also helps with a child process that keeps the output streams open. If it
+  // keeps sending data, we only accept as much data as the system buffer size.
+  // Otherwise this would block cleanup/teardown.
+  int system_buffer_size = 0;
+  int err = uv_recv_buffer_size((uv_handle_t *)&stream->uv.pipe,
+                                &system_buffer_size);
+  if (err) {
+    system_buffer_size = (int)rbuffer_capacity(stream->buffer);
+  }
+
+  size_t max_bytes = stream->num_bytes + (size_t)system_buffer_size;
+
+  // Read remaining data.
+  while (!stream->closed && stream->num_bytes < max_bytes) {
+    // Remember number of bytes before polling
+    size_t num_bytes = stream->num_bytes;
+
+    // Poll for data and process the generated events.
+    loop_poll_events(proc->loop, 0);
+    if (proc->events) {
+        queue_process_events(proc->events);
+    }
+
+    // Stream can be closed if it is empty.
+    if (num_bytes == stream->num_bytes) {
+      if (stream->read_cb) {
+        // Stream callback could miss EOF handling if a child keeps the stream
+        // open.
+        stream->read_cb(stream, stream->buffer, 0, stream->cb_data, true);
+      }
+      break;
+    }
+  }
+}
+
 static void process_close_handles(void **argv)
 {
   Process *proc = argv[0];
+
+  flush_stream(proc, proc->out);
+  flush_stream(proc, proc->err);
+
   process_close_streams(proc);
   process_close(proc);
 }
@@ -350,11 +399,12 @@ static void on_process_exit(Process *proc)
     uv_timer_stop(&loop->children_kill_timer);
   }
 
-  // Process handles are closed in the next event loop tick. This is done to
-  // give libuv more time to read data from the OS after the process exits(If
-  // process_close_streams is called with data still in the OS buffer, we lose
-  // it)
-  CREATE_EVENT(proc->events, process_close_handles, 1, proc);
+  // Process has terminated, but there could still be data to be read from the
+  // OS. We are still in the libuv loop, so we cannot call code that polls for
+  // more data directly. Instead delay the reading after the libuv loop by
+  // queueing process_close_handles() as an event.
+  Queue *queue = proc->events ? proc->events : loop->events;
+  CREATE_EVENT(queue, process_close_handles, 1, proc);
 }
 
 static void on_process_stream_close(Stream *stream, void *data)

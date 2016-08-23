@@ -5,6 +5,9 @@ local os = helpers.cimport './src/nvim/os/os.h'
 local tempfile = helpers.cimport './src/nvim/fileio.h'
 
 describe('tempfile related functions', function()
+  before_each(function()
+    tempfile.vim_deltempdir()
+  end)
   after_each(function()
     tempfile.vim_deltempdir()
   end)
@@ -40,7 +43,7 @@ describe('tempfile related functions', function()
     it('generate name of non-existing file', function()
       local file = vim_tempname()
       assert.truthy(file)
-      assert.False(os.os_file_exists(file))
+      assert.False(os.os_path_exists(file))
     end)
 
     it('generate different names on each call', function()

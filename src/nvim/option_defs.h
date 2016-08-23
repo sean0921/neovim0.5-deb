@@ -258,7 +258,7 @@ enum {
   STL_ARGLISTSTAT     = 'a',  ///< Argument list status as (x of y).
   STL_PAGENUM         = 'N',  ///< Page number (when printing).
   STL_VIM_EXPR        = '{',  ///< Start of expression to substitute.
-  STL_MIDDLEMARK      = '=',  ///< Separation between left and right.
+  STL_SEPARATE        = '=',  ///< Separation between alignment sections.
   STL_TRUNCMARK       = '<',  ///< Truncation mark if line is too long.
   STL_USER_HL         = '*',  ///< Highlight from (User)1..9 or 0.
   STL_HIGHLIGHT       = '#',  ///< Highlight name.
@@ -274,7 +274,7 @@ enum {
   STL_HELPFLAG, STL_HELPFLAG_ALT, STL_FILETYPE, STL_FILETYPE_ALT, \
   STL_PREVIEWFLAG, STL_PREVIEWFLAG_ALT, STL_MODIFIED, STL_MODIFIED_ALT, \
   STL_QUICKFIX, STL_PERCENTAGE, STL_ALTPERCENT, STL_ARGLISTSTAT, STL_PAGENUM, \
-  STL_VIM_EXPR, STL_MIDDLEMARK, STL_TRUNCMARK, STL_USER_HL, STL_HIGHLIGHT, \
+  STL_VIM_EXPR, STL_SEPARATE, STL_TRUNCMARK, STL_USER_HL, STL_HIGHLIGHT, \
   STL_TABPAGENR, STL_TABCLOSENR, STL_CLICK_FUNC, \
   0, \
 })
@@ -456,80 +456,81 @@ EXTERN int p_hid;               // 'hidden'
 // Use P_HID to check if a buffer is to be hidden when it is no longer
 // visible in a window.
 # define P_HID(buf) (buf_hide(buf))
-EXTERN char_u   *p_hl;          /* 'highlight' */
-EXTERN int p_hls;               /* 'hlsearch' */
-EXTERN long p_hi;               /* 'history' */
-EXTERN int p_hkmap;             /* 'hkmap' */
-EXTERN int p_hkmapp;            /* 'hkmapp' */
-EXTERN int p_fkmap;             /* 'fkmap' */
-EXTERN int p_altkeymap;         /* 'altkeymap' */
-EXTERN int p_arshape;           /* 'arabicshape' */
-EXTERN int p_icon;              /* 'icon' */
-EXTERN char_u   *p_iconstring;  /* 'iconstring' */
-EXTERN int p_ic;                /* 'ignorecase' */
-EXTERN int p_is;                /* 'incsearch' */
-EXTERN int p_im;                /* 'insertmode' */
-EXTERN char_u   *p_isf;         /* 'isfname' */
-EXTERN char_u   *p_isi;         /* 'isident' */
-EXTERN char_u   *p_isp;         /* 'isprint' */
-EXTERN int p_js;                /* 'joinspaces' */
-EXTERN char_u   *p_kp;          /* 'keywordprg' */
-EXTERN char_u   *p_km;          /* 'keymodel' */
-EXTERN char_u   *p_langmap;     /* 'langmap'*/
-EXTERN int p_lnr;               /* 'langnoremap'*/
-EXTERN char_u   *p_lm;          /* 'langmenu' */
-EXTERN char_u   *p_lispwords;   /* 'lispwords' */
-EXTERN long p_ls;               /* 'laststatus' */
-EXTERN long p_stal;             /* 'showtabline' */
-EXTERN char_u   *p_lcs;         /* 'listchars' */
+EXTERN char_u   *p_hl;          // 'highlight'
+EXTERN int p_hls;               // 'hlsearch'
+EXTERN long p_hi;               // 'history'
+EXTERN int p_hkmap;             // 'hkmap'
+EXTERN int p_hkmapp;            // 'hkmapp'
+EXTERN int p_fkmap;             // 'fkmap'
+EXTERN int p_altkeymap;         // 'altkeymap'
+EXTERN int p_arshape;           // 'arabicshape'
+EXTERN int p_icon;              // 'icon'
+EXTERN char_u   *p_iconstring;  // 'iconstring'
+EXTERN int p_ic;                // 'ignorecase'
+EXTERN int p_is;                // 'incsearch'
+EXTERN int p_im;                // 'insertmode'
+EXTERN char_u   *p_isf;         // 'isfname'
+EXTERN char_u   *p_isi;         // 'isident'
+EXTERN char_u   *p_isp;         // 'isprint'
+EXTERN int p_js;                // 'joinspaces'
+EXTERN char_u   *p_kp;          // 'keywordprg'
+EXTERN char_u   *p_km;          // 'keymodel'
+EXTERN char_u   *p_langmap;     // 'langmap'*/
+EXTERN int p_lnr;               // 'langnoremap'*/
+EXTERN char_u   *p_lm;          // 'langmenu'
+EXTERN char_u   *p_lispwords;   // 'lispwords'
+EXTERN long p_ls;               // 'laststatus'
+EXTERN long p_stal;             // 'showtabline'
+EXTERN char_u   *p_lcs;         // 'listchars'
 
-EXTERN int p_lz;                /* 'lazyredraw' */
-EXTERN int p_lpl;               /* 'loadplugins' */
-EXTERN int p_magic;             /* 'magic' */
-EXTERN char_u   *p_mef;         /* 'makeef' */
-EXTERN char_u   *p_mp;          /* 'makeprg' */
-EXTERN char_u   *p_cc;          /* 'colorcolumn' */
-EXTERN int p_cc_cols[256];      /* array for 'colorcolumn' columns */
-EXTERN long p_mat;              /* 'matchtime' */
-EXTERN long p_mco;              /* 'maxcombine' */
-EXTERN long p_mfd;              /* 'maxfuncdepth' */
-EXTERN long p_mmd;              /* 'maxmapdepth' */
-EXTERN long p_mm;               /* 'maxmem' */
-EXTERN long p_mmp;              /* 'maxmempattern' */
-EXTERN long p_mmt;              /* 'maxmemtot' */
-EXTERN long p_mis;              /* 'menuitems' */
-EXTERN char_u   *p_msm;         /* 'mkspellmem' */
-EXTERN long p_mls;              /* 'modelines' */
-EXTERN char_u   *p_mouse;       /* 'mouse' */
-EXTERN char_u   *p_mousem;      /* 'mousemodel' */
-EXTERN long p_mouset;           /* 'mousetime' */
-EXTERN int p_more;              /* 'more' */
-EXTERN char_u   *p_opfunc;      /* 'operatorfunc' */
-EXTERN char_u   *p_para;        /* 'paragraphs' */
-EXTERN int p_paste;             /* 'paste' */
-EXTERN char_u   *p_pt;          /* 'pastetoggle' */
-EXTERN char_u   *p_pex;         /* 'patchexpr' */
-EXTERN char_u   *p_pm;          /* 'patchmode' */
-EXTERN char_u   *p_path;        /* 'path' */
-EXTERN char_u   *p_cdpath;      /* 'cdpath' */
-EXTERN long p_rdt;              /* 'redrawtime' */
-EXTERN int p_remap;             /* 'remap' */
-EXTERN long p_re;               /* 'regexpengine' */
-EXTERN long p_report;           /* 'report' */
-EXTERN long p_pvh;              /* 'previewheight' */
-EXTERN int p_ari;               /* 'allowrevins' */
-EXTERN int p_ri;                /* 'revins' */
-EXTERN int p_ru;                /* 'ruler' */
-EXTERN char_u   *p_ruf;         /* 'rulerformat' */
-EXTERN char_u   *p_rtp;         /* 'runtimepath' */
-EXTERN long p_sj;               /* 'scrolljump' */
-EXTERN long p_so;               /* 'scrolloff' */
-EXTERN char_u   *p_sbo;         /* 'scrollopt' */
-EXTERN char_u   *p_sections;    /* 'sections' */
-EXTERN int p_secure;            /* 'secure' */
-EXTERN char_u   *p_sel;         /* 'selection' */
-EXTERN char_u   *p_slm;         /* 'selectmode' */
-EXTERN char_u   *p_ssop;        /* 'sessionoptions' */
+EXTERN int p_lz;                // 'lazyredraw'
+EXTERN int p_lpl;               // 'loadplugins'
+EXTERN int p_magic;             // 'magic'
+EXTERN char_u   *p_mef;         // 'makeef'
+EXTERN char_u   *p_mp;          // 'makeprg'
+EXTERN char_u   *p_cc;          // 'colorcolumn'
+EXTERN int p_cc_cols[256];      // array for 'colorcolumn' columns
+EXTERN long p_mat;              // 'matchtime'
+EXTERN long p_mco;              // 'maxcombine'
+EXTERN long p_mfd;              // 'maxfuncdepth'
+EXTERN long p_mmd;              // 'maxmapdepth'
+EXTERN long p_mm;               // 'maxmem'
+EXTERN long p_mmp;              // 'maxmempattern'
+EXTERN long p_mmt;              // 'maxmemtot'
+EXTERN long p_mis;              // 'menuitems'
+EXTERN char_u   *p_msm;         // 'mkspellmem'
+EXTERN long p_mls;              // 'modelines'
+EXTERN char_u   *p_mouse;       // 'mouse'
+EXTERN char_u   *p_mousem;      // 'mousemodel'
+EXTERN long p_mouset;           // 'mousetime'
+EXTERN int p_more;              // 'more'
+EXTERN char_u   *p_opfunc;      // 'operatorfunc'
+EXTERN char_u   *p_para;        // 'paragraphs'
+EXTERN int p_paste;             // 'paste'
+EXTERN char_u   *p_pt;          // 'pastetoggle'
+EXTERN char_u   *p_pex;         // 'patchexpr'
+EXTERN char_u   *p_pm;          // 'patchmode'
+EXTERN char_u   *p_path;        // 'path'
+EXTERN char_u   *p_cdpath;      // 'cdpath'
+EXTERN long p_rdt;              // 'redrawtime'
+EXTERN int p_remap;             // 'remap'
+EXTERN long p_re;               // 'regexpengine'
+EXTERN long p_report;           // 'report'
+EXTERN long p_pvh;              // 'previewheight'
+EXTERN int p_ari;               // 'allowrevins'
+EXTERN int p_ri;                // 'revins'
+EXTERN int p_ru;                // 'ruler'
+EXTERN char_u   *p_ruf;         // 'rulerformat'
+EXTERN char_u   *p_pp;          // 'packpath'
+EXTERN char_u   *p_rtp;         // 'runtimepath'
+EXTERN long p_sj;               // 'scrolljump'
+EXTERN long p_so;               // 'scrolloff'
+EXTERN char_u   *p_sbo;         // 'scrollopt'
+EXTERN char_u   *p_sections;    // 'sections'
+EXTERN int p_secure;            // 'secure'
+EXTERN char_u   *p_sel;         // 'selection'
+EXTERN char_u   *p_slm;         // 'selectmode'
+EXTERN char_u   *p_ssop;        // 'sessionoptions'
 EXTERN unsigned ssop_flags;
 # ifdef IN_OPTION_C
 /* Also used for 'viewoptions'! */
@@ -597,6 +598,14 @@ static char *(p_swb_values[]) =
 #define SWB_NEWTAB              0x008
 #define SWB_VSPLIT              0x010
 EXTERN int p_tbs;               ///< 'tagbsearch'
+EXTERN char_u *p_tc;            ///< 'tagcase'
+EXTERN unsigned tc_flags;       ///< flags from 'tagcase'
+#ifdef IN_OPTION_C
+static char *(p_tc_values[]) = { "followic", "ignore", "match", NULL };
+#endif
+#define TC_FOLLOWIC             0x01
+#define TC_IGNORE               0x02
+#define TC_MATCH                0x04
 EXTERN long p_tl;               ///< 'taglength'
 EXTERN int p_tr;                ///< 'tagrelative'
 EXTERN char_u *p_tags;          ///< 'tags'
@@ -611,6 +620,7 @@ EXTERN long p_titlelen;         ///< 'titlelen'
 EXTERN char_u *p_titleold;      ///< 'titleold'
 EXTERN char_u *p_titlestring;   ///< 'titlestring'
 EXTERN char_u *p_tsr;           ///< 'thesaurus'
+EXTERN bool p_tgc;              ///< 'termguicolors'
 EXTERN int p_ttimeout;          ///< 'ttimeout'
 EXTERN long p_ttm;              ///< 'ttimeoutlen'
 EXTERN char_u *p_udir;          ///< 'undodir'
@@ -737,6 +747,7 @@ enum {
   , BV_SW
   , BV_SWF
   , BV_TAGS
+  , BV_TC
   , BV_TS
   , BV_TW
   , BV_TX

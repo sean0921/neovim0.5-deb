@@ -1,4 +1,4 @@
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
 local thelpers = require('test.functional.terminal.helpers')
 local feed, clear, nvim = helpers.feed, helpers.clear, helpers.nvim
@@ -16,33 +16,32 @@ describe('terminal window highlighting', function()
       [1] = {foreground = 45},
       [2] = {background = 46},
       [3] = {foreground = 45, background = 46},
-      [4] = {bold = true, italic = true, underline = true}
-    })
-    screen:set_default_attr_ignore({
-      [1] = {bold = true},
-      [2] = {foreground = 12},
-      [3] = {bold = true, reverse = true},
-      [5] = {background = 11},
-      [6] = {foreground = 130},
-      [7] = {reverse = true},
-      [8] = {background = 11}
+      [4] = {bold = true, italic = true, underline = true},
+      [5] = {bold = true},
+      [6] = {foreground = 12},
+      [7] = {bold = true, reverse = true},
+      [8] = {background = 11},
+      [9] = {foreground = 130},
+      [10] = {reverse = true},
+      [11] = {background = 11},
     })
     screen:attach(false)
     execute('enew | call termopen(["'..nvim_dir..'/tty-test"]) | startinsert')
     screen:expect([[
       tty ready                                         |
+      {10: }                                                 |
                                                         |
                                                         |
                                                         |
                                                         |
-                                                        |
-      -- TERMINAL --                                    |
+      {5:-- TERMINAL --}                                    |
     ]])
   end)
 
   local function descr(title, attr_num, set_attrs_fn)
     local function sub(s)
-      return s:gsub('NUM', attr_num)
+      local str = s:gsub('NUM', attr_num)
+      return str
     end
 
     describe(title, function() 
@@ -54,16 +53,15 @@ describe('terminal window highlighting', function()
       end)
 
       local function pass_attrs()
-        local s = sub([[
+        screen:expect(sub([[
           tty ready                                         |
-          {NUM:text}text                                          |
+          {NUM:text}text{10: }                                         |
                                                             |
                                                             |
                                                             |
                                                             |
-          -- TERMINAL --                                    |
-        ]])
-        screen:expect(s)
+          {5:-- TERMINAL --}                                    |
+        ]]))
       end
 
       it('will pass the corresponding attributes', pass_attrs)
@@ -82,11 +80,11 @@ describe('terminal window highlighting', function()
           line6                                             |
           line7                                             |
           line8                                             |
-                                                            |
-          -- TERMINAL --                                    |
+          {10: }                                                 |
+          {5:-- TERMINAL --}                                    |
         ]])
         feed('<c-\\><c-n>gg')
-        local s = sub([[
+        screen:expect(sub([[
           ^tty ready                                         |
           {NUM:text}textline1                                     |
           line2                                             |
@@ -94,8 +92,7 @@ describe('terminal window highlighting', function()
           line4                                             |
           line5                                             |
                                                             |
-        ]])
-        screen:expect(s)
+        ]]))
       end)
     end)
   end
@@ -121,28 +118,26 @@ describe('terminal window highlighting with custom palette', function()
     clear()
     screen = Screen.new(50, 7)
     screen:set_default_attr_ids({
-      [1] = {foreground = 1193046}
-    })
-    screen:set_default_attr_ignore({
-      [1] = {bold = true},
+      [1] = {foreground = 1193046, special = Screen.colors.Black},
       [2] = {foreground = 12},
       [3] = {bold = true, reverse = true},
       [5] = {background = 11},
       [6] = {foreground = 130},
       [7] = {reverse = true},
-      [8] = {background = 11}
+      [8] = {background = 11},
+      [9] = {bold = true},
     })
     screen:attach(true)
     nvim('set_var', 'terminal_color_3', '#123456')
     execute('enew | call termopen(["'..nvim_dir..'/tty-test"]) | startinsert')
     screen:expect([[
       tty ready                                         |
+      {7: }                                                 |
                                                         |
                                                         |
                                                         |
                                                         |
-                                                        |
-      -- TERMINAL --                                    |
+      {9:-- TERMINAL --}                                    |
     ]])
   end)
 
@@ -153,36 +148,61 @@ describe('terminal window highlighting with custom palette', function()
     thelpers.feed_data('text')
     screen:expect([[
       tty ready                                         |
-      {1:text}text                                          |
+      {1:text}text{7: }                                         |
                                                         |
                                                         |
                                                         |
                                                         |
-      -- TERMINAL --                                    |
+      {9:-- TERMINAL --}                                    |
     ]])
   end)
 end)
 
 describe('synIDattr()', function()
   local screen
-
   before_each(function()
     clear()
     screen = Screen.new(50, 7)
-    execute('highlight Normal ctermfg=1 guifg=#ff0000')
+    execute('highlight Normal ctermfg=252 guifg=#ff0000 guibg=Black')
+    -- Salmon #fa8072 Maroon #800000
+    execute('highlight Keyword ctermfg=79 guifg=Salmon guisp=Maroon')
   end)
 
-  after_each(function()
-    screen:detach()
+  it('returns cterm-color if RGB-capable UI is _not_ attached', function()
+    eq('252', eval('synIDattr(hlID("Normal"),  "fg")'))
+    eq('252', eval('synIDattr(hlID("Normal"),  "fg#")'))
+    eq('-1',  eval('synIDattr(hlID("Normal"),  "bg")'))
+    eq('-1',  eval('synIDattr(hlID("Normal"),  "bg#")'))
+    eq('79',  eval('synIDattr(hlID("Keyword"), "fg")'))
+    eq('79',  eval('synIDattr(hlID("Keyword"), "fg#")'))
+    eq('',    eval('synIDattr(hlID("Keyword"), "sp")'))
+    eq('',    eval('synIDattr(hlID("Keyword"), "sp#")'))
   end)
 
-  it('returns RGB number if GUI', function()
+  it('returns gui-color if "gui" arg is passed', function()
+    eq('Black',  eval('synIDattr(hlID("Normal"),  "bg", "gui")'))
+    eq('Maroon', eval('synIDattr(hlID("Keyword"), "sp", "gui")'))
+  end)
+
+  it('returns gui-color if RGB-capable UI is attached', function()
     screen:attach(true)
-    eq('#ff0000', eval('synIDattr(hlID("Normal"), "fg")'))
+    eq('#ff0000', eval('synIDattr(hlID("Normal"),  "fg")'))
+    eq('Black',   eval('synIDattr(hlID("Normal"),  "bg")'))
+    eq('Salmon',  eval('synIDattr(hlID("Keyword"), "fg")'))
+    eq('Maroon',  eval('synIDattr(hlID("Keyword"), "sp")'))
+  end)
+
+  it('returns #RRGGBB value for fg#/bg#/sp#', function()
+    screen:attach(true)
+    eq('#ff0000', eval('synIDattr(hlID("Normal"), "fg#")'))
+    eq('#000000', eval('synIDattr(hlID("Normal"), "bg#")'))
+    eq('#fa8072', eval('synIDattr(hlID("Keyword"), "fg#")'))
+    eq('#800000', eval('synIDattr(hlID("Keyword"), "sp#")'))
   end)
 
   it('returns color number if non-GUI', function()
     screen:attach(false)
-    eq('1', eval('synIDattr(hlID("Normal"), "fg")'))
+    eq('252', eval('synIDattr(hlID("Normal"), "fg")'))
+    eq('79', eval('synIDattr(hlID("Keyword"), "fg")'))
   end)
 end)

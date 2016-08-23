@@ -289,7 +289,9 @@ static uint8_t *command_line_enter(int firstc, long count, int indent)
 
   if (ccline.cmdbuff != NULL) {
     // Put line in history buffer (":" and "=" only when it was typed).
-    if (ccline.cmdlen && s->firstc != NUL
+    if (s->histype != HIST_INVALID
+        && ccline.cmdlen
+        && s->firstc != NUL
         && (s->some_key_typed || s->histype == HIST_SEARCH)) {
       add_to_history(s->histype, ccline.cmdbuff, true,
           s->histype == HIST_SEARCH ? s->firstc : NUL);
@@ -356,7 +358,8 @@ static int command_line_execute(VimState *state, int key)
   s->c = key;
 
   if (s->c == K_EVENT) {
-    queue_process_events(loop.events);
+    queue_process_events(main_loop.events);
+    redrawcmdline();
     return 1;
   }
 
@@ -622,8 +625,8 @@ static int command_line_execute(VimState *state, int key)
     // CTRL-\ e doesn't work when obtaining an expression, unless it
     // is in a mapping.
     if (s->c != Ctrl_N && s->c != Ctrl_G && (s->c != 'e'
-                                       || (ccline.cmdfirstc == '=' &&
-                                           KeyTyped))) {
+                                             || (ccline.cmdfirstc == '='
+                                                 && KeyTyped))) {
       vungetc(s->c);
       s->c = Ctrl_BSL;
     } else if (s->c == 'e') {
@@ -1268,7 +1271,7 @@ static int command_line_handle_key(CommandLineState *s)
   case K_KPAGEUP:
   case K_PAGEDOWN:
   case K_KPAGEDOWN:
-    if (hislen == 0 || s->firstc == NUL) {
+    if (s->histype == HIST_INVALID || hislen == 0 || s->firstc == NUL) {
       // no history
       return command_line_not_changed(s);
     }
@@ -3437,6 +3440,7 @@ addstar (
         || context == EXPAND_COMPILER
         || context == EXPAND_OWNSYNTAX
         || context == EXPAND_FILETYPE
+        || context == EXPAND_PACKADD
         || (context == EXPAND_TAGS && fname[0] == '/'))
       retval = vim_strnsave(fname, len);
     else {
@@ -3791,23 +3795,27 @@ ExpandFromContext (
       || xp->xp_context == EXPAND_TAGS_LISTFILES)
     return expand_tags(xp->xp_context == EXPAND_TAGS, pat, num_file, file);
   if (xp->xp_context == EXPAND_COLORS) {
-    char *directories[] = {"colors", NULL};
-    return ExpandRTDir(pat, num_file, file, directories);
+    char *directories[] = { "colors", NULL };
+    return ExpandRTDir(pat, DIP_START + DIP_OPT, num_file, file, directories);
   }
   if (xp->xp_context == EXPAND_COMPILER) {
-    char *directories[] = {"compiler", NULL};
-    return ExpandRTDir(pat, num_file, file, directories);
+    char *directories[] = { "compiler", NULL };
+    return ExpandRTDir(pat, 0, num_file, file, directories);
   }
   if (xp->xp_context == EXPAND_OWNSYNTAX) {
-    char *directories[] = {"syntax", NULL};
-    return ExpandRTDir(pat, num_file, file, directories);
+    char *directories[] = { "syntax", NULL };
+    return ExpandRTDir(pat, 0, num_file, file, directories);
   }
   if (xp->xp_context == EXPAND_FILETYPE) {
-    char *directories[] = {"syntax", "indent", "ftplugin", NULL};
-    return ExpandRTDir(pat, num_file, file, directories);
+    char *directories[] = { "syntax", "indent", "ftplugin", NULL };
+    return ExpandRTDir(pat, 0, num_file, file, directories);
   }
-  if (xp->xp_context == EXPAND_USER_LIST)
+  if (xp->xp_context == EXPAND_USER_LIST) {
     return ExpandUserList(xp, num_file, file);
+  }
+  if (xp->xp_context == EXPAND_PACKADD) {
+    return ExpandPackAddDir(pat, num_file, file);
+  }
 
   regmatch.regprog = vim_regcomp(pat, p_magic ? RE_MAGIC : 0);
   if (regmatch.regprog == NULL)
@@ -3981,6 +3989,7 @@ static void expand_shellcmd(char_u *filepat, int *num_file, char_u ***file,
   char_u      *s, *e;
   int flags = flagsarg;
   int ret;
+  bool did_curdir = false;
 
   /* for ":set path=" and ":set tags=" halve backslashes for escaped
    * space */
@@ -3989,7 +3998,7 @@ static void expand_shellcmd(char_u *filepat, int *num_file, char_u ***file,
     if (pat[i] == '\\' && pat[i + 1] == ' ')
       STRMOVE(pat + i, pat + i + 1);
 
-  flags |= EW_FILE | EW_EXEC;
+  flags |= EW_FILE | EW_EXEC | EW_SHELLCMD;
 
   bool mustfree = false;  // Track memory allocation for *path.
   /* For an absolute name we don't use $PATH. */
@@ -4009,12 +4018,24 @@ static void expand_shellcmd(char_u *filepat, int *num_file, char_u ***file,
 
   /*
    * Go over all directories in $PATH.  Expand matches in that directory and
-   * collect them in "ga".
+   * collect them in "ga". When "." is not in $PATH also expaned for the
+   * current directory, to find "subdir/cmd".
    */
   ga_init(&ga, (int)sizeof(char *), 10);
-  for (s = path; *s != NUL; s = e) {
-    if (*s == ' ')
-      ++s;              /* Skip space used for absolute path name. */
+  for (s = path; ; s = e) {
+    if (*s == NUL) {
+      if (did_curdir) {
+        break;
+      }
+      // Find directories in the current directory, path is empty.
+      did_curdir = true;
+    } else if (*s == '.') {
+      did_curdir = true;
+    }
+
+    if (*s == ' ') {
+      s++;              // Skip space used for absolute path name.
+    }
 
     e = vim_strchr(s, ':');
     if (e == NULL)
@@ -4174,12 +4195,16 @@ static int ExpandUserList(expand_T *xp, int *num_file, char_u ***file)
   return OK;
 }
 
-/*
- * Expand color scheme, compiler or filetype names:
- * 'runtimepath'/{dirnames}/{pat}.vim
- * "dirnames" is an array with one or more directory names.
- */
-static int ExpandRTDir(char_u *pat, int *num_file, char_u ***file, char *dirnames[])
+/// Expand color scheme, compiler or filetype names.
+/// Search from 'runtimepath':
+///   'runtimepath'/{dirnames}/{pat}.vim
+/// When "flags" has DIP_START: search also from 'start' of 'packpath':
+///   'packpath'/pack/ * /start/ * /{dirnames}/{pat}.vim
+/// When "flags" has DIP_OPT: search also from 'opt' of 'packpath':
+///   'packpath'/pack/ * /opt/ * /{dirnames}/{pat}.vim
+/// "dirnames" is an array with one or more directory names.
+static int ExpandRTDir(char_u *pat, int flags, int *num_file, char_u ***file,
+                       char *dirnames[])
 {
   *num_file = 0;
   *file = NULL;
@@ -4194,6 +4219,26 @@ static int ExpandRTDir(char_u *pat, int *num_file, char_u ***file, char *dirname
     snprintf((char *)s, size, "%s/%s*.vim", dirnames[i], pat);
     globpath(p_rtp, s, &ga, 0);
     xfree(s);
+  }
+
+  if (flags & DIP_START) {
+    for (int i = 0; dirnames[i] != NULL; i++) {
+      size_t size = STRLEN(dirnames[i]) + pat_len + 22;
+      char_u *s = xmalloc(size);
+      snprintf((char *)s, size, "pack/*/start/*/%s/%s*.vim", dirnames[i], pat);  // NOLINT
+      globpath(p_pp, s, &ga, 0);
+      xfree(s);
+    }
+  }
+
+  if (flags & DIP_OPT) {
+    for (int i = 0; dirnames[i] != NULL; i++) {
+      size_t size = STRLEN(dirnames[i]) + pat_len + 20;
+      char_u *s = xmalloc(size);
+      snprintf((char *)s, size, "pack/*/opt/*/%s/%s*.vim", dirnames[i], pat);  // NOLINT
+      globpath(p_pp, s, &ga, 0);
+      xfree(s);
+    }
   }
 
   for (int i = 0; i < ga.ga_len; i++) {
@@ -4218,6 +4263,43 @@ static int ExpandRTDir(char_u *pat, int *num_file, char_u ***file, char *dirname
 
   /* Sort and remove duplicates which can happen when specifying multiple
    * directories in dirnames. */
+  ga_remove_duplicate_strings(&ga);
+
+  *file = ga.ga_data;
+  *num_file = ga.ga_len;
+  return OK;
+}
+
+/// Expand loadplugin names:
+/// 'packpath'/pack/ * /opt/{pat}
+static int ExpandPackAddDir(char_u *pat, int *num_file, char_u ***file)
+{
+  garray_T ga;
+
+  *num_file = 0;
+  *file = NULL;
+  size_t pat_len = STRLEN(pat);
+  ga_init(&ga, (int)sizeof(char *), 10);
+
+  size_t buflen = pat_len + 26;
+  char_u *s = xmalloc(buflen);
+  snprintf((char *)s, buflen, "pack/*/opt/%s*", pat);  // NOLINT
+  globpath(p_pp, s, &ga, 0);
+  xfree(s);
+
+  for (int i = 0; i < ga.ga_len; i++) {
+    char_u *match = ((char_u **)ga.ga_data)[i];
+    s = path_tail(match);
+    char_u *e = s + STRLEN(s);
+    memmove(match, s, e - s + 1);
+  }
+
+  if (GA_EMPTY(&ga)) {
+    return FAIL;
+  }
+
+  // Sort and remove duplicates which can happen when specifying multiple
+  // directories in dirnames.
   ga_remove_duplicate_strings(&ga);
 
   *file = ga.ga_data;
@@ -4272,20 +4354,33 @@ void globpath(char_u *path, char_u *file, garray_T *ga, int expand_options)
 *  Command line history stuff	 *
 *********************************/
 
-/*
- * Translate a history character to the associated type number.
- */
-static int hist_char2type(int c)
+/// Translate a history character to the associated type number
+static HistoryType hist_char2type(const int c)
+  FUNC_ATTR_CONST FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  if (c == ':')
-    return HIST_CMD;
-  if (c == '=')
-    return HIST_EXPR;
-  if (c == '@')
-    return HIST_INPUT;
-  if (c == '>')
-    return HIST_DEBUG;
-  return HIST_SEARCH;       /* must be '?' or '/' */
+  switch (c) {
+    case ':': {
+      return HIST_CMD;
+    }
+    case '=': {
+      return HIST_EXPR;
+    }
+    case '@': {
+      return HIST_INPUT;
+    }
+    case '>': {
+      return HIST_DEBUG;
+    }
+    case '/':
+    case '?': {
+      return HIST_SEARCH;
+    }
+    default: {
+      return HIST_INVALID;
+    }
+  }
+  // Silence -Wreturn-type
+  return 0;
 }
 
 /*
@@ -4454,28 +4549,38 @@ in_history (
   return false;
 }
 
-/*
- * Convert history name (from table above) to its HIST_ equivalent.
- * When "name" is empty, return "cmd" history.
- * Returns -1 for unknown history name.
- */
-int get_histtype(char_u *name)
+/// Convert history name to its HIST_ equivalent
+///
+/// Names are taken from the table above. When `name` is empty returns currently
+/// active history or HIST_DEFAULT, depending on `return_default` argument.
+///
+/// @param[in]  name            Converted name.
+/// @param[in]  len             Name length.
+/// @param[in]  return_default  Determines whether HIST_DEFAULT should be
+///                             returned or value based on `ccline.cmdfirstc`.
+///
+/// @return Any value from HistoryType enum, including HIST_INVALID. May not
+///         return HIST_DEFAULT unless return_default is true.
+HistoryType get_histtype(const char_u *const name, const size_t len,
+                         const bool return_default)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  int i;
-  int len = (int)STRLEN(name);
+  // No argument: use current history.
+  if (len == 0) {
+    return return_default ? HIST_DEFAULT : hist_char2type(ccline.cmdfirstc);
+  }
 
-  /* No argument: use current history. */
-  if (len == 0)
-    return hist_char2type(ccline.cmdfirstc);
-
-  for (i = 0; history_names[i] != NULL; ++i)
-    if (STRNICMP(name, history_names[i], len) == 0)
+  for (HistoryType i = 0; history_names[i] != NULL; i++) {
+    if (STRNICMP(name, history_names[i], len) == 0) {
       return i;
+    }
+  }
 
-  if (vim_strchr((char_u *)":=@>?/", name[0]) != NULL && name[1] == NUL)
+  if (vim_strchr((char_u *)":=@>?/", name[0]) != NULL && len == 1) {
     return hist_char2type(name[0]);
+  }
 
-  return -1;
+  return HIST_INVALID;
 }
 
 static int last_maptick = -1;           /* last seen maptick */
@@ -4496,8 +4601,10 @@ add_to_history (
   histentry_T *hisptr;
   int len;
 
-  if (hislen == 0)              /* no history */
+  if (hislen == 0 || histype == HIST_INVALID) {  // no history
     return;
+  }
+  assert(histype != HIST_DEFAULT);
 
   if (cmdmod.keeppatterns && histype == HIST_SEARCH)
     return;
@@ -4847,23 +4954,20 @@ void ex_history(exarg_T *eap)
     while (ASCII_ISALPHA(*end)
            || vim_strchr((char_u *)":=@>/?", *end) != NULL)
       end++;
-    i = *end;
-    *end = NUL;
-    histype1 = get_histtype(arg);
-    if (histype1 == -1) {
-      if (STRNICMP(arg, "all", STRLEN(arg)) == 0) {
+    histype1 = get_histtype(arg, end - arg, false);
+    if (histype1 == HIST_INVALID) {
+      if (STRNICMP(arg, "all", end - arg) == 0) {
         histype1 = 0;
         histype2 = HIST_COUNT-1;
       } else {
-        *end = i;
         EMSG(_(e_trailing));
         return;
       }
     } else
       histype2 = histype1;
-    *end = i;
-  } else
+  } else {
     end = arg;
+  }
   if (!get_list_range(&end, &hisidx1, &hisidx2) || *end != NUL) {
     EMSG(_(e_trailing));
     return;
@@ -4971,7 +5075,6 @@ static int ex_window(void)
   win_T               *wp;
   int i;
   linenr_T lnum;
-  int histtype;
   garray_T winsizes;
   char_u typestr[2];
   int save_restart_edit = restart_edit;
@@ -5020,7 +5123,7 @@ static int ex_window(void)
   /* Showing the prompt may have set need_wait_return, reset it. */
   need_wait_return = FALSE;
 
-  histtype = hist_char2type(cmdwin_type);
+  const int histtype = hist_char2type(cmdwin_type);
   if (histtype == HIST_CMD || histtype == HIST_DEBUG) {
     if (p_wc == TAB) {
       add_map((char_u *)"<buffer> <Tab> <C-X><C-V>", INSERT);
@@ -5035,7 +5138,7 @@ static int ex_window(void)
 
   /* Fill the buffer with the history. */
   init_history();
-  if (hislen > 0) {
+  if (hislen > 0 && histtype != HIST_INVALID) {
     i = hisidx[histtype];
     if (i >= 0) {
       lnum = 0;

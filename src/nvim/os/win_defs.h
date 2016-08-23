@@ -1,6 +1,9 @@
 #ifndef NVIM_OS_WIN_DEFS_H
 #define NVIM_OS_WIN_DEFS_H
 
+// winsock2.h must be first to avoid incompatibilities
+// with winsock.h (included by windows.h)
+#include <winsock2.h>
 #include <windows.h>
 #include <sys/stat.h>
 #include <io.h>
@@ -42,6 +45,8 @@
 #  define S_IXUSR S_IEXEC
 # endif
 #endif
+
+#define BACKSLASH_IN_FILENAME
 
 #ifdef _MSC_VER
 typedef SSIZE_T ssize_t;

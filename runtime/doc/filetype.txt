@@ -1,4 +1,4 @@
-*filetype.txt*  For Vim version 7.4.  Last change: 2013 Dec 15
+*filetype.txt*  For Vim version 7.4.  Last change: 2015 Dec 06
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -500,7 +500,7 @@ Options:
 		avoid that a Subject line with "Vim:" in it will cause an
 		error message.
 'textwidth'	is set to 72.  This is often recommended for e-mail.
-'formatoptions'  is set to break text lines and to repeat the comment leader
+'formatoptions'	is set to break text lines and to repeat the comment leader
 		in new lines, so that a leading ">" for quotes is repeated.
 		You can also format quoted text with |gq|.
 
@@ -510,32 +510,43 @@ Local mappings:
 	to the end of the file in Normal mode.  This means "> " is inserted in
 	each line.
 
-MAN							*ft-man-plugin* *:Man*
+MAN					*ft-man-plugin* *:Man* *man.vim*
 
-Displays a manual page in a nice way.  Also see the user manual
-|find-manpage|.
+View manpages in Nvim. Supports highlighting, completion, locales, and
+navigation. Also see |find-manpage|.
 
-To start using the ":Man" command before any manual page was loaded, source
-this script from your startup vimrc file: >
+To use Nvim as a manpager: >
+     export MANPAGER="nvim -c 'set ft=man' -"
 
-	runtime ftplugin/man.vim
-
-Options:
-'iskeyword'	the '.' character is added to be able to use CTRL-] on the
-		manual page name.
+man.vim will always attempt to reuse the closest man window (above/left) but
+otherwise create a split.
 
 Commands:
-Man {name}	Display the manual page for {name} in a window.
-Man {number} {name}
-		Display the manual page for {name} in a section {number}.
+Man {name}                Display the manpage for {name}.
+Man {sect} {name}         Display the manpage for {name} and section {sect}.
+Man {name}({sect})        Alternate syntax which completes the section.
+Man {sect} {name}({sect}) Used during completion to show the real section of
+                          when the provided section is a prefix, e.g. 1m vs 1.
+Man {path}                Open the manpage specified by path. Prepend "./" if
+                          page is in the current directory.
 
-Global mapping:
-<Leader>K	Displays the manual page for the word under the cursor.
+|:Man| accepts command modifiers. For example, to use a vertical split: >
+     :vertical Man printf
+
+Global Mappings:
+<Plug>(Man)               Jump to the manpage for the <cWORD> under the
+                          cursor. Takes a count for the section.
 
 Local mappings:
-CTRL-]		Jump to the manual page for the word under the cursor.
-CTRL-T		Jump back to the previous manual page.
+K or CTRL-]               Jump to the manpage for the <cWORD> under the
+                          cursor. Takes a count for the section.
+CTRL-T                    Jump back to the location that the manpage was
+                          opened from.
+q                         :quit if invoked as $MANPAGER, otherwise :close.
 
+Variables:
+*g:no_man_maps*             Do not create mappings in manpage buffers.
+*g:ft_man_folding_enable*   Fold manpages with foldmethod=indent foldnestmax=1.
 
 PDF							*ft-pdf-plugin*
 

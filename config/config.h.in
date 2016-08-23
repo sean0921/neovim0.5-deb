@@ -30,6 +30,7 @@
 #cmakedefine HAVE_PUTENV_S
 #cmakedefine HAVE_PWD_H
 #cmakedefine HAVE_READLINK
+#cmakedefine HAVE_UV_TRANSLATE_SYS_ERROR
 // TODO: add proper cmake check
 // #define HAVE_SELINUX 1
 #cmakedefine HAVE_SETENV
@@ -48,8 +49,15 @@
 #cmakedefine HAVE_WORKING_LIBINTL
 #cmakedefine UNIX
 #cmakedefine USE_FNAME_CASE
+#cmakedefine HAVE_SYS_UIO_H
+#ifdef HAVE_SYS_UIO_H
+#cmakedefine HAVE_READV
+# ifndef HAVE_READV
+#  undef HAVE_SYS_UIO_H
+# endif
+#endif
 
-#define FEAT_CSCOPE
+#cmakedefine FEAT_TUI
 
 #ifndef UNIT_TESTING
 #cmakedefine HAVE_JEMALLOC
@@ -57,5 +65,6 @@
 
 #cmakedefine HAVE_BE64TOH
 #cmakedefine ORDER_BIG_ENDIAN
+#define ENDIAN_INCLUDE_FILE <@ENDIAN_INCLUDE_FILE@>
 
 #endif  // AUTO_CONFIG_H

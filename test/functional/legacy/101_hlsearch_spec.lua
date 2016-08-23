@@ -1,6 +1,6 @@
 -- Test for v:hlsearch
 
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local clear, feed = helpers.clear, helpers.feed
 local execute, expect = helpers.execute, helpers.expect
 
@@ -61,6 +61,6 @@ describe('v:hlsearch', function()
       0:not highlighted
       1:highlighted
       0:not highlighted
-      Vim(let):E706:]])
+      Vim(let):E745:]])
   end)
 end)

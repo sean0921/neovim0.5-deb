@@ -961,7 +961,7 @@ static int insert_handle_key(InsertState *s)
     break;
 
   case K_EVENT:       // some event
-    queue_process_events(loop.events);
+    queue_process_events(main_loop.events);
     break;
 
   case K_FOCUSGAINED:  // Neovim has been given focus
@@ -1359,6 +1359,9 @@ ins_redraw (
       update_screen(0);
     }
     if (has_event(EVENT_CURSORMOVEDI)) {
+      // Make sure curswant is correct, an autocommand may call
+      // getcurpos()
+      update_curswant();
       apply_autocmds(EVENT_CURSORMOVEDI, NULL, NULL, false, curbuf);
     }
     if (curwin->w_p_cole > 0) {
@@ -2319,6 +2322,22 @@ static int ins_compl_make_cyclic(void)
   return count;
 }
 
+
+// Set variables that store noselect and noinsert behavior from the
+// 'completeopt' value.
+void completeopt_was_set(void)
+{
+  compl_no_insert = false;
+  compl_no_select = false;
+  if (strstr((char *)p_cot, "noselect") != NULL) {
+    compl_no_select = true;
+  }
+  if (strstr((char *)p_cot, "noinsert") != NULL) {
+    compl_no_insert = true;
+  }
+}
+
+
 /*
  * Start completion for the complete() function.
  * "startcol" is where the matched text starts (1 is first column).
@@ -2366,6 +2385,7 @@ void set_completion(colnr_T startcol, list_T *list)
   } else {
     ins_complete(Ctrl_N, false);
   }
+  compl_enter_selects = compl_no_insert;
 
   // Lazily show the popup menu, unless we got interrupted.
   if (!compl_interrupted) {
@@ -3097,17 +3117,6 @@ static bool ins_compl_prep(int c)
 
   }
 
-  if (strstr((char *)p_cot, "noselect") != NULL) {
-    compl_no_insert = FALSE;
-    compl_no_select = TRUE;
-  } else if (strstr((char *)p_cot, "noinsert") != NULL) {
-    compl_no_insert = TRUE;
-    compl_no_select = FALSE;
-  } else {
-    compl_no_insert = FALSE;
-    compl_no_select = FALSE;
-  }
-
   if (ctrl_x_mode == CTRL_X_NOT_DEFINED_YET) {
     /*
      * We have just typed CTRL-X and aren't quite sure which CTRL-X mode
@@ -3296,6 +3305,12 @@ static bool ins_compl_prep(int c)
       if (edit_submode != NULL) {
         edit_submode = NULL;
         showmode();
+      }
+
+      // Avoid the popup menu remains displayed when leaving the
+      // command line window.
+      if (c == Ctrl_C && cmdwin_type != 0) {
+        update_screen(0);
       }
 
       /*
@@ -3975,6 +3990,7 @@ static void ins_compl_insert(void)
   dict_add_nr_str(dict, "info", 0L,
                   EMPTY_IF_NULL(compl_shown_match->cp_text[CPT_INFO]));
   set_vim_var_dict(VV_COMPLETED_ITEM, dict);
+  compl_curr_match = compl_shown_match;
 }
 
 /*
@@ -4416,11 +4432,10 @@ static int ins_complete(int c, bool enable_pum)
           prefix = (char_u *)"";
         STRCPY((char *)compl_pattern, prefix);
         (void)quote_meta(compl_pattern + STRLEN(prefix),
-            line + compl_col, compl_length);
-      } else if (--startcol < 0 ||
-                 !vim_iswordp(mb_prevptr(line, line + startcol + 1))
-                 ) {
-        /* Match any word of at least two chars */
+                         line + compl_col, compl_length);
+      } else if (--startcol < 0
+                 || !vim_iswordp(mb_prevptr(line, line + startcol + 1))) {
+        // Match any word of at least two chars
         compl_pattern = vim_strsave((char_u *)"\\<\\k\\k");
         compl_col += curs_col;
         compl_length = 0;
@@ -6676,8 +6691,8 @@ bool in_cinkeys(int keytyped, int when, bool line_is_empty)
     } else if (*look == 'e') {
       if (try_match && keytyped == 'e' && curwin->w_cursor.col >= 4) {
         p = get_cursor_line_ptr();
-        if (skipwhite(p) == p + curwin->w_cursor.col - 4 &&
-            STRNCMP(p + curwin->w_cursor.col - 4, "else", 4) == 0) {
+        if (skipwhite(p) == p + curwin->w_cursor.col - 4
+            && STRNCMP(p + curwin->w_cursor.col - 4, "else", 4) == 0) {
           return true;
         }
       }
@@ -6939,8 +6954,8 @@ static void ins_reg(void)
       AppendCharToRedobuff(literally);
       AppendCharToRedobuff(regname);
 
-      do_put(regname, NULL, BACKWARD, 1L,
-          (literally == Ctrl_P ? PUT_FIXINDENT : 0) | PUT_CURSEND);
+      do_put(regname, NULL, BACKWARD, 1,
+             (literally == Ctrl_P ? PUT_FIXINDENT : 0) | PUT_CURSEND);
     } else if (insert_reg(regname, literally) == FAIL) {
       vim_beep(BO_REG);
       need_redraw = true;  // remove the '"'
@@ -7376,17 +7391,16 @@ static bool ins_bs(int c, int mode, int *inserted_space_p)
    * can't backup past starting point unless 'backspace' > 1
    * can backup to a previous line if 'backspace' == 0
    */
-  if (       bufempty()
-             || (
-               !revins_on &&
-               ((curwin->w_cursor.lnum == 1 && curwin->w_cursor.col == 0)
-                || (!can_bs(BS_START)
-                    && (arrow_used
-                        || (curwin->w_cursor.lnum == Insstart_orig.lnum
-                            && curwin->w_cursor.col <= Insstart_orig.col)))
-                || (!can_bs(BS_INDENT) && !arrow_used && ai_col > 0
-                    && curwin->w_cursor.col <= ai_col)
-                || (!can_bs(BS_EOL) && curwin->w_cursor.col == 0)))) {
+  if (bufempty()
+      || (!revins_on
+          && ((curwin->w_cursor.lnum == 1 && curwin->w_cursor.col == 0)
+              || (!can_bs(BS_START)
+                  && (arrow_used
+                      || (curwin->w_cursor.lnum == Insstart_orig.lnum
+                          && curwin->w_cursor.col <= Insstart_orig.col)))
+              || (!can_bs(BS_INDENT) && !arrow_used && ai_col > 0
+                  && curwin->w_cursor.col <= ai_col)
+              || (!can_bs(BS_EOL) && curwin->w_cursor.col == 0)))) {
     vim_beep(BO_BS);
     return false;
   }
@@ -7632,14 +7646,14 @@ static bool ins_bs(int c, int mode, int *inserted_space_p)
           if (revins_on && gchar_cursor() == NUL)
             break;
         }
-        /* Just a single backspace?: */
-        if (mode == BACKSPACE_CHAR)
+        // Just a single backspace?:
+        if (mode == BACKSPACE_CHAR) {
           break;
-      } while (
-        revins_on ||
-        (curwin->w_cursor.col > mincol
-         && (curwin->w_cursor.lnum != Insstart_orig.lnum
-             || curwin->w_cursor.col != Insstart_orig.col)));
+        }
+      } while (revins_on
+               || (curwin->w_cursor.col > mincol
+                   && (curwin->w_cursor.lnum != Insstart_orig.lnum
+                       || curwin->w_cursor.col != Insstart_orig.col)));
     }
     did_backspace = true;
   }
@@ -7689,7 +7703,7 @@ static void ins_mouse(int c)
 
   undisplay_dollar();
   tpos = curwin->w_cursor;
-  if (do_mouse(NULL, c, BACKWARD, 1L, 0)) {
+  if (do_mouse(NULL, c, BACKWARD, 1, 0)) {
     win_T   *new_curwin = curwin;
 
     if (curwin != old_curwin && win_valid(old_curwin)) {
@@ -7741,6 +7755,8 @@ static void ins_mousescroll(int dir)
             (long)(curwin->w_botline - curwin->w_topline));
       else
         scroll_redraw(dir, 3L);
+    } else {
+        mouse_scroll_horiz(dir);
     }
     did_scroll = TRUE;
   }

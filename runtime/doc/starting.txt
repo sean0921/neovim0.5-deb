@@ -1,4 +1,4 @@
-*starting.txt*  For Vim version 7.4.  Last change: 2015 Jan 15
+*starting.txt*  For Vim version 7.4.  Last change: 2016 Apr 05
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -10,9 +10,11 @@ Starting Vim						*starting*
 2. Initialization		|initialization|
 3. $VIM and $VIMRUNTIME		|$VIM|
 4. Suspending			|suspend|
-5. Saving settings		|save-settings|
-6. Views and Sessions		|views-sessions|
-7. The ShaDa file		|shada-file|
+5. Exiting			|exiting|
+6. Saving settings		|save-settings|
+7. Views and Sessions		|views-sessions|
+8. The ShaDa file		|shada-file|
+9. Base Directories     	|base-directories|
 
 ==============================================================================
 1. Vim arguments					*vim-arguments*
@@ -40,6 +42,7 @@ filename	One or more file names.  The first one will be the current
 			nvim -- -filename
 <		All arguments after the "--" will be interpreted as file names,
 		no other options or "+command" argument can follow.
+		For behavior of quotes on MS-Windows, see |win32-quotes|.
 
 							*--*
 -		This argument can mean two things, depending on whether Ex
@@ -349,8 +352,11 @@ argument.
 							*-W*
 -W {scriptout}	Like -w, but do not append, overwrite an existing file.
 
+							*--api-info*
+--api-info 	Print msgpack-encoded |api-metadata| and exit.
+
 ==============================================================================
-3. Initialization				*initialization* *startup*
+2. Initialization				*initialization* *startup*
 
 At startup, Vim checks environment variables and files and sets values
 accordingly.  Vim proceeds in this order:
@@ -377,7 +383,7 @@ accordingly.  Vim proceeds in this order:
 	name, "init.vim" is Neovim specific location for vimrc file.  Also see 
 	|vimrc-intro|.
 
-	Places for your personal initializations:
+	Places for your personal initializations (see |base-directories|):
 		Unix		$XDG_CONFIG_HOME/nvim/init.vim
 				(default for $XDG_CONFIG_HOME is ~/.config)
 		Windows		$XDG_CONFIG_HOME/nvim/init.vim
@@ -459,6 +465,11 @@ accordingly.  Vim proceeds in this order:
 	commands from the command line have not been executed yet.  You can
 	use "--cmd 'set noloadplugins'" |--cmd|.
 
+	Packages are loaded.  These are plugins, as above, but found in the
+	"start" directory of each entry in 'packpath'.  Every plugin directory
+	found is added in 'runtimepath' and then the plugins are sourced.  See
+	|packages|.
+
 7. Set 'shellpipe' and 'shellredir'
 	The 'shellpipe' and 'shellredir' options are set according to the
 	value of the 'shell' option, unless they have been set before.
@@ -494,8 +505,9 @@ accordingly.  Vim proceeds in this order:
 14. Execute startup commands
 	If a "-t" flag was given to Vim, the tag is jumped to.
 	The commands given with the |-c| and |+cmd| arguments are executed.
-	The starting flag is reset, has("vim_starting") will now return zero.
 	If the 'insertmode' option is set, Insert mode is entered.
+	The starting flag is reset, has("vim_starting") will now return zero.
+	The |v:vim_did_enter| variable is set to 1.
 	The |VimEnter| autocommands are executed.
 
 Some hints on using initializations:
@@ -601,7 +613,7 @@ This still won't work for systems where gvim does not use stdout at all
 though.
 
 ==============================================================================
-4. $VIM and $VIMRUNTIME
+3. $VIM and $VIMRUNTIME
 								*$VIM*
 The environment variable "$VIM" is used to locate various user files for Vim,
 such as the user startup script |init.vim|.  This depends on the system, see
@@ -663,7 +675,7 @@ greps in the help files) you might be able to use this: >
 	VIMRUNTIME="$(nvim -e --cmd 'echo $VIMRUNTIME|quit' 2>&1)"
 
 ==============================================================================
-5. Suspending						*suspend*
+4. Suspending						*suspend*
 
 					*iconize* *iconise* *CTRL-Z* *v_CTRL-Z*
 CTRL-Z			Suspend Vim, like ":stop".
@@ -694,6 +706,19 @@ continue if you exit from the shell.
 In X-windows the selection is disowned when Vim suspends.  this means you
 can't paste it in another application (since Vim is going to sleep an attempt
 to get the selection would make the program hang).
+
+==============================================================================
+5. Exiting						*exiting*
+
+There are several ways to exit Vim:
+- Close the last window with `:quit`.  Only when there are no changes.
+- Close the last window with `:quit!`.  Also when there are changes.
+- Close all windows with `:qall`.  Only when there are no changes.
+- Close all windows with `:qall!`.  Also when there are changes.
+- Use `:cquit`.  Also when there are changes.
+
+When using `:cquit` or when there was an error message Vim exits with exit
+code 1.  Errors can be avoided by using `:silent!`.
 
 ==============================================================================
 6. Saving settings					*save-settings*
@@ -1059,7 +1084,7 @@ even if other entries (with known name/type/etc) are merged. |shada-merging|
 SHADA FILE NAME						*shada-file-name*
 
 - The default name of the ShaDa file is "$XDG_DATA_HOME/nvim/shada/main.shada" 
-  for Unix. Default for $XDG_DATA_HOME is ~/.local/share.
+  for Unix. Default for $XDG_DATA_HOME is ~/.local/share. |base-directories|
 - The 'n' flag in the 'shada' option can be used to specify another ShaDa
   file name |'shada'|.
 - The "-i" Vim argument can be used to set another file name, |-i|.  When the
@@ -1175,11 +1200,10 @@ running) you have additional options:
 :wv[iminfo][!] [file]	Deprecated alias to |:wshada| command.
 
 						*:o* *:ol* *:oldfiles*
-:o[ldfiles][!]		List the files that have marks stored in the ShaDa
+:o[ldfiles]		List the files that have marks stored in the ShaDa
 			file.  This list is read on startup and only changes
 			afterwards with ":rshada!".  Also see |v:oldfiles|.
 			The number can be used with |c_#<|.
-			Use ! to get a file selection prompt.
 
 :bro[wse] o[ldfiles][!]
 			List file names as with |:oldfiles|, and then prompt
@@ -1345,5 +1369,41 @@ file when reading and include:
   in the third object for parsing fourth object.  I.e. when fourth object 
   either contains more then one MessagePack object or it does not contain 
   complete MessagePack object.
+
+==============================================================================
+9. Base Directories				*base-directories* *xdg*
+
+Nvim conforms to the XDG Base Directory Specification for application
+configuration and data file locations. This just means Nvim looks for some
+optional settings and uses them if they exist, otherwise defaults are chosen.
+https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
+
+CONFIGURATION DIRECTORY				*$XDG_CONFIG_HOME*
+
+    Base directory default:
+        Unix:     ~/.config
+        Windows:  ~/AppData/Local
+
+    Nvim directory:
+        Unix:     ~/.config/nvim/
+        Windows:  ~/AppData/Local/nvim/
+
+DATA DIRECTORY					*$XDG_DATA_HOME*
+
+    Base directory default:
+        Unix:     ~/.local/share
+        Windows:  ~/AppData/Local
+
+    Nvim directory:
+        Unix:     ~/.local/share/nvim/
+        Windows:  ~/AppData/Local/nvim-data/
+
+Note on Windows the configuration and data directory defaults are the same
+(for lack of an alternative), but the sub-directory for data is named
+"nvim-data" to separate it from the configuration sub-directory "nvim".
+
+Throughout other sections of the user manual, the defaults are used as generic
+placeholders, e.g. where "~/.config" is mentioned it should be understood to
+mean "$XDG_CONFIG_HOME or ~/.config".
 
  vim:tw=78:ts=8:ft=help:norl:

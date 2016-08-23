@@ -1,5 +1,3 @@
-include(CheckLibraryExists)
-
 option(USE_GCOV "Enable gcov support" OFF)
 
 if(NOT CLANG_TSAN)
@@ -54,6 +52,10 @@ foreach(subdir
         event
         eval
        )
+  if(${subdir} MATCHES "tui" AND NOT FEAT_TUI)
+    continue()
+  endif()
+
   file(MAKE_DIRECTORY ${GENERATED_DIR}/${subdir})
   file(MAKE_DIRECTORY ${GENERATED_INCLUDES_DIR}/${subdir})
   file(GLOB sources ${subdir}/*.c)
@@ -73,6 +75,9 @@ foreach(sfile ${NEOVIM_SOURCES})
   if(${f} MATCHES "^(regexp_nfa.c)$")
     list(APPEND to_remove ${sfile})
   endif()
+  if(WIN32 AND ${f} MATCHES "^(pty_process_unix.c)$")
+    list(APPEND to_remove ${sfile})
+  endif()
 endforeach()
 
 list(REMOVE_ITEM NEOVIM_SOURCES ${to_remove})
@@ -87,11 +92,9 @@ set(CONV_SOURCES
   ex_docmd.c
   ex_getln.c
   fileio.c
-  getchar.c
   mbyte.c
   memline.c
   message.c
-  ops.c
   regexp.c
   screen.c
   search.c
@@ -231,7 +234,6 @@ endif()
 list(APPEND NVIM_LINK_LIBRARIES
   ${LIBUV_LIBRARIES}
   ${MSGPACK_LIBRARIES}
-  ${LUAJIT_LIBRARIES}
   ${LIBVTERM_LIBRARIES}
   ${LIBTERMKEY_LIBRARIES}
   ${UNIBILIUM_LIBRARIES}
@@ -257,10 +259,31 @@ add_executable(nvim ${NEOVIM_GENERATED_SOURCES} ${NEOVIM_SOURCES}
 target_link_libraries(nvim ${NVIM_EXEC_LINK_LIBRARIES})
 install_helper(TARGETS nvim)
 
+if(WIN32)
+  # Copy DLLs to bin/ and install them along with nvim
+  add_custom_target(nvim_dll_deps ALL DEPENDS nvim
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/windows_runtime_deps
+    COMMAND ${CMAKE_COMMAND}
+      "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+      -DBINARY="${PROJECT_BINARY_DIR}/bin/nvim${CMAKE_EXECUTABLE_SUFFIX}"
+      -DDST=${PROJECT_BINARY_DIR}/windows_runtime_deps
+      -P ${PROJECT_SOURCE_DIR}/cmake/WindowsDllCopy.cmake
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_BINARY_DIR}/windows_runtime_deps/
+      ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+  install(DIRECTORY ${PROJECT_BINARY_DIR}/windows_runtime_deps/
+    DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
 if(CLANG_ASAN_UBSAN)
   message(STATUS "Enabling Clang address sanitizer and undefined behavior sanitizer for nvim.")
+  check_c_compiler_flag(-fno-sanitize-recover=all SANITIZE_RECOVER_ALL)
+  if(SANITIZE_RECOVER_ALL)
+    set(SANITIZE_RECOVER -fno-sanitize-recover=all)     # Clang 3.6+
+  else()
+    set(SANITIZE_RECOVER -fno-sanitize-recover)         # Clang 3.5-
+  endif()
   set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-DEXITFREE ")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-fno-sanitize-recover -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address -fsanitize=undefined -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/.asan-blacklist")
+  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "${SANITIZE_RECOVER} -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address -fsanitize=undefined -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/src/.asan-blacklist")
   set_property(TARGET nvim APPEND_STRING PROPERTY LINK_FLAGS "-fsanitize=address -fsanitize=undefined ")
 elseif(CLANG_MSAN)
   message(STATUS "Enabling Clang memory sanitizer for nvim.")

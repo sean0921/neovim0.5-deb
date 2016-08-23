@@ -12,6 +12,7 @@
 #include "nvim/eval.h"
 #include "nvim/garray.h"
 #include "nvim/vim.h"
+#include "nvim/main.h"
 #include "nvim/memory.h"
 #include "nvim/log.h"
 #include "nvim/fileio.h"
@@ -37,6 +38,10 @@ bool server_init(void)
   if (listen_address == NULL) {
     must_free = true;
     listen_address = server_address_new();
+  }
+
+  if (!listen_address) {
+    return false;
   }
 
   bool ok = (server_start(listen_address) == 0);
@@ -108,7 +113,7 @@ int server_start(const char *endpoint)
   }
 
   SocketWatcher *watcher = xmalloc(sizeof(SocketWatcher));
-  socket_watcher_init(&loop, watcher, endpoint, NULL);
+  socket_watcher_init(&main_loop, watcher, endpoint, NULL);
 
   // Check if a watcher for the endpoint already exists
   for (int i = 0; i < watchers.ga_len; i++) {

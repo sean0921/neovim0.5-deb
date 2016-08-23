@@ -1,6 +1,6 @@
 -- Test character classes in regexp using regexpengine 0, 1, 2.
 
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local clear, execute, expect = helpers.clear, helpers.execute, helpers.expect
 local source, write_file = helpers.source, helpers.write_file
 local os_name = helpers.os_name
@@ -267,5 +267,16 @@ describe('character classes in regexp', function()
       ABCDEFGHIXYZ
       ABCDEFGHIXYZ
       ABCDEFGHIXYZ]])
+  end)
+  it([["\%1l^#.*" does not match on a line starting with "#". (vim-patch:7.4.1305)]], function()
+    source([[
+      1 s/\%#=0\%1l^\t...//g
+      2 s/\%#=1\%2l^\t...//g
+      3 s/\%#=2\%3l^\t...//g
+      4 s/\%#=0\%4l^\t...//g
+      5 s/\%#=1\%5l^\t...//g
+      6 s/\%#=2\%6l^\t...//g]])
+    diff(sixlines(string.sub(punct1, 1)..digits..punct2..upper..punct3..
+      lower..punct4..ctrl2..iso_text))
   end)
 end)

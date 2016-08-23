@@ -791,7 +791,7 @@ char_u *vim_findfile(void *search_ctx_arg)
             for (;; ) {
               /* if file exists and we didn't already find it */
               if ((path_with_url((char *)file_path)
-                   || (os_file_exists(file_path)
+                   || (os_path_exists(file_path)
                        && (search_ctx->ffsc_find_what
                            == FINDFILE_BOTH
                            || ((search_ctx->ffsc_find_what
@@ -1378,7 +1378,7 @@ find_file_in_path_option (
     /* copy file name into NameBuff, expanding environment variables */
     save_char = ptr[len];
     ptr[len] = NUL;
-    expand_env(ptr, NameBuff, MAXPATHL);
+    expand_env_esc(ptr, NameBuff, MAXPATHL, false, true, NULL);
     ptr[len] = save_char;
 
     xfree(ff_file_to_find);
@@ -1400,8 +1400,14 @@ find_file_in_path_option (
                            && (ff_file_to_find[2] == NUL
                                || vim_ispathsep(ff_file_to_find[2])))));
   if (vim_isAbsName(ff_file_to_find)
-      /* "..", "../path", "." and "./path": don't use the path_option */
+      // "..", "../path", "." and "./path": don't use the path_option
       || rel_to_curdir
+#if defined(WIN32)
+      // handle "\tmp" as absolute path
+      || vim_ispathsep(ff_file_to_find[0])
+      // handle "c:name" as absolute path
+      || (ff_file_to_find[0] != NUL && ff_file_to_find[1] == ':')
+#endif
       ) {
     /*
      * Absolute path, no need to use "path_option".
@@ -1436,12 +1442,12 @@ find_file_in_path_option (
         buf = suffixes;
         for (;; ) {
           if (
-            (os_file_exists(NameBuff)
-             && (find_what == FINDFILE_BOTH
-                 || ((find_what == FINDFILE_DIR)
-                     == os_isdir(NameBuff))))) {
-            file_name = vim_strsave(NameBuff);
-            goto theend;
+              (os_path_exists(NameBuff)
+               && (find_what == FINDFILE_BOTH
+                   || ((find_what == FINDFILE_DIR)
+                       == os_isdir(NameBuff))))) {
+              file_name = vim_strsave(NameBuff);
+              goto theend;
           }
           if (*buf == NUL)
             break;

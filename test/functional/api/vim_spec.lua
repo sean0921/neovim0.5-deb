@@ -1,6 +1,7 @@
 -- Sanity checks for vim_* API calls via msgpack-rpc
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
+local NIL = helpers.NIL
 local clear, nvim, eq, neq = helpers.clear, helpers.nvim, helpers.eq, helpers.neq
 local ok, nvim_async, feed = helpers.ok, helpers.nvim_async, helpers.feed
 local os_name = helpers.os_name
@@ -212,22 +213,22 @@ describe('vim_* functions', function()
       screen = Screen.new(40, 8)
       screen:attach()
       screen:set_default_attr_ids({
+        [0] = {bold=true, foreground=Screen.colors.Blue},
         [1] = {foreground = Screen.colors.White, background = Screen.colors.Red},
         [2] = {bold = true, foreground = Screen.colors.SeaGreen}
       })
-      screen:set_default_attr_ignore( {{bold=true, foreground=Screen.colors.Blue}} )
     end)
 
     it('can show one line', function()
       nvim_async('err_write', 'has bork\n')
       screen:expect([[
         ^                                        |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
         {1:has bork}                                |
       ]])
     end)
@@ -235,11 +236,11 @@ describe('vim_* functions', function()
     it('shows return prompt when more than &cmdheight lines', function()
       nvim_async('err_write', 'something happened\nvery bad\n')
       screen:expect([[
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
         {1:something happened}                      |
         {1:very bad}                                |
         {2:Press ENTER or type command to continue}^ |
@@ -249,9 +250,9 @@ describe('vim_* functions', function()
     it('shows return prompt after all lines are shown', function()
       nvim_async('err_write', 'FAILURE\nERROR\nEXCEPTION\nTRACEBACK\n')
       screen:expect([[
-        ~                                       |
-        ~                                       |
-        ~                                       |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
         {1:FAILURE}                                 |
         {1:ERROR}                                   |
         {1:EXCEPTION}                               |
@@ -266,12 +267,12 @@ describe('vim_* functions', function()
       nvim_async('err_write', 'fail\n')
       screen:expect([[
         ^                                        |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
         {1:very fail}                               |
       ]])
       helpers.wait()
@@ -279,11 +280,11 @@ describe('vim_* functions', function()
       -- shows up to &cmdheight lines
       nvim_async('err_write', 'more fail\ntoo fail\n')
       screen:expect([[
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
-        ~                                       |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
         {1:more fail}                               |
         {1:too fail}                                |
         {2:Press ENTER or type command to continue}^ |

@@ -387,14 +387,15 @@ void update_screen(int type)
     if (wp->w_buffer->b_mod_set) {
       win_T       *wwp;
 
-      /* Check if we already did this buffer. */
-      for (wwp = firstwin; wwp != wp; wwp = wwp->w_next)
-        if (wwp->w_buffer == wp->w_buffer)
+      // Check if we already did this buffer.
+      for (wwp = firstwin; wwp != wp; wwp = wwp->w_next) {
+        if (wwp->w_buffer == wp->w_buffer) {
           break;
-      if (
-        wwp == wp &&
-        syntax_present(wp))
+        }
+      }
+      if (wwp == wp && syntax_present(wp)) {
         syn_stack_apply_changes(wp->w_buffer);
+      }
     }
   }
 
@@ -1231,16 +1232,16 @@ static void win_update(win_T *wp)
                         || did_update == DID_FOLD
                         || (did_update == DID_LINE
                             && syntax_present(wp)
-                            && (
-                              (foldmethodIsSyntax(wp)
-                               && hasAnyFolding(wp)) ||
-                              syntax_check_changed(lnum)))
+                            && ((foldmethodIsSyntax(wp)
+                                 && hasAnyFolding(wp))
+                                || syntax_check_changed(lnum)))
                         // match in fixed position might need redraw
                         // if lines were inserted or deleted
-                        || (wp->w_match_head != NULL && buf->b_mod_xlines != 0)
-                        ))))) {
-      if (lnum == mod_top)
-        top_to_mod = FALSE;
+                        || (wp->w_match_head != NULL
+                            && buf->b_mod_xlines != 0)))))) {
+      if (lnum == mod_top) {
+        top_to_mod = false;
+      }
 
       /*
        * When at start of changed lines: May scroll following lines
@@ -2472,21 +2473,16 @@ win_line (
       mb_ptr_adv(ptr);
     }
 
-    /* When:
-     * - 'cuc' is set, or
-     * - 'colorcolumn' is set, or
-     * - 'virtualedit' is set, or
-     * - the visual mode is active,
-     * the end of the line may be before the start of the displayed part.
-     */
-    if (vcol < v && (
-          wp->w_p_cuc
-          || draw_color_col
-          ||
-          virtual_active()
-          ||
-          (VIsual_active && wp->w_buffer == curwin->w_buffer)
-          )) {
+    // When:
+    // - 'cuc' is set, or
+    // - 'colorcolumn' is set, or
+    // - 'virtualedit' is set, or
+    // - the visual mode is active,
+    // the end of the line may be before the start of the displayed part.
+    if (vcol < v && (wp->w_p_cuc
+                     || draw_color_col
+                     || virtual_active()
+                     || (VIsual_active && wp->w_buffer == curwin->w_buffer))) {
       vcol = v;
     }
 
@@ -3273,12 +3269,12 @@ win_line (
          * contains the @Spell cluster. */
         if (has_spell && v >= word_end && v > cur_checked_col) {
           spell_attr = 0;
-          if (!attr_pri)
+          if (!attr_pri) {
             char_attr = syntax_attr;
-          if (c != 0 && (
-                !has_syntax ||
-                can_spell)) {
-            char_u  *prev_ptr, *p;
+          }
+          if (c != 0 && (!has_syntax || can_spell)) {
+            char_u *prev_ptr;
+            char_u *p;
             int len;
             hlf_T spell_hlf = HLF_COUNT;
             if (has_mbyte) {
@@ -3389,11 +3385,9 @@ win_line (
                  && lcs_nbsp)
                 || (c == ' ' && lcs_space && ptr - line <= trailcol))) {
           c = (c == ' ') ? lcs_space : lcs_nbsp;
-          if (area_attr == 0 && search_attr == 0) {
-            n_attr = 1;
-            extra_attr = hl_attr(HLF_8);
-            saved_attr2 = char_attr;  // save current attr
-          }
+          n_attr = 1;
+          extra_attr = hl_attr(HLF_8);
+          saved_attr2 = char_attr;  // save current attr
           mb_c = c;
           if (enc_utf8 && (*mb_char2len)(c) > 1) {
             mb_utf8 = true;
@@ -3406,11 +3400,9 @@ win_line (
 
         if (trailcol != MAXCOL && ptr > line + trailcol && c == ' ') {
           c = lcs_trail;
-          if (!attr_pri) {
-            n_attr = 1;
-            extra_attr = hl_attr(HLF_8);
-            saved_attr2 = char_attr;             /* save current attr */
-          }
+          n_attr = 1;
+          extra_attr = hl_attr(HLF_8);
+          saved_attr2 = char_attr;  // save current attr
           mb_c = c;
           if (enc_utf8 && (*mb_char2len)(c) > 1) {
             mb_utf8 = TRUE;
@@ -3424,12 +3416,10 @@ win_line (
       /*
        * Handling of non-printable characters.
        */
-      if (!(chartab[c & 0xff] & CT_PRINT_CHAR)) {
-        /*
-         * when getting a character from the file, we may have to
-         * turn it into something else on the way to putting it
-         * into "ScreenLines".
-         */
+      if (!vim_isprintc(c)) {
+        // when getting a character from the file, we may have to
+        // turn it into something else on the way to putting it
+        // into "ScreenLines".
         if (c == TAB && (!wp->w_p_list || lcs_tab1)) {
           int tab_len = 0;
           long vcol_adjusted = vcol;  // removed showbreak length
@@ -3558,11 +3548,9 @@ win_line (
             c = ' ';
           }
           lcs_eol_one = -1;
-          --ptr;                    /* put it back at the NUL */
-          if (!attr_pri) {
-            extra_attr = hl_attr(HLF_AT);
-            n_attr = 1;
-          }
+          ptr--;  // put it back at the NUL
+          extra_attr = hl_attr(HLF_AT);
+          n_attr = 1;
           mb_c = c;
           if (enc_utf8 && (*mb_char2len)(c) > 1) {
             mb_utf8 = TRUE;
@@ -3591,12 +3579,10 @@ win_line (
             n_extra = byte2cells(c) - 1;
             c = *p_extra++;
           }
-          if (!attr_pri) {
-            n_attr = n_extra + 1;
-            extra_attr = hl_attr(HLF_8);
-            saved_attr2 = char_attr;             /* save current attr */
-          }
-          mb_utf8 = FALSE;              /* don't draw as UTF-8 */
+          n_attr = n_extra + 1;
+          extra_attr = hl_attr(HLF_8);
+          saved_attr2 = char_attr;  // save current attr
+          mb_utf8 = false;   // don't draw as UTF-8
         } else if (VIsual_active
                    && (VIsual_mode == Ctrl_V
                        || VIsual_mode == 'v')
@@ -3607,25 +3593,22 @@ win_line (
                      wp->w_p_rl ? (col >= 0) :
                      (col < wp->w_width))) {
           c = ' ';
-          --ptr;                    /* put it back at the NUL */
-        } else if ((
-                   diff_hlf != (hlf_T)0 ||
-                   line_attr != 0
-                   ) && (
-                   wp->w_p_rl ? (col >= 0) :
-                   (col
-                    - boguscols
-                    < wp->w_width))) {
-          /* Highlight until the right side of the window */
+          ptr--;  // put it back at the NUL
+        } else if ((diff_hlf != (hlf_T)0 || line_attr != 0)
+                   && (wp->w_p_rl
+                       ? (col >= 0)
+                       : (col - boguscols < wp->w_width))) {
+          // Highlight until the right side of the window
           c = ' ';
-          --ptr;                    /* put it back at the NUL */
+          ptr--;  // put it back at the NUL
 
-          /* Remember we do the char for line highlighting. */
-          ++did_line_attr;
+          // Remember we do the char for line highlighting.
+          did_line_attr++;
 
-          /* don't do search HL for the rest of the line */
-          if (line_attr != 0 && char_attr == search_attr && col > 0)
+          // don't do search HL for the rest of the line
+          if (line_attr != 0 && char_attr == search_attr && col > 0) {
             char_attr = line_attr;
+          }
           if (diff_hlf == HLF_TXD) {
             diff_hlf = HLF_CHD;
             if (attr == 0 || char_attr != attr) {
@@ -3639,8 +3622,8 @@ win_line (
       }
 
       if (wp->w_p_cole > 0
-          && (wp != curwin || lnum != wp->w_cursor.lnum ||
-              conceal_cursor_line(wp))
+          && (wp != curwin || lnum != wp->w_cursor.lnum
+              || conceal_cursor_line(wp))
           && ((syntax_flags & HL_CONCEAL) != 0 || has_match_conc)
           && !(lnum_in_visual_area
                && vim_strchr(wp->w_p_cocu, 'v') == NULL)) {
@@ -3700,16 +3683,19 @@ win_line (
         && wp == curwin && lnum == wp->w_cursor.lnum
         && conceal_cursor_line(wp)
         && (int)wp->w_virtcol <= vcol + n_skip) {
-      wp->w_wcol = col - boguscols;
+      if (wp->w_p_rl) {
+        wp->w_wcol = wp->w_width - col + boguscols - 1;
+      } else {
+        wp->w_wcol = col - boguscols;
+      }
       wp->w_wrow = row;
-      did_wcol = TRUE;
+      did_wcol = true;
     }
 
-    /* Don't override visual selection highlighting. */
-    if (n_attr > 0
-        && draw_state == WL_LINE
-        && !attr_pri)
-      char_attr = extra_attr;
+    // Don't override visual selection highlighting.
+    if (n_attr > 0 && draw_state == WL_LINE) {
+      char_attr = hl_combine_attr(char_attr, extra_attr);
+    }
 
     /*
      * Handle the case where we are in column 0 but not on the first
@@ -3737,13 +3723,12 @@ win_line (
         mb_utf8 = TRUE;
         u8cc[0] = 0;
         c = 0xc0;
-      } else
-        mb_utf8 = FALSE;                /* don't draw as UTF-8 */
-      if (!attr_pri) {
-        saved_attr3 = char_attr;         /* save current attr */
-        char_attr = hl_attr(HLF_AT);         /* later copied to char_attr */
-        n_attr3 = 1;
+      } else {
+        mb_utf8 = false;  // don't draw as UTF-8
       }
+      saved_attr3 = char_attr;  // save current attr
+      char_attr = hl_attr(HLF_AT);  // later copied to char_attr
+      n_attr3 = 1;
     }
 
     /*

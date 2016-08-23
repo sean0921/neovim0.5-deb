@@ -3,7 +3,7 @@
 # writing a recipe that is meant for cross-compile, use the HOSTDEPS_* variables
 # instead of DEPS_* - check the main CMakeLists.txt for a list.
 
-if(MSVC)
+if(MSVC OR (MINGW AND NOT CMAKE_CROSSCOMPILING))
   message(STATUS "Building busted in Windows is not supported (skipping)")
 else()
   option(USE_BUNDLED_BUSTED "Use the bundled version of busted to run tests." ON)
@@ -46,11 +46,9 @@ endfunction()
 set(LUAROCKS_BINARY ${HOSTDEPS_BIN_DIR}/luarocks)
 
 # Arguments for calls to 'luarocks build'
-if(MSVC)
-  # In native Win32 don't pass the compiler/linker to luarocks, the bundled
+if(NOT MSVC)
+  # In MSVC don't pass the compiler/linker to luarocks, the bundled
   # version already knows, and passing them here breaks the build
-  set(LUAROCKS_BUILDARGS CFLAGS=/MT)
-else()
   set(LUAROCKS_BUILDARGS CC=${HOSTDEPS_C_COMPILER} LD=${HOSTDEPS_C_COMPILER})
 endif()
 
@@ -67,8 +65,12 @@ if(UNIX OR (MINGW AND CMAKE_CROSSCOMPILING))
       --prefix=${HOSTDEPS_INSTALL_DIR} --force-config ${LUAROCKS_OPTS}
       --lua-suffix=jit
     INSTALL_COMMAND ${MAKE_PRG} bootstrap)
+elseif(MSVC OR MINGW)
 
-elseif(MSVC)
+  if(MINGW)
+    set(MINGW_FLAG /MW)
+  endif()
+
   # Ignore USE_BUNDLED_LUAJIT - always ON for native Win32
   BuildLuarocks(INSTALL_COMMAND install.bat /FORCECONFIG /NOREG /NOADMIN /Q /F
     /LUA ${DEPS_INSTALL_DIR}
@@ -78,6 +80,7 @@ elseif(MSVC)
     /P ${DEPS_INSTALL_DIR} /TREE ${DEPS_INSTALL_DIR}
     /SCRIPTS ${DEPS_BIN_DIR}
     /CMOD ${DEPS_BIN_DIR}
+    ${MINGW_FLAG}
     /LUAMOD ${DEPS_BIN_DIR}/lua)
 
   set(LUAROCKS_BINARY ${DEPS_INSTALL_DIR}/2.2/luarocks.bat)
@@ -114,11 +117,27 @@ add_custom_target(lpeg
 
 list(APPEND THIRD_PARTY_DEPS lpeg)
 
+add_custom_command(OUTPUT ${HOSTDEPS_LIB_DIR}/luarocks/rocks/inspect
+  COMMAND ${LUAROCKS_BINARY}
+  ARGS build inspect ${LUAROCKS_BUILDARGS}
+  DEPENDS mpack)
+add_custom_target(inspect
+  DEPENDS ${HOSTDEPS_LIB_DIR}/luarocks/rocks/inspect)
+
+list(APPEND THIRD_PARTY_DEPS inspect)
+
 if(USE_BUNDLED_BUSTED)
+  add_custom_command(OUTPUT ${HOSTDEPS_LIB_DIR}/luarocks/rocks/penlight/1.3.2-2
+    COMMAND ${LUAROCKS_BINARY}
+    ARGS build penlight 1.3.2-2 ${LUAROCKS_BUILDARGS}
+    DEPENDS inspect)
+  add_custom_target(penlight
+    DEPENDS ${HOSTDEPS_LIB_DIR}/luarocks/rocks/penlight/1.3.2-2)
+
   add_custom_command(OUTPUT ${HOSTDEPS_BIN_DIR}/busted
     COMMAND ${LUAROCKS_BINARY}
     ARGS build https://raw.githubusercontent.com/Olivine-Labs/busted/v2.0.rc11-0/busted-2.0.rc11-0.rockspec ${LUAROCKS_BUILDARGS}
-    DEPENDS lpeg)
+    DEPENDS penlight)
   add_custom_target(busted
     DEPENDS ${HOSTDEPS_BIN_DIR}/busted)
 
@@ -133,9 +152,13 @@ if(USE_BUNDLED_BUSTED)
   if(MINGW AND CMAKE_CROSSCOMPILING)
     set(LUV_DEPS ${LUV_DEPS} libuv_host)
   endif()
+  set(LUV_ARGS CFLAGS='-O0 -g3 -fPIC')
+  if(USE_BUNDLED_LIBUV)
+    set(LUV_ARGS LIBUV_DIR=${HOSTDEPS_INSTALL_DIR} CFLAGS='-O0 -g3 -fPIC')
+  endif()
   add_custom_command(OUTPUT ${HOSTDEPS_LIB_DIR}/luarocks/rocks/luv
     COMMAND ${LUAROCKS_BINARY}
-    ARGS make ${LUAROCKS_BUILDARGS} LIBUV_DIR=${HOSTDEPS_INSTALL_DIR} CFLAGS='-O0 -g3 -fPIC'
+    ARGS make ${LUAROCKS_BUILDARGS} ${LUV_ARGS}
     WORKING_DIRECTORY ${DEPS_BUILD_DIR}/src/luv
     DEPENDS ${LUV_DEPS})
   add_custom_target(luv
@@ -143,7 +166,7 @@ if(USE_BUNDLED_BUSTED)
 
   add_custom_command(OUTPUT ${HOSTDEPS_LIB_DIR}/luarocks/rocks/nvim-client
     COMMAND ${LUAROCKS_BINARY}
-    ARGS build https://raw.githubusercontent.com/neovim/lua-client/0.0.1-24/nvim-client-0.0.1-24.rockspec ${LUAROCKS_BUILDARGS}
+    ARGS build https://raw.githubusercontent.com/neovim/lua-client/0.0.1-25/nvim-client-0.0.1-25.rockspec ${LUAROCKS_BUILDARGS}
     DEPENDS luv)
   add_custom_target(nvim-client
     DEPENDS ${HOSTDEPS_LIB_DIR}/luarocks/rocks/nvim-client)

@@ -85,8 +85,11 @@ endif
 	mkdir -p build
 	touch $@
 
-oldtest: | nvim
+oldtest: | nvim helptags
 	+$(SINGLE_MAKE) -C src/nvim/testdir $(MAKEOVERRIDES)
+
+helptags: | nvim
+	+$(BUILD_CMD) -C build helptags
 
 functionaltest: | nvim
 	+$(BUILD_CMD) -C build functionaltest
@@ -94,7 +97,7 @@ functionaltest: | nvim
 functionaltest-lua: | nvim
 	+$(BUILD_CMD) -C build functionaltest-lua
 
-testlint: | nvim
+testlint: | build/.ran-cmake deps
 	$(BUILD_CMD) -C build testlint
 
 unittest: | nvim
@@ -115,10 +118,12 @@ distclean: clean
 install: | nvim
 	+$(BUILD_CMD) -C build install
 
-lint:
-	cmake -DLINT_PRG=./clint.py \
+clint:
+	cmake -DLINT_PRG=./src/clint.py \
 		-DLINT_DIR=src \
 		-DLINT_SUPPRESS_URL="$(DOC_DOWNLOAD_URL_BASE)$(CLINT_ERRORS_FILE_PATH)" \
 		-P cmake/RunLint.cmake
 
-.PHONY: test testlint functionaltest unittest lint clean distclean nvim libnvim cmake deps install
+lint: clint testlint
+
+.PHONY: test testlint functionaltest unittest lint clint clean distclean nvim libnvim cmake deps install

@@ -1,4 +1,4 @@
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local clear, execute, nvim = helpers.clear, helpers.execute, helpers.nvim
 local expect, feed, command = helpers.expect, helpers.feed, helpers.command
 local eq, eval = helpers.eq, helpers.eval
@@ -39,7 +39,7 @@ describe(':emenu', function()
   end)
 
   it('executes correct bindings in command mode', function()
-      feed('ithis is a sentence<esc>^"+yiwo<esc>')
+      feed('ithis is a sentence<esc>^yiwo<esc>')
 
       -- Invoke "Edit.Paste" in normal-mode.
       nvim('command', 'emenu Edit.Paste')

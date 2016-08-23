@@ -1,34 +1,31 @@
-*nvim_terminal_emulator.txt*    For Nvim.				{Nvim}
+*terminal_emulator.txt*    						{Nvim}
 
 
 		 NVIM REFERENCE MANUAL    by Thiago de Arruda
 
 
-Nvim integrated terminal emulator		     *nvim-terminal-emulator*
+Embedded terminal emulator				   *terminal-emulator*
 
-1. Introduction			|nvim-terminal-emulator-introduction|
-2. Spawning			|nvim-terminal-emulator-spawning|
-3. Input			|nvim-terminal-emulator-input|
-4. Configuration		|nvim-terminal-emulator-configuration|
-
-==============================================================================
-1. Introduction			      *nvim-terminal-emulator-introduction*
-
-One feature that distinguishes Nvim from Vim is that it implements a mostly
-complete VT220/xterm-like terminal emulator. The terminal is presented to the
-user as a special buffer type, one that is asynchronously updated to mirror
-the virtual terminal display as data is received from the program connected
-to it. For most purposes, terminal buffers behave a lot like normal buffers
-with 'nomodifiable' set.
-
-
-The implementation is powered by libvterm[1], a powerful abstract terminal
-emulation library.
-
-[1]: http://www.leonerd.org.uk/code/libvterm/
+1. Introduction			|terminal-emulator-intro|
+2. Spawning			|terminal-emulator-spawning|
+3. Input			|terminal-emulator-input|
+4. Configuration		|terminal-emulator-configuration|
+5. Status Variables		|terminal-emulator-status|
 
 ==============================================================================
-2. Spawning			      *nvim-terminal-emulator-spawning*
+1. Introduction					     *terminal-emulator-intro*
+
+Nvim offers a mostly complete VT220/xterm terminal emulator. The terminal is
+presented as a special buffer type, asynchronously updated to mirror the
+virtual terminal display as data is received from the program connected to it.
+For most purposes, terminal buffers behave a lot like normal buffers with
+'nomodifiable' set.
+
+The implementation is powered by libvterm, a powerful abstract terminal
+emulation library. http://www.leonerd.org.uk/code/libvterm/
+
+==============================================================================
+2. Spawning					  *terminal-emulator-spawning*
 
 There are 3 ways to create a terminal buffer:
 
@@ -37,16 +34,22 @@ There are 3 ways to create a terminal buffer:
 - By editing a file with a name matching `term://(.{-}//(\d+:)?)?\zs.*`.
   For example:
 >
-    :e term://bash
-    :vsp term://top
+    :edit term://bash
+    :vsplit term://top
 <
+    Note: The "term://" pattern is handled by a BufReadCmd handler, so the
+    |autocmd-nested| modifier is required to use it in an autocmd. >
+        autocmd VimEnter * nested split term://sh
+<    This is only mentioned for reference; you should use the |:terminal|
+    command instead.
+
 When the terminal spawns the program, the buffer will start to mirror the
 terminal display and change its name to `term://$CWD//$PID:$COMMAND`.
 Note that |:mksession| will "save" the terminal buffers by restarting all
 programs when the session is restored.
 
 ==============================================================================
-3. Input			      *nvim-terminal-emulator-input*
+3. Input					     *terminal-emulator-input*
 
 Sending input is possible by entering terminal mode, which is achieved by
 pressing any key that would enter insert mode in a normal buffer (|i| or |a|
@@ -90,7 +93,7 @@ Mouse input is also fully supported, and has the following behavior:
   the terminal wont lose focus and the hovered window will be scrolled.
 
 ==============================================================================
-4. Configuration		     *nvim-terminal-emulator-configuration*
+4. Configuration			     *terminal-emulator-configuration*
 
 Terminal buffers can be customized through the following global/buffer-local
 variables (set via the |TermOpen| autocmd):
@@ -110,5 +113,26 @@ There is also a corresponding |TermClose| event.
 The terminal cursor can be highlighted via |hl-TermCursor| and
 |hl-TermCursorNC|.
 
+==============================================================================
+5. Status Variables				    *terminal-emulator-status*
+
+Terminal buffers maintain some information about the terminal in buffer-local
+variables:
+
+- *b:term_title* The settable title of the terminal, typically displayed in
+  the window title or tab title of a graphical terminal emulator. Programs
+  running in the terminal can set this title via an escape sequence.
+- *b:terminal_job_id* The nvim job ID of the job running in the terminal. See
+  |job-control| for more information.
+- *b:terminal_job_pid* The PID of the top-level process running in the
+  terminal.
+
+These variables will have a value by the time the TermOpen autocmd runs, and
+will continue to have a value for the lifetime of the terminal buffer, making
+them suitable for use in 'statusline'. For example, to show the terminal title
+as the status line:
+>
+    :autocmd TermOpen * setlocal statusline=%{b:term_title}
+<
 ==============================================================================
  vim:tw=78:ts=8:noet:ft=help:norl:

@@ -12,8 +12,8 @@
 #define REMOTE_TYPE(type) typedef uint64_t type
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
-  #define ArrayOf(...) Array
-  #define DictionaryOf(...) Dictionary
+# define ArrayOf(...) Array
+# define DictionaryOf(...) Dictionary
 #endif
 
 // Basic types
@@ -40,6 +40,12 @@ typedef struct {
 typedef bool Boolean;
 typedef int64_t Integer;
 typedef double Float;
+
+/// Maximum value of an Integer
+#define API_INTEGER_MAX INT64_MAX
+
+/// Minimum value of an Integer
+#define API_INTEGER_MIN INT64_MIN
 
 typedef struct {
   char *data;

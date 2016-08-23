@@ -63,6 +63,7 @@
 #include "nvim/map.h"
 #include "nvim/misc1.h"
 #include "nvim/move.h"
+#include "nvim/main.h"
 #include "nvim/state.h"
 #include "nvim/ex_docmd.h"
 #include "nvim/ex_cmds.h"
@@ -163,9 +164,9 @@ static VTermColor default_vt_bg_rgb;
 void terminal_init(void)
 {
   invalidated_terminals = pmap_new(ptr_t)();
-  time_watcher_init(&loop, &refresh_timer, NULL);
+  time_watcher_init(&main_loop, &refresh_timer, NULL);
   // refresh_timer_cb will redraw the screen which can call vimscript
-  refresh_timer.events = queue_new_child(loop.events);
+  refresh_timer.events = queue_new_child(main_loop.events);
 
   // initialize a rgb->color index map for cterm attributes(VTermScreenCell
   // only has RGB information and we need color indexes for terminal UIs)
@@ -175,7 +176,16 @@ void terminal_init(void)
 
   for (int color_index = 0; color_index < 256; color_index++) {
     VTermColor color;
-    vterm_state_get_palette_color(state, color_index, &color);
+    // Some of the default 16 colors has the same color as the later
+    // 240 colors. To avoid collisions, we will use the custom colors
+    // below in non true color mode.
+    if (color_index < 16) {
+      color.red = 0;
+      color.green = 0;
+      color.blue = (uint8_t)(color_index + 1);
+    } else {
+      vterm_state_get_palette_color(state, color_index, &color);
+    }
     map_put(int, int)(color_indexes,
         RGB(color.red, color.green, color.blue), color_index + 1);
   }
@@ -231,6 +241,7 @@ Terminal *terminal_open(TerminalOptions opts)
   set_option_value((uint8_t *)"wrap", false, NULL, OPT_LOCAL);
   set_option_value((uint8_t *)"number", false, NULL, OPT_LOCAL);
   set_option_value((uint8_t *)"relativenumber", false, NULL, OPT_LOCAL);
+  buf_set_term_title(curbuf, (char *)curbuf->b_ffname);
   RESET_BINDING(curwin);
   // Apply TermOpen autocmds so the user can configure the terminal
   apply_autocmds(EVENT_TERMOPEN, NULL, NULL, false, curbuf);
@@ -248,6 +259,15 @@ Terminal *terminal_open(TerminalOptions opts)
   rv->sb_buffer = xmalloc(sizeof(ScrollbackLine *) * rv->sb_size);
 
   if (!true_color) {
+    // Change the first 16 colors so we can easily get the correct color
+    // index from them.
+    for (int i = 0; i < 16; i++) {
+      VTermColor color;
+      color.red = 0;
+      color.green = 0;
+      color.blue = (uint8_t)(i + 1);
+      vterm_state_set_palette_color(state, i, &color);
+    }
     return rv;
   }
 
@@ -327,15 +347,6 @@ void terminal_resize(Terminal *term, uint16_t width, uint16_t height)
 
   if (!height) {
     height = (uint16_t)curheight;
-  }
-
-  // The new width/height are the minimum for all windows that display the
-  // terminal in the current tab.
-  FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-    if (!wp->w_closing && wp->w_buffer->terminal == term) {
-      width = (uint16_t)MIN(width, (uint16_t)(wp->w_width - win_col_off(wp)));
-      height = (uint16_t)MIN(height, (uint16_t)wp->w_height);
-    }
   }
 
   if (curheight == height && curwidth == width) {
@@ -434,7 +445,7 @@ static int terminal_execute(VimState *state, int key)
     case K_EVENT:
       // We cannot let an event free the terminal yet. It is still needed.
       s->term->refcount++;
-      queue_process_events(loop.events);
+      queue_process_events(main_loop.events);
       s->term->refcount--;
       if (s->term->buf_handle == 0) {
         s->close = true;
@@ -548,9 +559,9 @@ void terminal_get_line_attributes(Terminal *term, win_T *wp, int linenr,
     // Since libvterm does not expose the color index used by the program, we
     // use the rgb value to find the appropriate index in the cache computed by
     // `terminal_init`.
-    int vt_fg_idx = vt_fg != default_vt_fg ?
+    int vt_fg_idx = vt_fg != -1 ?
                     map_get(int, int)(color_indexes, vt_fg) : 0;
-    int vt_bg_idx = vt_bg != default_vt_bg ?
+    int vt_bg_idx = vt_bg != -1 ?
                     map_get(int, int)(color_indexes, vt_bg) : 0;
 
     int hl_attrs = (cell.attrs.bold ? HL_BOLD : 0)
@@ -608,6 +619,17 @@ static int term_movecursor(VTermPos new, VTermPos old, int visible,
   return 1;
 }
 
+static void buf_set_term_title(buf_T *buf, char *title)
+    FUNC_ATTR_NONNULL_ALL
+{
+  Error err;
+  api_free_object(dict_set_value(buf->b_vars,
+                                 cstr_as_string("term_title"),
+                                 STRING_OBJ(cstr_as_string(title)),
+                                 false,
+                                 &err));
+}
+
 static int term_settermprop(VTermProp prop, VTermValue *val, void *data)
 {
   Terminal *term = data;
@@ -623,12 +645,7 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *data)
 
     case VTERM_PROP_TITLE: {
       buf_T *buf = handle_get_buffer(term->buf_handle);
-      Error err;
-      api_free_object(dict_set_value(buf->b_vars,
-                                     cstr_as_string("term_title"),
-                                     STRING_OBJ(cstr_as_string(val->string)),
-                                     false,
-                                     &err));
+      buf_set_term_title(buf, val->string);
       break;
     }
 
@@ -1064,7 +1081,8 @@ static void redraw(bool restore_cursor)
     restore_cursor = true;
   }
 
-  int save_row, save_col;
+  int save_row = 0;
+  int save_col = 0;
   if (restore_cursor) {
     // save the current row/col to restore after updating screen when not
     // focused
@@ -1140,15 +1158,15 @@ static bool is_focused(Terminal *term)
   return State & TERM_FOCUS && curbuf->terminal == term;
 }
 
-#define GET_CONFIG_VALUE(k, o)                                           \
-  do {                                                                   \
-    Error err;                                                           \
-    /* Only called from terminal_open where curbuf->terminal is the */   \
-    /* context  */                                                       \
-    o = dict_get_value(curbuf->b_vars, cstr_as_string(k), &err);         \
-    if (o.type == kObjectTypeNil) {                                      \
-      o = dict_get_value(&globvardict, cstr_as_string(k), &err);         \
-    }                                                                    \
+#define GET_CONFIG_VALUE(k, o) \
+  do { \
+    Error err; \
+    /* Only called from terminal_open where curbuf->terminal is the */ \
+    /* context  */ \
+    o = dict_get_value(curbuf->b_vars, cstr_as_string(k), &err); \
+    if (o.type == kObjectTypeNil) { \
+      o = dict_get_value(&globvardict, cstr_as_string(k), &err); \
+    } \
   } while (0)
 
 static char *get_config_string(char *key)

@@ -1,4 +1,4 @@
-*options.txt*	For Vim version 7.4.  Last change: 2015 Oct 15
+*options.txt*	For Vim version 7.4.  Last change: 2016 Apr 12
 
 
 		  VIM REFERENCE MANUAL	  by Bram Moolenaar
@@ -1172,8 +1172,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	  help		help buffer (you are not supposed to set this
 			manually)
 	  terminal	terminal buffer, this is set automatically when a 
-			terminal is created. See |nvim-terminal-emulator| for
-			more information.
+			terminal is created. |terminal-emulator|
 
 	This option is used together with 'bufhidden' and 'swapfile' to
 	specify special kinds of buffers.   See |special-buffers|.
@@ -1353,7 +1352,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			used regardless of whether "unnamed" is in 'clipboard'
 			or not.  The clipboard register can always be
 			explicitly accessed using the "* notation.  Also see
-			|gui-clipboard|.
+			|clipboard|.
 
 						*clipboard-unnamedplus*
 	unnamedplus	A variant of the "unnamed" flag which uses the
@@ -1363,7 +1362,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			register.  When "unnamed" is also included to the
 			option, yank and delete operations (but not put)
 			will additionally copy the text into register
-			'*'. See |nvim-clipboard|.
+			'*'. See |clipboard|.
 
 						*clipboard-autoselect*
 	autoselect	Works like the 'a' flag in 'guioptions': If present,
@@ -1602,7 +1601,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	line, the remaining space is filled in the normal manner.
 	See 'preserveindent'.
 
-						*'cpoptions'* *'cpo'*
+						*'cpoptions'* *'cpo'* *cpo*
 'cpoptions' 'cpo'	string	(Vim default: "aABceFs",
 				 Vi default: all flags)
 			global
@@ -2459,8 +2458,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	  file only, the option is not changed.
 	When 'binary' is set, the value of 'fileformats' is not used.
 
-	Note that when Vim starts up with an empty buffer this option is not
-	used.  Set 'fileformat' in your vimrc instead.
+	When Vim starts up with an empty buffer the first item is used.  You
+	can overrule this by setting 'fileformat' in your .vimrc.
 
 	For systems with a Dos-like <EOL> (<CR><NL>), when reading files that
 	are ":source"ed and for vimrc files, automatic <EOL> detection may be
@@ -2515,17 +2514,17 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 	  item		default		Used for ~
 	  stl:c		' ' or '^'	statusline of the current window
-	  stlnc:c	' ' or '-'	statusline of the non-current windows
+	  stlnc:c	' ' or '='	statusline of the non-current windows
 	  vert:c	'|'		vertical separators |:vsplit|
 	  fold:c	'-'		filling 'foldtext'
 	  diff:c	'-'		deleted lines of the 'diff' option
 
 	Any one that is omitted will fall back to the default.  For "stl" and
-	"stlnc" the space will be used when there is highlighting, '^' or '-'
+	"stlnc" the space will be used when there is highlighting, '^' or '='
 	otherwise.
 
 	Example: >
-	    :set fillchars=stl:^,stlnc:-,vert:\|,fold:-,diff:-
+	    :set fillchars=stl:^,stlnc:=,vert:\|,fold:-,diff:-
 <	This is similar to the default, except that these characters will also
 	be used when there is highlighting.
 
@@ -3328,8 +3327,6 @@ A jump table for the options with a short description can be found at |Q_op|.
 		-	no highlighting
 		:	use a highlight group
 	The default is used for occasions that are not included.
-	If you want to change what the display modes do, see |dos-colors|
-	for an example.
 	When using the ':' display mode, this must be followed by the name of
 	a highlight group.  A highlight group can be used to define any type
 	of highlighting, including using color.  See |:highlight| on how to
@@ -3410,7 +3407,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global
 	Ignore case in search patterns.  Also used when searching in the tags
 	file.
-	Also see 'smartcase'.
+	Also see 'smartcase' and 'tagcase'.
 	Can be overruled by using "\c" or "\C" in the pattern, see
 	|/ignorecase|.
 
@@ -3696,6 +3693,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	'*', '"' and '|' (so that CTRL-] on a command finds the help for that
 	command).
 	When the 'lisp' option is on the '-' character is always included.
+	This option also influences syntax highlighting, unless the syntax
+	uses |:syn-iskeyword|.
 
 						*'isprint'* *'isp'*
 'isprint' 'isp'	string	(default: "@,161-255")
@@ -3785,7 +3784,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			feature}
 	This option allows switching your keyboard into a special language
 	mode.  When you are typing text in Insert mode the characters are
-	inserted directly.  When in command mode the 'langmap' option takes
+	inserted directly.  When in Normal mode the 'langmap' option takes
 	care of translating these special characters to the original meaning
 	of the key.  This means you don't have to change the keyboard mode to
 	be able to execute Normal mode commands.
@@ -4152,8 +4151,11 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global
 	Maximum amount of memory in Kbyte to use for all buffers together.
 	The maximum usable value is about 2000000 (2 Gbyte).  Use this to work
-	without a limit.  On 64 bit machines higher values might work.  But
-	hey, do you really need more than 2 Gbyte for text editing?
+	without a limit.
+	On 64 bit machines higher values might work.  But hey, do you really
+	need more than 2 Gbyte for text editing?  Keep in mind that text is
+	stored in the swap file, one can edit files > 2 Gbyte anyway.  We do
+	need the memory to store undo info.
 	Also see 'maxmem'.
 
 						*'menuitems'* *'mis'*
@@ -4236,6 +4238,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	   written.  A ":set nomodified" command also resets the original
 	   values to the current values and the 'modified' option will be
 	   reset.
+	   Similarly for 'eol' and 'bomb'.
 	This option is not set when a change is made to the buffer as the
 	result of a BufNewFile, BufRead/BufReadPost, BufWritePost,
 	FileAppendPost or VimLeave autocommand event.  See |gzip-example| for
@@ -4396,9 +4399,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 						*'mousetime'* *'mouset'*
 'mousetime' 'mouset'	number	(default 500)
 			global
-	Only for GUI, Windows and Unix with xterm.  Defines the maximum
-	time in msec between two mouse clicks for the second click to be
-	recognized as a multi click.
+	Defines the maximum time in msec between two mouse clicks for the
+	second click to be recognized as a multi click.
 
 							*'nrformats'* *'nf'*
 'nrformats' 'nf'	string	(default "bin,hex")
@@ -4496,6 +4498,12 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 	This option cannot be set from a |modeline| or in the |sandbox|, for
 	security reasons.
+
+				*'packpath'* *'pp'*
+'packpath' 'pp'		string	(default: see 'runtimepath')
+			{not in Vi}
+	Directories used to find packages.  See |packages|.
+
 
 						*'paragraphs'* *'para'*
 'paragraphs' 'para'	string	(default "IPLPPPQPP TPHPLIPpLpItpplpipbp")
@@ -4934,7 +4942,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 					       $XDG_CONFIG_DIRS[1]/nvim,
 					       $XDG_CONFIG_DIRS[2]/nvim,
 					       …
-					       $XDG_DATA_HOME/nvim,
+					       $XDG_DATA_HOME/nvim/site,
 					       $XDG_DATA_DIRS[1]/nvim/site,
 					       $XDG_DATA_DIRS[2]/nvim/site,
 					       …
@@ -4942,7 +4950,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 					       …
 					       $XDG_DATA_DIRS[2]/nvim/site/after,
 					       $XDG_DATA_DIRS[1]/nvim/site/after,
-					       $XDG_DATA_HOME/nvim/after,
+					       $XDG_DATA_HOME/nvim/site/after,
 					       …
 					       $XDG_CONFIG_DIRS[2]/nvim/after,
 					       $XDG_CONFIG_DIRS[1]/nvim/after,
@@ -5823,7 +5831,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	the two-letter, lower case region name.  You can use more than one
 	region by listing them: "en_us,en_ca" supports both US and Canadian
 	English, but not words specific for Australia, New Zealand or Great
-	Britain.
+	Britain. (Note: currently en_au and en_nz dictionaries are older than
+	en_ca, en_gb and en_us).
 	If the name "cjk" is included East Asian characters are excluded from
 	spell checking.  This is useful when editing text that also has Asian
 	words.
@@ -5951,7 +5960,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	The option consists of printf style '%' items interspersed with
 	normal text.  Each status line item is of the form:
 	  %-0{minwid}.{maxwid}{item}
-	All fields except the {item} is optional.  A single percent sign can
+	All fields except the {item} are optional.  A single percent sign can
 	be given as "%%".  Up to 80 items can be specified.  *E541*
 
 	When the option starts with "%!" then it is used as an expression,
@@ -6064,7 +6073,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	            feature use `has('tablineat')`.
 	< -   Where to truncate line if too long.  Default is at the start.
 	      No width fields allowed.
-	= -   Separation point between left and right aligned items.
+	= -   Separation point between alignment sections. Each section will
+	      be separated by an equal number of spaces.
 	      No width fields allowed.
 	# -   Set highlight group.  The name must follow and then a # again.
 	      Thus use %#HLname# for highlight group HLname.  The same
@@ -6085,7 +6095,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	become empty.  This will make a group like the following disappear
 	completely from the statusline when none of the flags are set. >
 		:set statusline=...%(\ [%M%R%H]%)...
-<
+<							*g:actual_curbuf*
 	Beware that an expression is evaluated each and every time the status
 	line is displayed.  The current buffer and current window will be set
 	temporarily to that of the window (and buffer) whose statusline is
@@ -6321,19 +6331,22 @@ A jump table for the options with a short description can be found at |Q_op|.
 <	[The whitespace before and after the '0' must be a single <Tab>]
 
 	When a binary search was done and no match was found in any of the
-	files listed in 'tags', and 'ignorecase' is set or a pattern is used
+	files listed in 'tags', and case is ignored or a pattern is used
 	instead of a normal tag name, a retry is done with a linear search.
 	Tags in unsorted tags files, and matches with different case will only
 	be found in the retry.
 
 	If a tag file indicates that it is case-fold sorted, the second,
-	linear search can be avoided for the 'ignorecase' case.  Use a value
-	of '2' in the "!_TAG_FILE_SORTED" line for this.  A tag file can be
-	case-fold sorted with the -f switch to "sort" in most unices, as in
-	the command: "sort -f -o tags tags".  For "Exuberant ctags" version
-	5.x or higher (at least 5.5) the --sort=foldcase switch can be used
-	for this as well.  Note that case must be folded to uppercase for this
-	to work.
+	linear search can be avoided when case is ignored.  Use a value of '2'
+	in the "!_TAG_FILE_SORTED" line for this.  A tag file can be case-fold
+	sorted with the -f switch to "sort" in most unices, as in the command:
+	"sort -f -o tags tags".  For "Exuberant ctags" version 5.x or higher
+	(at least 5.5) the --sort=foldcase switch can be used for this as
+	well.  Note that case must be folded to uppercase for this to work.
+
+	By default, tag searches are case-sensitive.  Case is ignored when
+	'ignorecase' is set and 'tagcase' is "followic", or when 'tagcase' is
+	"ignore".
 
 	When 'tagbsearch' is off, tags searching is slower when a full match
 	exists, but faster when no full match exists.  Tags in unsorted tags
@@ -6343,6 +6356,16 @@ A jump table for the options with a short description can be found at |Q_op|.
 	must be included in the tags file.
 	This option doesn't affect commands that find all matching tags (e.g.,
 	command-line completion and ":help").
+
+							*'tagcase'* *'tc'*
+'tagcase' 'tc'		string	(default "followic")
+			global or local to buffer |global-local|
+			{not in Vi}
+	This option specifies how case is handled when searching the tags
+	file:
+	   followic	Follow the 'ignorecase' option
+	   ignore	Ignore case
+	   match	Match case
 
 						*'taglength'* *'tl'*
 'taglength' 'tl'	number	(default 0)
@@ -6407,6 +6430,14 @@ A jump table for the options with a short description can be found at |Q_op|.
 					*'termencoding'* *'tenc'*
 'termencoding' 'tenc'	Removed. |vim-differences| {Nvim}
 
+						*'termguicolors'* *'tgc'*
+'termguicolors' 'tgc'	boolean (default off)
+			global
+	When on, uses |highlight-guifg| and |highlight-guibg| attributes in
+	the terminal (thus using 24-bit color). Requires a ISO-8613-3
+	compatible terminal.
+	Must be set at startup (in your |init.vim| or |--cmd|).
+
 						*'terse'* *'noterse'*
 'terse'			boolean	(default off)
 			global
@@ -6436,6 +6467,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	non-keyword characters (white space is preferred).  Maximum line
 	length is 510 bytes.
 	To obtain a file to be used here, check out this ftp site:
+	[Sorry this link doesn't work anymore, do you know the right one?] 
 	ftp://ftp.ox.ac.uk/pub/wordlists/  First get the README file.
 	To include a comma in a file name precede it with a backslash.  Spaces
 	after a comma are ignored, otherwise spaces are included in the file

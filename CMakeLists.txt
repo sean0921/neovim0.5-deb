@@ -59,7 +59,7 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
 # version string, else it is combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
 set(NVIM_VERSION_MINOR 1)
-set(NVIM_VERSION_PATCH 4)
+set(NVIM_VERSION_PATCH 5)
 set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 file(TO_CMAKE_PATH ${CMAKE_CURRENT_LIST_DIR}/.git FORCED_GIT_DIR)
@@ -291,23 +291,25 @@ endif()
 include_directories("${PROJECT_BINARY_DIR}/config")
 include_directories("${PROJECT_SOURCE_DIR}/src")
 
-# Modules used by platform auto-detection
-include(CheckLibraryExists)
-
 find_package(LibUV REQUIRED)
 include_directories(SYSTEM ${LIBUV_INCLUDE_DIRS})
 
 find_package(Msgpack 1.0.0 REQUIRED)
 include_directories(SYSTEM ${MSGPACK_INCLUDE_DIRS})
 
-find_package(LuaJit REQUIRED)
-include_directories(SYSTEM ${LUAJIT_INCLUDE_DIRS})
+if(UNIX)
+  option(FEAT_TUI "Enable the Terminal UI" ON)
+else()
+  option(FEAT_TUI "Enable the Terminal UI" OFF)
+endif()
 
-find_package(Unibilium REQUIRED)
-include_directories(SYSTEM ${UNIBILIUM_INCLUDE_DIRS})
+if(FEAT_TUI)
+  find_package(Unibilium REQUIRED)
+  include_directories(SYSTEM ${UNIBILIUM_INCLUDE_DIRS})
 
-find_package(LibTermkey REQUIRED)
-include_directories(SYSTEM ${LIBTERMKEY_INCLUDE_DIRS})
+  find_package(LibTermkey REQUIRED)
+  include_directories(SYSTEM ${LIBTERMKEY_INCLUDE_DIRS})
+endif()
 
 find_package(LibVterm REQUIRED)
 include_directories(SYSTEM ${LIBVTERM_INCLUDE_DIRS})
@@ -369,7 +371,7 @@ endforeach()
 include(LuaHelpers)
 set(LUA_DEPENDENCIES lpeg mpack bit)
 if(NOT LUA_PRG)
-  foreach(CURRENT_LUA_PRG luajit lua)
+  foreach(CURRENT_LUA_PRG luajit lua5.1 lua5.2 lua)
     # If LUA_PRG is set find_program() will not search
     unset(LUA_PRG CACHE)
     unset(LUA_PRG_WORKS)
@@ -396,7 +398,11 @@ message(STATUS "Using the Lua interpreter ${LUA_PRG}.")
 find_program(BUSTED_PRG busted)
 find_program(BUSTED_LUA_PRG busted-lua)
 if(NOT BUSTED_OUTPUT_TYPE)
-  set(BUSTED_OUTPUT_TYPE "utfTerminal")
+  if(WIN32)
+    set(BUSTED_OUTPUT_TYPE "plainTerminal")
+  else()
+    set(BUSTED_OUTPUT_TYPE "utfTerminal")
+  endif()
 endif()
 
 find_program(LUACHECK_PRG luacheck)
@@ -451,12 +457,24 @@ if(BUSTED_PRG)
     get_target_property(TEST_LIBNVIM_PATH nvim-test LOCATION)
   endif()
 
+  # When running tests from 'ninja' we need to use the
+  # console pool: to do so we need to use the USES_TERMINAL
+  # option, but this is only available in CMake 3.2
+  set(TEST_TARGET_ARGS)
+  if(NOT (${CMAKE_VERSION} VERSION_LESS 3.2.0))
+    list(APPEND TEST_TARGET_ARGS "USES_TERMINAL")
+  endif()
+
   configure_file(
     test/config/paths.lua.in
     ${CMAKE_BINARY_DIR}/test/config/paths.lua)
 
   set(UNITTEST_PREREQS nvim-test unittest-headers)
-  set(FUNCTIONALTEST_PREREQS nvim tty-test shell-test)
+  if(WIN32)
+    set(FUNCTIONALTEST_PREREQS nvim shell-test)
+  else()
+    set(FUNCTIONALTEST_PREREQS nvim tty-test shell-test)
+  endif()
   set(BENCHMARK_PREREQS nvim tty-test)
 
   # Useful for automated build systems, if they want to manually run the tests.
@@ -469,21 +487,29 @@ if(BUSTED_PRG)
   add_custom_target(benchmark-prereqs
     DEPENDS ${BENCHMARK_PREREQS})
 
-  add_custom_target(unittest
-    COMMAND ${CMAKE_COMMAND}
-      -DBUSTED_PRG=${BUSTED_PRG}
-      -DLUA_PRG=${LUA_PRG}
-      -DWORKING_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-      -DBUSTED_OUTPUT_TYPE=${BUSTED_OUTPUT_TYPE}
-      -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
-      -DBUILD_DIR=${CMAKE_BINARY_DIR}
-      -DTEST_TYPE=unit
-      -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
-    DEPENDS ${UNITTEST_PREREQS})
+  check_lua_module(${LUA_PRG} "ffi" LUA_HAS_FFI)
+  if(LUA_HAS_FFI)
+    add_custom_target(unittest
+      COMMAND ${CMAKE_COMMAND}
+        -DBUSTED_PRG=${BUSTED_PRG}
+        -DLUA_PRG=${LUA_PRG}
+        -DWORKING_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DBUSTED_OUTPUT_TYPE=${BUSTED_OUTPUT_TYPE}
+        -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
+        -DBUILD_DIR=${CMAKE_BINARY_DIR}
+        -DTEST_TYPE=unit
+        -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
+      DEPENDS ${UNITTEST_PREREQS}
+      ${TEST_TARGET_ARGS})
+  else()
+    message(WARNING "The Luajit ffi is not available in ${LUA_PRG}"
+	    ", disabling unit tests")
+  endif()
 
   add_custom_target(functionaltest
     COMMAND ${CMAKE_COMMAND}
       -DBUSTED_PRG=${BUSTED_PRG}
+      -DLUA_PRG=${LUA_PRG}
       -DNVIM_PRG=$<TARGET_FILE:nvim>
       -DWORKING_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -DBUSTED_OUTPUT_TYPE=${BUSTED_OUTPUT_TYPE}
@@ -491,11 +517,13 @@ if(BUSTED_PRG)
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=functional
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
-    DEPENDS ${FUNCTIONALTEST_PREREQS})
+    DEPENDS ${FUNCTIONALTEST_PREREQS}
+    ${TEST_TARGET_ARGS})
 
   add_custom_target(benchmark
     COMMAND ${CMAKE_COMMAND}
       -DBUSTED_PRG=${BUSTED_PRG}
+      -DLUA_PRG=${LUA_PRG}
       -DNVIM_PRG=$<TARGET_FILE:nvim>
       -DWORKING_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -DBUSTED_OUTPUT_TYPE=${BUSTED_OUTPUT_TYPE}
@@ -503,13 +531,15 @@ if(BUSTED_PRG)
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=benchmark
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
-    DEPENDS ${BENCHMARK_PREREQS})
+    DEPENDS ${BENCHMARK_PREREQS}
+    ${TEST_TARGET_ARGS})
 endif()
 
 if(BUSTED_LUA_PRG)
   add_custom_target(functionaltest-lua
     COMMAND ${CMAKE_COMMAND}
       -DBUSTED_PRG=${BUSTED_LUA_PRG}
+      -DLUA_PRG=${LUA_PRG}
       -DNVIM_PRG=$<TARGET_FILE:nvim>
       -DWORKING_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -DBUSTED_OUTPUT_TYPE=${BUSTED_OUTPUT_TYPE}
@@ -517,7 +547,8 @@ if(BUSTED_LUA_PRG)
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=functional
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
-    DEPENDS ${FUNCTIONALTEST_PREREQS})
+    DEPENDS ${FUNCTIONALTEST_PREREQS}
+    ${TEST_TARGET_ARGS})
 endif()
 
 if(LUACHECK_PRG)

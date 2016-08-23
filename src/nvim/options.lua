@@ -165,7 +165,7 @@ return {
       deny_duplicates=true,
       secure=true,
       vi_def=true,
-      expand=true,
+      expand='nodefault',
       varname='p_bdir',
       defaults={if_true={vi=''}}
     },
@@ -616,7 +616,7 @@ return {
       deny_duplicates=true,
       secure=true,
       vi_def=true,
-      expand=true,
+      expand='nodefault',
       varname='p_dir',
       defaults={if_true={vi=''}}
     },
@@ -1640,6 +1640,16 @@ return {
       defaults={if_true={vi=""}}
     },
     {
+      full_name='packpath', abbreviation='pp',
+      type='string', list='onecomma', scope={'global'},
+      deny_duplicates=true,
+      secure=true,
+      vi_def=true,
+      expand=true,
+      varname='p_pp',
+      defaults={if_true={vi=''}}
+    },
+    {
       full_name='paragraphs', abbreviation='para',
       type='string', scope={'global'},
       vi_def=true,
@@ -1881,7 +1891,7 @@ return {
       deny_duplicates=true,
       secure=true,
       vi_def=true,
-      expand=true,
+      expand='nodefault',
       varname='p_rtp',
       defaults={if_true={vi=''}}
     },
@@ -2332,6 +2342,13 @@ return {
       defaults={if_true={vi=true}}
     },
     {
+      full_name='tagcase', abbreviation='tc',
+      type='string', scope={'global', 'buffer'},
+      vim=true,
+      varname='p_tc',
+      defaults={if_true={vi="followic", vim="followic"}}
+    },
+    {
       full_name='taglength', abbreviation='tl',
       type='number', scope={'global'},
       vi_def=true,
@@ -2374,6 +2391,14 @@ return {
       vi_def=true,
       redraw={'everything'},
       defaults={if_true={vi=""}}
+    },
+    {
+      full_name='termguicolors', abbreviation='tgc',
+      type='bool', scope={'global'},
+      vi_def=false,
+      redraw={'everything'},
+      varname='p_tgc',
+      defaults={if_true={vi=false}}
     },
     {
       full_name='terse',
@@ -2482,7 +2507,7 @@ return {
       deny_duplicates=true,
       secure=true,
       vi_def=true,
-      expand=true,
+      expand='nodefault',
       varname='p_udir',
       defaults={if_true={vi=''}}
     },
@@ -2543,7 +2568,7 @@ return {
       type='string', scope={'global'},
       secure=true,
       vi_def=true,
-      expand=true,
+      expand='nodefault',
       varname='p_vdir',
       defaults={if_true={vi=''}}
     },

@@ -30,8 +30,7 @@ int stream_set_blocking(int fd, bool blocking)
   return retval;
 }
 
-void stream_init(Loop *loop, Stream *stream, int fd, uv_stream_t *uvstream,
-    void *data)
+void stream_init(Loop *loop, Stream *stream, int fd, uv_stream_t *uvstream)
   FUNC_ATTR_NONNULL_ARG(2)
 {
   stream->uvstream = uvstream;
@@ -58,7 +57,6 @@ void stream_init(Loop *loop, Stream *stream, int fd, uv_stream_t *uvstream,
     stream->uvstream->data = stream;
   }
 
-  stream->data = data;
   stream->internal_data = NULL;
   stream->fpos = 0;
   stream->curmem = 0;
@@ -71,14 +69,16 @@ void stream_init(Loop *loop, Stream *stream, int fd, uv_stream_t *uvstream,
   stream->closed = false;
   stream->buffer = NULL;
   stream->events = NULL;
+  stream->num_bytes = 0;
 }
 
-void stream_close(Stream *stream, stream_close_cb on_stream_close)
+void stream_close(Stream *stream, stream_close_cb on_stream_close, void *data)
   FUNC_ATTR_NONNULL_ARG(1)
 {
   assert(!stream->closed);
   stream->closed = true;
   stream->close_cb = on_stream_close;
+  stream->close_cb_data = data;
 
   if (!stream->pending_reqs) {
     stream_close_handle(stream);
@@ -102,7 +102,7 @@ static void close_cb(uv_handle_t *handle)
     rbuffer_free(stream->buffer);
   }
   if (stream->close_cb) {
-    stream->close_cb(stream, stream->data);
+    stream->close_cb(stream, stream->close_cb_data);
   }
   if (stream->internal_close_cb) {
     stream->internal_close_cb(stream, stream->internal_data);

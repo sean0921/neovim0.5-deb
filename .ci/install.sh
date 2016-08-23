@@ -9,24 +9,19 @@ fi
 
 if [[ "${TRAVIS_OS_NAME}" == osx ]]; then
   brew install gettext
-elif [[ "${BUILD_MINGW}" == ON ]]; then
-  # TODO: When Travis gets a recent version of Mingw-w64 use packages:
-  # binutils-mingw-w64-i686 gcc-mingw-w64-i686 g++-mingw-w64-i686 mingw-w64-dev mingw-w64-tools
-
-  echo "Downloading MinGW..."
-  curl -sSL "https://github.com/neovim/deps/raw/master/opt/i686-w64-mingw32-gcc-4.8.0-linux64_rubenvb.tar.xz" \
-    | tar xJf - -C "${HOME}/.local"
-  
+  brew reinstall -s libtool
 fi
 
-# Set CC to default to avoid compilation problems
-# when installing Python modules.
+# Use default CC to avoid compilation problems when installing Python modules.
 echo "Install neovim module and coveralls for Python 2."
-CC=cc pip2.7 install --user --upgrade neovim cpp-coveralls
+CC=cc pip2.7 -q install --user --upgrade neovim cpp-coveralls
 
 echo "Install neovim module for Python 3."
 if [[ "${TRAVIS_OS_NAME}" == osx ]]; then
-  CC=cc pip3 install --user --upgrade neovim
+  CC=cc pip3 -q install --user --upgrade neovim
 else
-  CC=cc pip3.3 install --user --upgrade neovim
+  CC=cc pip3.3 -q install --user --upgrade neovim
 fi
+
+echo "Install neovim RubyGem."
+gem install --no-document --version ">= 0.2.0" neovim

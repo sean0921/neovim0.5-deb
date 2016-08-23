@@ -11,6 +11,7 @@
 #include "nvim/vim.h"
 #include "nvim/ui.h"
 #include "nvim/map.h"
+#include "nvim/main.h"
 #include "nvim/memory.h"
 #include "nvim/api/vim.h"
 #include "nvim/api/private/helpers.h"
@@ -81,7 +82,7 @@ UI *tui_start(void)
 {
   UI *ui = xcalloc(1, sizeof(UI));
   ui->stop = tui_stop;
-  ui->rgb = os_getenv("NVIM_TUI_ENABLE_TRUE_COLOR") != NULL;
+  ui->rgb = p_tgc;
   ui->resize = tui_resize;
   ui->clear = tui_clear;
   ui->eol_clear = tui_eol_clear;
@@ -100,6 +101,7 @@ UI *tui_start(void)
   ui->visual_bell = tui_visual_bell;
   ui->update_fg = tui_update_fg;
   ui->update_bg = tui_update_bg;
+  ui->update_sp = tui_update_sp;
   ui->flush = tui_flush;
   ui->suspend = tui_suspend;
   ui->set_title = tui_set_title;
@@ -133,6 +135,8 @@ static void terminfo_start(UI *ui)
     data->ut = unibi_dummy();
   }
   fix_terminfo(data);
+  // Set 't_Co' from the result of unibilium & fix_terminfo.
+  t_colors = unibi_get_num(data->ut, unibi_max_colors);
   // Enter alternate screen and clear
   unibi_out(ui, unibi_enter_ca_mode);
   unibi_out(ui, unibi_clear_screen);
@@ -260,7 +264,7 @@ static void sigwinch_cb(SignalWatcher *watcher, int signum, void *data)
   UI *ui = data;
   update_size(ui);
   // run refresh_event in nvim main loop
-  loop_schedule(&loop, event_create(1, refresh_event, 0));
+  loop_schedule(&main_loop, event_create(1, refresh_event, 0));
 }
 
 static bool attrs_differ(HlAttrs a1, HlAttrs a2)
@@ -573,6 +577,11 @@ static void tui_update_bg(UI *ui, int bg)
   ((TUIData *)ui->data)->grid.bg = bg;
 }
 
+static void tui_update_sp(UI *ui, int sp)
+{
+  // Do nothing; 'special' color is for GUI only
+}
+
 static void tui_flush(UI *ui)
 {
   TUIData *data = ui->data;
@@ -628,8 +637,8 @@ static void tui_suspend(UI *ui)
 static void tui_set_title(UI *ui, char *title)
 {
   TUIData *data = ui->data;
-  if (!(title && unibi_get_str(data->ut, unibi_to_status_line) &&
-        unibi_get_str(data->ut, unibi_from_status_line))) {
+  if (!(title && unibi_get_str(data->ut, unibi_to_status_line)
+        && unibi_get_str(data->ut, unibi_from_status_line))) {
     return;
   }
   unibi_out(ui, unibi_to_status_line);
@@ -675,7 +684,7 @@ static void invalidate(UI *ui, int top, int bot, int left, int right)
     intersects->right = MAX(right, intersects->right);
   } else {
     // Else just add a new entry;
-    kv_push(Rect, data->invalid_regions, ((Rect){top, bot, left, right}));
+    kv_push(data->invalid_regions, ((Rect) { top, bot, left, right }));
   }
 }
 
@@ -694,8 +703,8 @@ static void update_size(UI *ui)
   }
 
   // 2 - try from a system call(ioctl/TIOCGWINSZ on unix)
-  if (data->out_isatty &&
-      !uv_tty_get_winsize(&data->output_handle.tty, &width, &height)) {
+  if (data->out_isatty
+      && !uv_tty_get_winsize(&data->output_handle.tty, &width, &height)) {
     goto end;
   }
 
@@ -779,6 +788,7 @@ static void fix_terminfo(TUIData *data)
   unibi_term *ut = data->ut;
 
   const char *term = os_getenv("TERM");
+  const char *colorterm = os_getenv("COLORTERM");
   if (!term) {
     goto end;
   }
@@ -824,10 +834,10 @@ static void fix_terminfo(TUIData *data)
 #define XTERM_SETAB \
   "\x1b[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m"
 
-  if (os_getenv("COLORTERM") != NULL
-      && (!strcmp(term, "xterm") || !strcmp(term, "screen"))) {
-    // probably every modern terminal that sets TERM=xterm supports 256
-    // colors(eg: gnome-terminal). Also do it when TERM=screen.
+  if ((colorterm && strstr(colorterm, "256"))
+      || strstr(term, "256")
+      || strstr(term, "xterm")) {
+    // Assume TERM~=xterm or COLORTERM~=256 supports 256 colors.
     unibi_set_num(ut, unibi_max_colors, 256);
     unibi_set_str(ut, unibi_set_a_foreground, XTERM_SETAF);
     unibi_set_str(ut, unibi_set_a_background, XTERM_SETAB);

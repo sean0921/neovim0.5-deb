@@ -160,9 +160,6 @@ qf_init (
 {
   qf_info_T       *qi = &ql_info;
 
-  if (efile == NULL)
-    return FAIL;
-
   if (wp != NULL) {
     qi = ll_get_or_alloc_list(wp);
   }
@@ -574,8 +571,9 @@ restofline:
           *regmatch.endp[i] = c;
 
           if (vim_strchr((char_u *)"OPQ", idx) != NULL
-              && !os_file_exists(namebuf))
+              && !os_path_exists(namebuf)) {
             continue;
+          }
         }
         if ((i = (int)fmt_ptr->addr[1]) > 0) {                  /* %n */
           if (regmatch.startp[i] == NULL)
@@ -709,11 +707,12 @@ restofline:
       } else if (vim_strchr((char_u *)"OPQ", idx) != NULL) {
         // global file names
         valid = false;
-        if (*namebuf == NUL || os_file_exists(namebuf)) {
-          if (*namebuf && idx == 'P')
+        if (*namebuf == NUL || os_path_exists(namebuf)) {
+          if (*namebuf && idx == 'P') {
             currfile = qf_push_dir(namebuf, &file_stack);
-          else if (idx == 'Q')
+          } else if (idx == 'Q') {
             currfile = qf_pop_dir(&file_stack);
+          }
           *namebuf = NUL;
           if (tail && *tail) {
             STRMOVE(IObuff, skipwhite(tail));
@@ -1083,7 +1082,7 @@ static int qf_get_fnum(char_u *directory, char_u *fname)
        * "leaving directory"-messages we might have missed a
        * directory change.
        */
-      if (!os_file_exists(ptr)) {
+      if (!os_path_exists(ptr)) {
         xfree(ptr);
         directory = qf_guess_filepath(fname);
         if (directory)
@@ -1235,8 +1234,9 @@ static char_u *qf_guess_filepath(char_u *filename)
     xfree(fullname);
     fullname = (char_u *)concat_fnames((char *)ds_ptr->dirname, (char *)filename, TRUE);
 
-    if (os_file_exists(fullname))
+    if (os_path_exists(fullname)) {
       break;
+    }
 
     ds_ptr = ds_ptr->next;
   }
@@ -1579,14 +1579,23 @@ win_found:
        * set b_p_ro flag). */
       if (!can_abandon(curbuf, forceit)) {
         EMSG(_(e_nowrtmsg));
-        ok = FALSE;
-      } else
+        ok = false;
+      } else {
         ok = do_ecmd(qf_ptr->qf_fnum, NULL, NULL, NULL, (linenr_T)1,
-            ECMD_HIDE + ECMD_SET_HELP,
-            oldwin == curwin ? curwin : NULL);
-    } else
-      ok = buflist_getfile(qf_ptr->qf_fnum,
-          (linenr_T)1, GETF_SETMARK | GETF_SWITCH, forceit);
+                     ECMD_HIDE + ECMD_SET_HELP,
+                     oldwin == curwin ? curwin : NULL);
+      }
+    } else {
+      ok = buflist_getfile(qf_ptr->qf_fnum, (linenr_T)1,
+                           GETF_SETMARK | GETF_SWITCH, forceit);
+      if (qi != &ql_info && !win_valid(oldwin)) {
+        EMSG(_("E924: Current window was closed"));
+        ok = false;
+        qi = NULL;
+        qf_ptr = NULL;
+        opened_window = false;
+      }
+    }
   }
 
   if (ok == OK) {
@@ -1666,21 +1675,22 @@ win_found:
       msg_scroll = (int)i;
     }
   } else {
-    if (opened_window)
-      win_close(curwin, TRUE);          /* Close opened window */
-    if (qf_ptr->qf_fnum != 0) {
-      /*
-       * Couldn't open file, so put index back where it was.  This could
-       * happen if the file was readonly and we changed something.
-       */
+    if (opened_window) {
+      win_close(curwin, true);          // Close opened window
+    }
+    if (qf_ptr != NULL && qf_ptr->qf_fnum != 0) {
+       // Couldn't open file, so put index back where it was.  This could
+       // happen if the file was readonly and we changed something.
 failed:
       qf_ptr = old_qf_ptr;
       qf_index = old_qf_index;
     }
   }
 theend:
-  qi->qf_lists[qi->qf_curlist].qf_ptr = qf_ptr;
-  qi->qf_lists[qi->qf_curlist].qf_index = qf_index;
+  if (qi != NULL) {
+    qi->qf_lists[qi->qf_curlist].qf_ptr = qf_ptr;
+    qi->qf_lists[qi->qf_curlist].qf_index = qf_index;
+  }
   if (p_swb != old_swb && opened_window) {
     /* Restore old 'switchbuf' value, but not when an autocommand or
      * modeline has changed the value. */
@@ -2757,8 +2767,8 @@ void ex_cc(exarg_T *eap)
 
   // For cdo and ldo commands, jump to the nth valid error.
   // For cfdo and lfdo commands, jump to the nth valid file entry.
-  if (eap->cmdidx == CMD_cdo || eap->cmdidx == CMD_ldo ||
-      eap->cmdidx == CMD_cfdo || eap->cmdidx == CMD_lfdo) {
+  if (eap->cmdidx == CMD_cdo || eap->cmdidx == CMD_ldo
+      || eap->cmdidx == CMD_cfdo || eap->cmdidx == CMD_lfdo) {
     size_t n;
     if (eap->addr_count > 0) {
       assert(eap->line1 >= 0);
@@ -2801,9 +2811,9 @@ void ex_cnext(exarg_T *eap)
   }
 
   int errornr;
-  if (eap->addr_count > 0 &&
-        (eap->cmdidx != CMD_cdo && eap->cmdidx != CMD_ldo &&
-         eap->cmdidx != CMD_cfdo && eap->cmdidx != CMD_lfdo)) {
+  if (eap->addr_count > 0
+      && (eap->cmdidx != CMD_cdo && eap->cmdidx != CMD_ldo
+          && eap->cmdidx != CMD_cfdo && eap->cmdidx != CMD_lfdo)) {
     errornr = (int)eap->line2;
   } else {
     errornr = 1;
@@ -2972,16 +2982,18 @@ void ex_vimgrep(exarg_T *eap)
     goto theend;
   }
 
-  if ((eap->cmdidx != CMD_grepadd && eap->cmdidx != CMD_lgrepadd &&
-       eap->cmdidx != CMD_vimgrepadd && eap->cmdidx != CMD_lvimgrepadd)
-      || qi->qf_curlist == qi->qf_listcount)
-    /* make place for a new list */
+  if ((eap->cmdidx != CMD_grepadd && eap->cmdidx != CMD_lgrepadd
+       && eap->cmdidx != CMD_vimgrepadd && eap->cmdidx != CMD_lvimgrepadd)
+      || qi->qf_curlist == qi->qf_listcount) {
+    // make place for a new list
     qf_new_list(qi, *eap->cmdlinep);
-  else if (qi->qf_lists[qi->qf_curlist].qf_count > 0)
-    /* Adding to existing list, find last entry. */
+  } else if (qi->qf_lists[qi->qf_curlist].qf_count > 0) {
+    // Adding to existing list, find last entry.
     for (prevp = qi->qf_lists[qi->qf_curlist].qf_start;
-         prevp->qf_next != prevp; prevp = prevp->qf_next)
-      ;
+         prevp->qf_next != prevp;
+         prevp = prevp->qf_next) {
+    }
+  }
 
   /* parse the list of arguments */
   if (get_arglist_exp(p, &fcount, &fnames, true) == FAIL)

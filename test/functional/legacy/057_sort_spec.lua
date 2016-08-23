@@ -1,6 +1,6 @@
 -- Tests for :sort command.
 
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local insert, execute, clear, expect, eq, eval, source = helpers.insert,
   helpers.execute, helpers.clear, helpers.expect, helpers.eq, helpers.eval,
   helpers.source
@@ -667,5 +667,23 @@ describe(':sort', function()
       0b101010
       b0b101100
       b0b111000]])
+  end)
+
+  it('float', function()
+    insert([[
+      1.234
+      0.88
+      123.456
+      1.15e-6
+      -1.1e3
+      -1.01e3]])
+    execute([[sort f]])
+    expect([[
+      -1.1e3
+      -1.01e3
+      1.15e-6
+      0.88
+      1.234
+      123.456]])
   end)
 end)

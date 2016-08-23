@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <limits.h>
 
+#include "nvim/main.h"
 #include "nvim/vim.h"
 #include "nvim/ui.h"
 #include "nvim/memory.h"
@@ -18,9 +19,9 @@
 #define UI(b) (((UIBridgeData *)b)->ui)
 
 // Call a function in the UI thread
-#define UI_CALL(ui, name, argc, ...)                                      \
-  ((UIBridgeData *)ui)->scheduler(                                        \
-    event_create(1, ui_bridge_##name##_event, argc, __VA_ARGS__), UI(ui))
+#define UI_CALL(ui, name, argc, ...) \
+  ((UIBridgeData *)ui)->scheduler( \
+      event_create(1, ui_bridge_##name##_event, argc, __VA_ARGS__), UI(ui))
 
 #define INT2PTR(i) ((void *)(uintptr_t)i)
 #define PTR2INT(p) ((int)(uintptr_t)p)
@@ -49,6 +50,7 @@ UI *ui_bridge_attach(UI *ui, ui_main_fn ui_main, event_scheduler scheduler)
   rv->bridge.visual_bell = ui_bridge_visual_bell;
   rv->bridge.update_fg = ui_bridge_update_fg;
   rv->bridge.update_bg = ui_bridge_update_bg;
+  rv->bridge.update_sp = ui_bridge_update_sp;
   rv->bridge.flush = ui_bridge_flush;
   rv->bridge.suspend = ui_bridge_suspend;
   rv->bridge.set_title = ui_bridge_set_title;
@@ -70,7 +72,7 @@ UI *ui_bridge_attach(UI *ui, ui_main_fn ui_main, event_scheduler scheduler)
   }
   uv_mutex_unlock(&rv->mutex);
 
-  ui_attach(&rv->bridge);
+  ui_attach_impl(&rv->bridge);
   return &rv->bridge;
 }
 
@@ -99,12 +101,12 @@ static void ui_bridge_stop(UI *b)
     if (stopped) {
       break;
     }
-    loop_poll_events(&loop, 10);
+    loop_poll_events(&main_loop, 10);
   }
   uv_thread_join(&bridge->ui_thread);
   uv_mutex_destroy(&bridge->mutex);
   uv_cond_destroy(&bridge->cond);
-  ui_detach(b);
+  ui_detach_impl(b);
   xfree(b);
 }
 static void ui_bridge_stop_event(void **argv)
@@ -303,6 +305,16 @@ static void ui_bridge_update_bg_event(void **argv)
 {
   UI *ui = UI(argv[0]);
   ui->update_bg(ui, PTR2INT(argv[1]));
+}
+
+static void ui_bridge_update_sp(UI *b, int sp)
+{
+  UI_CALL(b, update_sp, 2, b, INT2PTR(sp));
+}
+static void ui_bridge_update_sp_event(void **argv)
+{
+  UI *ui = UI(argv[0]);
+  ui->update_sp(ui, PTR2INT(argv[1]));
 }
 
 static void ui_bridge_flush(UI *b)

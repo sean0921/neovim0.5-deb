@@ -1,4 +1,4 @@
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local thelpers = require('test.functional.terminal.helpers')
 local clear = helpers.clear
 local feed, nvim = helpers.feed, helpers.nvim
@@ -27,7 +27,7 @@ describe('terminal mouse', function()
       line29                                            |
       line30                                            |
       {1: }                                                 |
-      -- TERMINAL --                                    |
+      {3:-- TERMINAL --}                                    |
     ]])
   end)
 
@@ -74,7 +74,7 @@ describe('terminal mouse', function()
           line30                                            |
           mouse enabled                                     |
           {1: }                                                 |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
       end)
 
@@ -87,7 +87,7 @@ describe('terminal mouse', function()
           line30                                            |
           mouse enabled                                     |
            "#{1: }                                              |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
       end)
 
@@ -100,7 +100,7 @@ describe('terminal mouse', function()
           line30                                            |
           mouse enabled                                     |
           `!!{1: }                                              |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
       end)
     end)
@@ -112,86 +112,86 @@ describe('terminal mouse', function()
           line28                   |line28                  |
           line29                   |line29                  |
           line30                   |line30                  |
-          rows: 5, cols: 24        |rows: 5, cols: 24       |
+          rows: 5, cols: 25        |rows: 5, cols: 25       |
           {2:^ }                        |{2: }                       |
           ==========                ==========              |
                                                             |
         ]])
         feed(':enew | set number<cr>')
         screen:expect([[
-            1 ^                     |line28                  |
-          ~                        |line29                  |
-          ~                        |line30                  |
-          ~                        |rows: 5, cols: 24       |
-          ~                        |{2: }                       |
+          {7:  1 }^                     |line28                  |
+          {4:~                        }|line29                  |
+          {4:~                        }|line30                  |
+          {4:~                        }|rows: 5, cols: 25       |
+          {4:~                        }|{2: }                       |
           ==========                ==========              |
           :enew | set number                                |
         ]])
         feed('30iline\n<esc>')
         screen:expect([[
-           27 line                 |line28                  |
-           28 line                 |line29                  |
-           29 line                 |line30                  |
-           30 line                 |rows: 5, cols: 24       |
-           31 ^                     |{2: }                       |
+          {7: 27 }line                 |line28                  |
+          {7: 28 }line                 |line29                  |
+          {7: 29 }line                 |line30                  |
+          {7: 30 }line                 |rows: 5, cols: 25       |
+          {7: 31 }^                     |{2: }                       |
           ==========                ==========              |
                                                             |
         ]])
         feed('<c-w>li')
         screen:expect([[
-           27 line                 |line28                  |
-           28 line                 |line29                  |
-           29 line                 |line30                  |
-           30 line                 |rows: 5, cols: 24       |
-           31                      |{1: }                       |
+          {7: 27 }line                 |line29                  |
+          {7: 28 }line                 |line30                  |
+          {7: 29 }line                 |rows: 5, cols: 25       |
+          {7: 30 }line                 |rows: 5, cols: 24       |
+          {7: 31 }                     |{1: }                       |
           ==========                ==========              |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
         -- enabling mouse won't affect interaction with other windows
         thelpers.enable_mouse()
         thelpers.feed_data('mouse enabled\n')
         screen:expect([[
-           27 line                 |line29                  |
-           28 line                 |line30                  |
-           29 line                 |rows: 5, cols: 24       |
-           30 line                 |mouse enabled           |
-           31                      |{1: }                       |
+          {7: 27 }line                 |line30                  |
+          {7: 28 }line                 |rows: 5, cols: 25       |
+          {7: 29 }line                 |rows: 5, cols: 24       |
+          {7: 30 }line                 |mouse enabled           |
+          {7: 31 }                     |{1: }                       |
           ==========                ==========              |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
       end)
 
       it('wont lose focus if another window is scrolled', function()
         feed('<MouseDown><0,0><MouseDown><0,0>')
         screen:expect([[
-           21 line                 |line29                  |
-           22 line                 |line30                  |
-           23 line                 |rows: 5, cols: 24       |
-           24 line                 |mouse enabled           |
-           25 line                 |{1: }                       |
+          {7: 21 }line                 |line30                  |
+          {7: 22 }line                 |rows: 5, cols: 25       |
+          {7: 23 }line                 |rows: 5, cols: 24       |
+          {7: 24 }line                 |mouse enabled           |
+          {7: 25 }line                 |{1: }                       |
           ==========                ==========              |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
         feed('<S-MouseUp><0,0>')
         screen:expect([[
-           26 line                 |line29                  |
-           27 line                 |line30                  |
-           28 line                 |rows: 5, cols: 24       |
-           29 line                 |mouse enabled           |
-           30 line                 |{1: }                       |
+          {7: 26 }line                 |line30                  |
+          {7: 27 }line                 |rows: 5, cols: 25       |
+          {7: 28 }line                 |rows: 5, cols: 24       |
+          {7: 29 }line                 |mouse enabled           |
+          {7: 30 }line                 |{1: }                       |
           ==========                ==========              |
-          -- TERMINAL --                                    |
+          {3:-- TERMINAL --}                                    |
         ]])
       end)
 
       it('will lose focus if another window is clicked', function()
         feed('<LeftMouse><5,1>')
         screen:expect([[
-           27 line                 |line29                  |
-           28 l^ine                 |line30                  |
-           29 line                 |rows: 5, cols: 24       |
-           30 line                 |mouse enabled           |
-           31                      |{2: }                       |
+          {7: 27 }line                 |line30                  |
+          {7: 28 }l^ine                 |rows: 5, cols: 25       |
+          {7: 29 }line                 |rows: 5, cols: 24       |
+          {7: 30 }line                 |mouse enabled           |
+          {7: 31 }                     |{2: }                       |
           ==========                ==========              |
                                                             |
         ]])

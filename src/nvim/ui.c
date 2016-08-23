@@ -30,7 +30,11 @@
 #include "nvim/screen.h"
 #include "nvim/syntax.h"
 #include "nvim/window.h"
-#include "nvim/tui/tui.h"
+#ifdef FEAT_TUI
+# include "nvim/tui/tui.h"
+#else
+# include "nvim/msgpack_rpc/server.h"
+#endif
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "ui.c.generated.h"
@@ -56,22 +60,22 @@ static int height, width;
 // See http://stackoverflow.com/a/11172679 for a better explanation of how it
 // works.
 #ifdef _MSC_VER
-  #define UI_CALL(funname, ...)                                     \
-    do {                                                            \
-      flush_cursor_update();                                        \
-      for (size_t i = 0; i < ui_count; i++) {                       \
-        UI *ui = uis[i];                                            \
-        UI_CALL_MORE(funname, __VA_ARGS__);                         \
-      }                                                             \
+# define UI_CALL(funname, ...) \
+    do { \
+      flush_cursor_update(); \
+      for (size_t i = 0; i < ui_count; i++) { \
+        UI *ui = uis[i]; \
+        UI_CALL_MORE(funname, __VA_ARGS__); \
+      } \
     } while (0)
 #else
-  #define UI_CALL(...)                                              \
-    do {                                                            \
-      flush_cursor_update();                                        \
-      for (size_t i = 0; i < ui_count; i++) {                       \
-        UI *ui = uis[i];                                            \
-        UI_CALL_HELPER(CNT(__VA_ARGS__), __VA_ARGS__);              \
-      }                                                             \
+# define UI_CALL(...) \
+    do { \
+      flush_cursor_update(); \
+      for (size_t i = 0; i < ui_count; i++) { \
+        UI *ui = uis[i]; \
+        UI_CALL_HELPER(CNT(__VA_ARGS__), __VA_ARGS__); \
+      } \
     } while (0)
 #endif
 #define CNT(...) SELECT_NTH(__VA_ARGS__, MORE, MORE, MORE, MORE, ZERO, ignore)
@@ -83,7 +87,22 @@ static int height, width;
 
 void ui_builtin_start(void)
 {
+#ifdef FEAT_TUI
   tui_start();
+#else
+  fprintf(stderr, "Neovim was built without a Terminal UI," \
+          "press Ctrl+C to exit\n");
+
+  size_t len;
+  char **addrs = server_address_list(&len);
+  if (addrs != NULL) {
+    fprintf(stderr, "currently listening on the following address(es)\n");
+    for (size_t i = 0; i < len; i++) {
+      fprintf(stderr, "\t%s\n", addrs[i]);
+    }
+    xfree(addrs);
+  }
+#endif
 }
 
 void ui_builtin_stop(void)
@@ -155,6 +174,7 @@ void ui_resize(int new_width, int new_height)
 
   UI_CALL(update_fg, (ui->rgb ? normal_fg : cterm_normal_fg_color - 1));
   UI_CALL(update_bg, (ui->rgb ? normal_bg : cterm_normal_bg_color - 1));
+  UI_CALL(update_sp, (ui->rgb ? normal_sp : -1));
 
   sr.top = 0;
   sr.bot = height - 1;
@@ -187,7 +207,7 @@ void ui_mouse_off(void)
   UI_CALL(mouse_off);
 }
 
-void ui_attach(UI *ui)
+void ui_attach_impl(UI *ui)
 {
   if (ui_count == MAX_UI_COUNT) {
     abort();
@@ -197,7 +217,7 @@ void ui_attach(UI *ui)
   ui_refresh();
 }
 
-void ui_detach(UI *ui)
+void ui_detach_impl(UI *ui)
 {
   size_t shift_index = MAX_UI_COUNT;
 
@@ -388,7 +408,7 @@ static void parse_control_character(uint8_t c)
 
 static void set_highlight_args(int attr_code)
 {
-  HlAttrs rgb_attrs = { false, false, false, false, false, -1, -1 };
+  HlAttrs rgb_attrs = { false, false, false, false, false, -1, -1, -1 };
   HlAttrs cterm_attrs = rgb_attrs;
 
   if (attr_code == HL_NORMAL) {
@@ -423,6 +443,10 @@ static void set_highlight_args(int attr_code)
 
   if (aep->rgb_bg_color != normal_bg) {
     rgb_attrs.background = aep->rgb_bg_color;
+  }
+
+  if (aep->rgb_sp_color != normal_sp) {
+    rgb_attrs.special = aep->rgb_sp_color;
   }
 
   if (cterm_normal_fg_color != aep->cterm_fg_color) {

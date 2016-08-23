@@ -1,4 +1,4 @@
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local thelpers = require('test.functional.terminal.helpers')
 local feed, clear, nvim = helpers.feed, helpers.clear, helpers.nvim
 local wait = helpers.wait
@@ -21,11 +21,11 @@ describe('terminal buffer', function()
       feed('<c-\\><c-n>:set bufhidden=wipe<cr>:enew<cr>')
       screen:expect([[
         ^                                                  |
-        ~                                                 |
-        ~                                                 |
-        ~                                                 |
-        ~                                                 |
-        ~                                                 |
+        {4:~                                                 }|
+        {4:~                                                 }|
+        {4:~                                                 }|
+        {4:~                                                 }|
+        {4:~                                                 }|
         :enew                                             |
       ]])
     end)
@@ -34,11 +34,11 @@ describe('terminal buffer', function()
       feed(':bnext:l<esc>')
       screen:expect([[
         ^                                                  |
-        ~                                                 |
-        ~                                                 |
-        ~                                                 |
-        ~                                                 |
-        ~                                                 |
+        {4:~                                                 }|
+        {4:~                                                 }|
+        {4:~                                                 }|
+        {4:~                                                 }|
+        {4:~                                                 }|
                                                           |
       ]])
     end)
@@ -78,7 +78,7 @@ describe('terminal buffer', function()
                                                         |
                                                         |
       ^                                                  |
-      E21: Cannot make changes, 'modifiable' is off     |
+      {8:E21: Cannot make changes, 'modifiable' is off}     |
     ]])
   end)
 
@@ -138,28 +138,27 @@ describe('terminal buffer', function()
     feed('<c-\\><c-n>:bd!<cr>')
     screen:expect([[
       ^                                                  |
-      ~                                                 |
-      ~                                                 |
-      ~                                                 |
-      ~                                                 |
-      ~                                                 |
+      {4:~                                                 }|
+      {4:~                                                 }|
+      {4:~                                                 }|
+      {4:~                                                 }|
+      {4:~                                                 }|
       :bd!                                              |
     ]])
     execute('bnext')
     screen:expect([[
       ^                                                  |
-      ~                                                 |
-      ~                                                 |
-      ~                                                 |
-      ~                                                 |
-      ~                                                 |
+      {4:~                                                 }|
+      {4:~                                                 }|
+      {4:~                                                 }|
+      {4:~                                                 }|
+      {4:~                                                 }|
       :bnext                                            |
     ]])
   end)
 
   it('handles loss of focus gracefully', function()
-    -- Temporarily change the statusline to avoid printing the file name, which
-    -- varies be where the test is run.
+    -- Change the statusline to avoid printing the file name, which varies.
     nvim('set_option', 'statusline', '==========')
     execute('set laststatus=0')
 
@@ -181,8 +180,8 @@ describe('terminal buffer', function()
     -- We should be in a new buffer now.
     screen:expect([[
       ab^c                                               |
-      ~                                                 |
-      ==========                                        |
+      {4:~                                                 }|
+      {5:==========                                        }|
       rows: 2, cols: 50                                 |
       {2: }                                                 |
       {1:==========                                        }|
@@ -194,6 +193,16 @@ describe('terminal buffer', function()
     eq(tbuf, eval('bufnr("%")'))
 
     execute('set laststatus=1')  -- Restore laststatus to the default.
+  end)
+
+  it('term_close() use-after-free #4393', function()
+    if eval("executable('yes')") == 0 then
+      pending('missing "yes" command')
+      return
+    end
+    execute('terminal yes')
+    feed([[<C-\><C-n>]])
+    execute('bdelete!')
   end)
 end)
 

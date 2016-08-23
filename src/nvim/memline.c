@@ -443,8 +443,9 @@ void ml_setname(buf_T *buf)
 #ifdef HAVE_FD_CLOEXEC
     {
       int fdflags = fcntl(mfp->mf_fd, F_GETFD);
-      if (fdflags >= 0 && (fdflags & FD_CLOEXEC) == 0)
-        fcntl(mfp->mf_fd, F_SETFD, fdflags | FD_CLOEXEC);
+      if (fdflags >= 0 && (fdflags & FD_CLOEXEC) == 0) {
+        (void)fcntl(mfp->mf_fd, F_SETFD, fdflags | FD_CLOEXEC);
+      }
     }
 #endif
   }
@@ -786,9 +787,8 @@ void ml_recover(void)
   if (fname == NULL)                /* When there is no file name */
     fname = (char_u *)"";
   len = (int)STRLEN(fname);
-  if (len >= 4 &&
-      STRNICMP(fname + len - 4, ".s", 2)
-      == 0
+  if (len >= 4
+      && STRNICMP(fname + len - 4, ".s", 2) == 0
       && vim_strchr((char_u *)"UVWuvw", fname[len - 2]) != NULL
       && ASCII_ISALPHA(fname[len - 1])) {
     directly = TRUE;
@@ -1359,7 +1359,7 @@ recover_names (
     if (*dirp == NUL && file_count + num_files == 0 && fname != NULL) {
       char_u *swapname = (char_u *)modname((char *)fname_res, ".swp", TRUE);
       if (swapname != NULL) {
-        if (os_file_exists(swapname)) {
+        if (os_path_exists(swapname)) {
           files = xmalloc(sizeof(char_u *));
           files[0] = swapname;
           swapname = NULL;
@@ -3165,9 +3165,10 @@ attention_message (
   }
   /* Some of these messages are long to allow translation to
    * other languages. */
-  MSG_PUTS(_(
-          "\n(1) Another program may be editing the same file.  If this is the case,\n    be careful not to end up with two different instances of the same\n    file when making changes."));
-  MSG_PUTS(_("  Quit, or continue with caution.\n"));
+  MSG_PUTS(_("\n(1) Another program may be editing the same file.  If this is"
+             " the case,\n    be careful not to end up with two different"
+             " instances of the same\n    file when making changes."
+             "  Quit, or continue with caution.\n"));
   MSG_PUTS(_("(2) An edit session for this file crashed.\n"));
   MSG_PUTS(_("    If this is the case, use \":recover\" or \"vim -r "));
   msg_outtrans(buf->b_fname);
@@ -3426,11 +3427,11 @@ static char *findswapname(buf_T *buf, char **dirp, char *old_fname,
               break;
             }
 
-            /* If the file was deleted this fname can be used. */
-            if (!os_file_exists((char_u *) fname))
+            // If the file was deleted this fname can be used.
+            if (!os_path_exists((char_u *)fname)) {
               break;
-          } else
-          {
+            }
+          } else {
             MSG_PUTS("\n");
             if (msg_silent == 0)
               /* call wait_return() later */

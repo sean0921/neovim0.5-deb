@@ -1,6 +1,6 @@
 -- Tests for writefile()
 
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local clear, execute, expect = helpers.clear, helpers.execute, helpers.expect
 
 describe('writefile', function()
@@ -17,6 +17,7 @@ describe('writefile', function()
     execute('bwipeout!')
     execute('$put =readfile(f)')
     execute('1 delete _')
+    execute('call delete(f)')
 
     -- Assert buffer contents.
     expect([[

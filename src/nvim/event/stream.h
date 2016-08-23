@@ -44,12 +44,14 @@ struct stream {
   uv_file fd;
   stream_read_cb read_cb;
   stream_write_cb write_cb;
+  void *cb_data;
   stream_close_cb close_cb, internal_close_cb;
+  void *close_cb_data, *internal_data;
   size_t fpos;
   size_t curmem;
   size_t maxmem;
   size_t pending_reqs;
-  void *data, *internal_data;
+  size_t num_bytes;
   bool closed;
   Queue *events;
 };

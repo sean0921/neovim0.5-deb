@@ -120,6 +120,8 @@ typedef struct {
 # include "main.c.generated.h"
 #endif
 
+Loop main_loop;
+
 static char *argv0;
 
 // Error messages
@@ -133,7 +135,7 @@ static const char *err_extra_cmd =
 
 void event_init(void)
 {
-  loop_init(&loop, NULL);
+  loop_init(&main_loop, NULL);
   // early msgpack-rpc initialization
   msgpack_rpc_init_method_table();
   msgpack_rpc_helpers_init();
@@ -151,19 +153,20 @@ void event_init(void)
 
 void event_teardown(void)
 {
-  if (!loop.events) {
+  if (!main_loop.events) {
     return;
   }
 
-  queue_process_events(loop.events);
+  queue_process_events(main_loop.events);
   input_stop();
   channel_teardown();
-  process_teardown(&loop);
+  process_teardown(&main_loop);
+  timer_teardown();
   server_teardown();
   signal_teardown();
   terminal_teardown();
 
-  loop_close(&loop);
+  loop_close(&main_loop);
 }
 
 /// Performs early initialization.
@@ -248,8 +251,9 @@ int main(int argc, char **argv)
    */
   command_line_scan(&params);
 
-  if (GARGCOUNT > 0)
-    fname = get_fname(&params);
+  if (GARGCOUNT > 0) {
+    fname = get_fname(&params, cwd);
+  }
 
   TIME_MSG("expanding arguments");
 
@@ -273,7 +277,6 @@ int main(int argc, char **argv)
     printf(_("%d files to edit\n"), GARGCOUNT);
 
   full_screen = true;
-  t_colors = 256;
   check_tty(&params);
 
   /*
@@ -504,6 +507,9 @@ int main(int argc, char **argv)
   no_wait_return = FALSE;
   starting = 0;
 
+  // 'autochdir' has been postponed.
+  do_autochdir();
+
   /* start in insert mode */
   if (p_im)
     need_start_insertmode = TRUE;
@@ -665,8 +671,8 @@ static void init_locale(void)
   {
     char_u  *p;
 
-    /* expand_env() doesn't work yet, because chartab[] is not initialized
-     * yet, call vim_getenv() directly */
+    // expand_env() doesn't work yet, because g_chartab[] is not
+    // initialized yet, call vim_getenv() directly
     p = (char_u *)vim_getenv("VIMRUNTIME");
     if (p != NULL && *p != NUL) {
       vim_snprintf((char *)NameBuff, MAXPATHL, "%s/lang", p);
@@ -1191,7 +1197,7 @@ static void check_and_set_isatty(mparm_T *paramp)
 /*
  * Get filename from command line, given that there is one.
  */
-static char_u *get_fname(mparm_T *parmp)
+static char_u *get_fname(mparm_T *parmp, char_u *cwd)
 {
 #if !defined(UNIX)
   /*
@@ -1236,8 +1242,11 @@ static void set_window_layout(mparm_T *paramp)
 static void load_plugins(void)
 {
   if (p_lpl) {
-    source_runtime((char_u *)"plugin/**/*.vim", TRUE);
+    source_runtime((char_u *)"plugin/**/*.vim", DIP_ALL);  // NOLINT
     TIME_MSG("loading plugins");
+
+    ex_packloadall(NULL);
+    TIME_MSG("loading packages");
   }
 }
 
@@ -1665,8 +1674,6 @@ static bool do_user_initialization(void)
 }
 
 /// Source startup scripts
-///
-/// @param[in]
 static void source_startup_scripts(const mparm_T *const parmp)
   FUNC_ATTR_NONNULL_ALL
 {

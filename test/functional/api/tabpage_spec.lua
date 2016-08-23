@@ -1,9 +1,8 @@
 -- Sanity checks for tabpage_* API calls via msgpack-rpc
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local clear, nvim, tabpage, curtab, eq, ok =
   helpers.clear, helpers.nvim, helpers.tabpage, helpers.curtab, helpers.eq,
   helpers.ok
-local wait = helpers.wait
 local curtabmeths = helpers.curtabmeths
 local funcs = helpers.funcs
 

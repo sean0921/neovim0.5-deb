@@ -6,6 +6,7 @@
 #include "nvim/window.h"
 #include "nvim/strings.h"
 #include "nvim/screen.h"
+#include "nvim/syntax.h"
 #include "nvim/ui.h"
 #include "nvim/os_unix.h"
 #include "nvim/fold.h"
@@ -14,6 +15,8 @@
 #include "nvim/misc1.h"
 #include "nvim/cursor.h"
 #include "nvim/buffer_defs.h"
+#include "nvim/memline.h"
+#include "nvim/charset.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "mouse.c.generated.h"
@@ -301,6 +304,10 @@ retnomove:
     mouse_past_bottom = true;
   }
 
+  if (!(flags & MOUSE_RELEASED) && which_button == MOUSE_LEFT) {
+    col = mouse_adjust_click(curwin, row, col);
+  }
+
   // Start Visual mode before coladvance(), for when 'sel' != "old"
   if ((flags & MOUSE_MAY_VIS) && !VIsual_active) {
     check_visual_highlight();
@@ -501,5 +508,168 @@ void set_mouse_topline(win_T *wp)
 {
   orig_topline = wp->w_topline;
   orig_topfill = wp->w_topfill;
+}
+
+///
+/// Return length of line "lnum" for horizontal scrolling.
+///
+static colnr_T scroll_line_len(linenr_T lnum)
+{
+  colnr_T col = 0;
+  char_u *line = ml_get(lnum);
+  if (*line != NUL) {
+    for (;;) {
+      int numchar = chartabsize(line, col);
+      mb_ptr_adv(line);
+      if (*line == NUL) {    // don't count the last character
+        break;
+      }
+      col += numchar;
+    }
+  }
+  return col;
+}
+
+///
+/// Find longest visible line number.
+///
+static linenr_T find_longest_lnum(void)
+{
+  linenr_T ret = 0;
+
+  // Calculate maximum for horizontal scrollbar.  Check for reasonable
+  // line numbers, topline and botline can be invalid when displaying is
+  // postponed.
+  if (curwin->w_topline <= curwin->w_cursor.lnum
+      && curwin->w_botline > curwin->w_cursor.lnum
+      && curwin->w_botline <= curbuf->b_ml.ml_line_count + 1) {
+    long max = 0;
+
+    // Use maximum of all visible lines.  Remember the lnum of the
+    // longest line, closest to the cursor line.  Used when scrolling
+    // below.
+    for (linenr_T lnum = curwin->w_topline; lnum < curwin->w_botline; lnum++) {
+      colnr_T len = scroll_line_len(lnum);
+      if (len > (colnr_T)max) {
+        max = len;
+        ret = lnum;
+      } else if (len == (colnr_T)max
+                 && abs((int)(lnum - curwin->w_cursor.lnum))
+                 < abs((int)(ret - curwin->w_cursor.lnum))) {
+        ret = lnum;
+      }
+    }
+  } else {
+    // Use cursor line only.
+    ret = curwin->w_cursor.lnum;
+  }
+
+  return ret;
+}
+
+///
+/// Do a horizontal scroll.  Return TRUE if the cursor moved, FALSE otherwise.
+///
+bool mouse_scroll_horiz(int dir)
+{
+  if (curwin->w_p_wrap) {
+      return false;
+  }
+
+  int step = 6;
+  if (mod_mask & (MOD_MASK_SHIFT | MOD_MASK_CTRL)) {
+      step = curwin->w_width;
+  }
+
+  int leftcol = curwin->w_leftcol + (dir == MSCR_RIGHT ? -step : +step);
+  if (leftcol < 0) {
+      leftcol = 0;
+  }
+
+  if (curwin->w_leftcol == leftcol) {
+      return false;
+  }
+
+  curwin->w_leftcol = (colnr_T)leftcol;
+
+  // When the line of the cursor is too short, move the cursor to the
+  // longest visible line.
+  if (!virtual_active()
+      && (colnr_T)leftcol > scroll_line_len(curwin->w_cursor.lnum)) {
+      curwin->w_cursor.lnum = find_longest_lnum();
+      curwin->w_cursor.col = 0;
+  }
+
+  return leftcol_changed();
+}
+
+// Adjust the clicked column position if there are concealed characters
+// before the current column.  But only when it's absolutely necessary.
+static int mouse_adjust_click(win_T *wp, int row, int col)
+{
+  if (!(wp->w_p_cole > 0 && curbuf->b_p_smc > 0
+        && wp->w_leftcol < curbuf->b_p_smc && conceal_cursor_line(wp))) {
+    return col;
+  }
+
+  int end = (colnr_T)STRLEN(ml_get(wp->w_cursor.lnum));
+  int vend = getviscol2(end, 0);
+
+  if (col >= vend) {
+    return col;
+  }
+
+  int i = wp->w_leftcol;
+
+  if (row > 0) {
+    i += row * (wp->w_width - win_col_off(wp) - win_col_off2(wp)
+                - wp->w_leftcol) + wp->w_skipcol;
+  }
+
+  int start_col = i;
+  int matchid;
+  int last_matchid;
+  int bcol = end - (vend - col);
+
+  while (i < bcol) {
+    matchid = syn_get_concealed_id(wp, wp->w_cursor.lnum, i);
+
+    if (matchid != 0) {
+      if (wp->w_p_cole == 3) {
+        bcol++;
+      } else {
+        if (row > 0 && i == start_col) {
+          // Check if the current concealed character is actually part of
+          // the previous wrapped row's conceal group.
+          last_matchid = syn_get_concealed_id(wp, wp->w_cursor.lnum,
+                                              i - 1);
+          if (last_matchid == matchid) {
+            bcol++;
+          }
+        } else if (wp->w_p_cole == 1
+                   || (wp->w_p_cole == 2
+                       && (lcs_conceal != NUL
+                           || syn_get_sub_char() != NUL))) {
+          // At least one placeholder character will be displayed.
+          bcol--;
+        }
+
+        last_matchid = matchid;
+
+        // Adjust for concealed text that spans more than one character.
+        do {
+          i++;
+          bcol++;
+          matchid = syn_get_concealed_id(wp, wp->w_cursor.lnum, i);
+        } while (last_matchid == matchid);
+
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return getviscol2(bcol, 0);
 }
 

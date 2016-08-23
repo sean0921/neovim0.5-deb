@@ -1,4 +1,4 @@
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 local nvim, call = helpers.meths, helpers.call
 local clear, eq = helpers.clear, helpers.eq
 local source, execute = helpers.source, helpers.execute
@@ -61,6 +61,20 @@ describe('assert function:', function()
     it('should change v:errors when expected is not equal to actual', function()
       call('assert_equal', 'true', 'false')
       expected_errors({"Expected 'true' but got 'false'"})
+    end)
+  end)
+
+  -- assert_notequal({expected}, {actual}[, {msg}])
+  describe('assert_notequal', function()
+    it('should not change v:errors when expected differs from actual', function()
+      call('assert_notequal', 'foo', 4)
+      call('assert_notequal', {1, 2, 3}, 'foo')
+      expected_empty()
+    end)
+
+    it('should change v:errors when expected is equal to actual', function()
+      call('assert_notequal', 'foo', 'foo')
+      expected_errors({"Expected 'foo' differs from 'foo'"})
     end)
   end)
 
@@ -140,6 +154,99 @@ describe('assert function:', function()
         tmpname_one .. " line 3: 'false assertion failed'",
         tmpname_two .. " line 1: 'file two'",
       })
+    end)
+
+    it('is reset to a list by assert functions', function()
+      source([[
+        let save_verrors = v:errors
+        let v:['errors'] = {'foo': 3}
+        call assert_equal('yes', 'no')
+        let verrors = v:errors
+        let v:errors = save_verrors
+        call assert_equal(type([]), type(verrors))
+      ]])
+      expected_empty()
+    end)
+  end)
+
+  -- assert_match({pat}, {text}[, {msg}])
+  describe('assert_match', function()
+    it('should not change v:errors when pat matches text', function()
+      call('assert_match', '^f.*b.*r$', 'foobar')
+      expected_empty()
+    end)
+
+    it('should change v:errors when pat does not match text', function()
+      call('assert_match', 'bar.*foo', 'foobar')
+      expected_errors({"Pattern 'bar.*foo' does not match 'foobar'"})
+    end)
+
+    it('should set v:errors to msg when given and match fails', function()
+      call('assert_match', 'bar.*foo', 'foobar', 'wrong')
+      expected_errors({"'wrong'"})
+    end)
+  end)
+
+  -- assert_notmatch({pat}, {text}[, {msg}])
+  describe('assert_notmatch', function()
+    it('should not change v:errors when pat does not match text', function()
+      call('assert_notmatch', 'foo', 'bar')
+      call('assert_notmatch', '^foobar$', 'foobars')
+      expected_empty()
+    end)
+
+    it('should change v:errors when pat matches text', function()
+      call('assert_notmatch', 'foo', 'foobar')
+      expected_errors({"Pattern 'foo' does match 'foobar'"})
+    end)
+  end)
+
+  -- assert_fails({cmd}, [, {error}])
+  describe('assert_fails', function()
+    it('should change v:errors when error does not match v:errmsg', function()
+      execute([[call assert_fails('xxx', {})]])
+      execute([[call assert_match("Expected {} but got 'E731:", v:errors[0])]])
+      expected_errors({"Expected {} but got 'E731: using Dictionary as a String'"})
+    end)
+
+    it('should not change v:errors when cmd errors', function()
+      call('assert_fails', 'NonexistentCmd')
+      expected_empty()
+    end)
+
+    it('should change v:errors when cmd succeeds', function()
+      call('assert_fails', 'call empty("")')
+      expected_errors({'command did not fail: call empty("")'})
+    end)
+  end)
+
+  -- assert_exception({cmd}, [, {error}])
+  describe('assert_exception()', function()
+    it('should assert thrown exceptions properly', function()
+      source([[
+        try
+          nocommand
+        catch
+          call assert_exception('E492')
+        endtry
+      ]])
+      expected_empty()
+    end)
+
+    it('should work properly when nested', function()
+      source([[
+        try
+          nocommand
+        catch
+          try
+            " illegal argument, get NULL for error
+            call assert_exception([])
+          catch
+            call assert_exception('E730')
+          endtry
+        endtry
+      ]])
+      expected_empty()
     end)
   end)
 end)

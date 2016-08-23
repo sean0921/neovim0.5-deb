@@ -2,9 +2,6 @@ build_deps() {
   if [[ "${BUILD_32BIT}" == ON ]]; then
     DEPS_CMAKE_FLAGS="${DEPS_CMAKE_FLAGS} ${CMAKE_FLAGS_32BIT}"
   fi
-  if [[ "${BUILD_MINGW}" == ON ]]; then
-    DEPS_CMAKE_FLAGS="${DEPS_CMAKE_FLAGS} ${CMAKE_FLAGS_MINGW}"
-  fi
   if [[ "${FUNCTIONALTEST}" == "functionaltest-lua" ]]; then
     DEPS_CMAKE_FLAGS="${DEPS_CMAKE_FLAGS} -DUSE_BUNDLED_LUA=ON"
   fi
@@ -14,10 +11,15 @@ build_deps() {
   # If there is a valid cache and we're not forced to recompile,
   # use cached third-party dependencies.
   if [[ -f "${CACHE_MARKER}" ]] && [[ "${BUILD_NVIM_DEPS}" != true ]]; then
-    echo "Using third-party dependencies from Travis's cache (last updated: $(stat -c '%y' "${CACHE_MARKER}"))."
+    if [[ "${TRAVIS_OS_NAME}" == osx ]]; then
+      local statcmd="stat -f '%Sm'"
+    else
+      local statcmd="stat -c '%y'"
+    fi
+    echo "Using third-party dependencies from Travis's cache (last updated: $(${statcmd} "${CACHE_MARKER}"))."
 
      mkdir -p "$(dirname "${DEPS_BUILD_DIR}")"
-     mv -T "${HOME}/.cache/nvim-deps" "${DEPS_BUILD_DIR}"
+     mv "${HOME}/.cache/nvim-deps" "${DEPS_BUILD_DIR}"
   else
     mkdir -p "${DEPS_BUILD_DIR}"
   fi
@@ -26,7 +28,7 @@ build_deps() {
   # update CMake configuration and update to newer deps versions.
   cd "${DEPS_BUILD_DIR}"
   echo "Configuring with '${DEPS_CMAKE_FLAGS}'."
-  cmake ${DEPS_CMAKE_FLAGS} "${TRAVIS_BUILD_DIR}/third-party/"
+  CC= cmake ${DEPS_CMAKE_FLAGS} "${TRAVIS_BUILD_DIR}/third-party/"
 
   if ! ${MAKE_CMD}; then
     exit 1
@@ -41,9 +43,6 @@ build_nvim() {
   fi
   if [[ "${BUILD_32BIT}" == ON ]]; then
     CMAKE_FLAGS="${CMAKE_FLAGS} ${CMAKE_FLAGS_32BIT}"
-  fi
-  if [[ "${BUILD_MINGW}" == ON ]]; then
-    CMAKE_FLAGS="${CMAKE_FLAGS} ${CMAKE_FLAGS_MINGW}"
   fi
 
   mkdir -p "${BUILD_DIR}"

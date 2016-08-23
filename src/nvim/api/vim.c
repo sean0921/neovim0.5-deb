@@ -57,6 +57,7 @@ void vim_feedkeys(String keys, String mode, Boolean escape_csi)
   bool remap = true;
   bool insert = false;
   bool typed = false;
+  bool execute = false;
 
   if (keys.size == 0) {
     return;
@@ -68,6 +69,7 @@ void vim_feedkeys(String keys, String mode, Boolean escape_csi)
     case 'm': remap = true; break;
     case 't': typed = true; break;
     case 'i': insert = true; break;
+    case 'x': execute = true; break;
     }
   }
 
@@ -86,8 +88,12 @@ void vim_feedkeys(String keys, String mode, Boolean escape_csi)
       xfree(keys_esc);
   }
 
-  if (vgetc_busy)
+  if (vgetc_busy) {
     typebuf_was_filled = true;
+  }
+  if (execute) {
+    exec_normal(true);
+  }
 }
 
 /// Passes input keys to Neovim. Unlike `vim_feedkeys`, this will use a
@@ -98,7 +104,7 @@ void vim_feedkeys(String keys, String mode, Boolean escape_csi)
 /// @return The number of bytes actually written, which can be lower than
 ///         requested if the buffer becomes full.
 Integer vim_input(String keys)
-  FUNC_ATTR_ASYNC
+    FUNC_API_ASYNC
 {
   return (Integer)input_enqueue(keys);
 }
@@ -116,8 +122,14 @@ String vim_replace_termcodes(String str, Boolean from_part, Boolean do_lt,
   }
 
   char *ptr = NULL;
-  replace_termcodes((char_u *)str.data, (char_u **)&ptr,
-                                            from_part, do_lt, special);
+  // Set 'cpoptions' the way we want it.
+  //    FLAG_CPO_BSLASH  set - backslashes are *not* treated specially
+  //    FLAG_CPO_KEYCODE set - keycodes are *not* reverse-engineered
+  //    FLAG_CPO_SPECI unset - <Key> sequences *are* interpreted
+  //  The third from end parameter of replace_termcodes() is true so that the
+  //  <lt> sequence is recognised - needed for a real backslash.
+  replace_termcodes((char_u *)str.data, str.size, (char_u **)&ptr,
+                    from_part, do_lt, special, CPO_TO_CPO_FLAGS);
   return cstr_as_string(ptr);
 }
 
@@ -612,7 +624,7 @@ Dictionary vim_get_color_map(void)
 
 
 Array vim_get_api_info(uint64_t channel_id)
-  FUNC_ATTR_ASYNC
+    FUNC_API_ASYNC
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -635,14 +647,14 @@ static void write_msg(String message, bool to_err)
   static size_t out_pos = 0, err_pos = 0;
   static char out_line_buf[LINE_BUFFER_SIZE], err_line_buf[LINE_BUFFER_SIZE];
 
-#define PUSH_CHAR(i, pos, line_buf, msg)                                      \
-  if (message.data[i] == NL || pos == LINE_BUFFER_SIZE - 1) {                 \
-    line_buf[pos] = NUL;                                                      \
-    msg((uint8_t *)line_buf);                                                 \
-    pos = 0;                                                                  \
-    continue;                                                                 \
-  }                                                                           \
-                                                                              \
+#define PUSH_CHAR(i, pos, line_buf, msg) \
+  if (message.data[i] == NL || pos == LINE_BUFFER_SIZE - 1) { \
+    line_buf[pos] = NUL; \
+    msg((uint8_t *)line_buf); \
+    pos = 0; \
+    continue; \
+  } \
+  \
   line_buf[pos++] = message.data[i];
 
   ++no_wait_return;

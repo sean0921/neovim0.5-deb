@@ -88,7 +88,7 @@ return {
   },
   {
     command='argadd',
-    flags=bit.bor(BANG, NEEDARG, RANGE, NOTADR, ZEROR, FILES, TRLBAR),
+    flags=bit.bor(BANG, RANGE, NOTADR, ZEROR, FILES, TRLBAR),
     addr_type=ADDR_ARGUMENTS,
     func='ex_argadd',
   },
@@ -1849,6 +1849,18 @@ return {
     func='ex_print',
   },
   {
+    command='packadd',
+    flags=bit.bor(BANG, FILE1, NEEDARG, TRLBAR, SBOXOK, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_packadd',
+  },
+  {
+    command='packloadall',
+    flags=bit.bor(BANG, TRLBAR, SBOXOK, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_packloadall',
+  },
+  {
     command='pclose',
     flags=bit.bor(BANG, TRLBAR),
     addr_type=ADDR_LINES,
@@ -2158,19 +2170,19 @@ return {
     command='ruby',
     flags=bit.bor(RANGE, EXTRA, NEEDARG, CMDWIN),
     addr_type=ADDR_LINES,
-    func='ex_script_ni',
+    func='ex_ruby',
   },
   {
     command='rubydo',
     flags=bit.bor(RANGE, DFLALL, EXTRA, NEEDARG, CMDWIN),
     addr_type=ADDR_LINES,
-    func='ex_ni',
+    func='ex_rubydo',
   },
   {
     command='rubyfile',
     flags=bit.bor(RANGE, FILE1, NEEDARG, CMDWIN),
     addr_type=ADDR_LINES,
-    func='ex_ni',
+    func='ex_rubyfile',
   },
   {
     command='rviminfo',

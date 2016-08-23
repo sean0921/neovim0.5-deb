@@ -1,5 +1,5 @@
 local Screen = require('test.functional.ui.screen')
-local helpers = require('test.functional.helpers')
+local helpers = require('test.functional.helpers')(after_each)
 
 local buf, eq, execute = helpers.curbufmeths, helpers.eq, helpers.execute
 local feed, nvim_prog, wait = helpers.feed, helpers.nvim_prog, helpers.wait
@@ -47,7 +47,7 @@ describe(':oldfiles', function()
   end)
 end)
 
-describe(':oldfiles!', function()
+describe(':browse oldfiles', function()
   local filename
   local filename2
   local oldfiles
@@ -74,7 +74,7 @@ describe(':oldfiles!', function()
     ok(filename == oldfiles[1] or filename == oldfiles[2])
     ok(filename2 == oldfiles[1] or filename2 == oldfiles[2])
 
-    execute('oldfiles!')
+    execute('browse oldfiles')
   end)
 
   after_each(function()

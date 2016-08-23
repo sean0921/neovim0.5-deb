@@ -293,10 +293,11 @@ EXTERN int msg_no_more INIT(= FALSE);       /* don't use more prompt, truncate
 EXTERN char_u   *sourcing_name INIT( = NULL); /* name of error message source */
 EXTERN linenr_T sourcing_lnum INIT(= 0);    /* line number of the source file */
 
-EXTERN int ex_nesting_level INIT(= 0);          /* nesting level */
-EXTERN int debug_break_level INIT(= -1);        /* break below this level */
-EXTERN int debug_did_msg INIT(= FALSE);         /* did "debug mode" message */
-EXTERN int debug_tick INIT(= 0);                /* breakpoint change count */
+EXTERN int ex_nesting_level INIT(= 0);          // nesting level
+EXTERN int debug_break_level INIT(= -1);        // break below this level
+EXTERN int debug_did_msg INIT(= false);         // did "debug mode" message
+EXTERN int debug_tick INIT(= 0);                // breakpoint change count
+EXTERN int debug_backtrace_level INIT(= 0);     // breakpoint backtrace level
 
 /* Values for "do_profiling". */
 #define PROF_NONE       0       /* profiling not started */
@@ -413,7 +414,7 @@ EXTERN int provider_call_nesting INIT(= 0);
 EXTERN char_u hash_removed;
 
 
-EXTERN int t_colors INIT(= 0);              /* int value of T_CCO */
+EXTERN int t_colors INIT(= 256);                // int value of T_CCO
 
 /*
  * When highlight_match is TRUE, highlight a match, starting at the cursor
@@ -503,6 +504,7 @@ EXTERN int cterm_normal_fg_bold INIT(= 0);
 EXTERN int cterm_normal_bg_color INIT(= 0);
 EXTERN RgbValue normal_fg INIT(= -1);
 EXTERN RgbValue normal_bg INIT(= -1);
+EXTERN RgbValue normal_sp INIT(= -1);
 
 EXTERN int autocmd_busy INIT(= FALSE);          /* Is apply_autocmds() busy? */
 EXTERN int autocmd_no_enter INIT(= FALSE);      /* *Enter autocmds disabled */
@@ -834,8 +836,8 @@ EXTERN int* (*iconv_errno)(void);
 EXTERN int State INIT(= NORMAL);        /* This is the current state of the
                                          * command interpreter. */
 
-EXTERN int finish_op INIT(= FALSE);     /* TRUE while an operator is pending */
-EXTERN long opcount INIT(= 0);          /* count for pending operator */
+EXTERN bool finish_op INIT(= false);    // true while an operator is pending
+EXTERN long opcount INIT(= 0);          // count for pending operator
 
 /*
  * ex mode (Q) state
@@ -912,9 +914,6 @@ EXTERN int KeyTyped;                     // TRUE if user typed current char
 EXTERN int KeyStuffed;                   // TRUE if current char from stuffbuf
 EXTERN int maptick INIT(= 0);            // tick for each non-mapped char
 
-EXTERN uint8_t chartab[256];             // table used in charset.c; See
-                                         // init_chartab() for explanation
-
 EXTERN int must_redraw INIT(= 0);           /* type of redraw necessary */
 EXTERN int skip_redraw INIT(= FALSE);       /* skip redraw once */
 EXTERN int do_redraw INIT(= FALSE);         /* extra redraw once */
@@ -983,10 +982,11 @@ EXTERN int keep_help_flag INIT(= FALSE);      /* doing :ta from help file */
  */
 EXTERN char_u   *empty_option INIT(= (char_u *)"");
 
-EXTERN int redir_off INIT(= FALSE);     /* no redirection for a moment */
-EXTERN FILE *redir_fd INIT(= NULL);     /* message redirection file */
-EXTERN int redir_reg INIT(= 0);         /* message redirection register */
-EXTERN int redir_vname INIT(= 0);       /* message redirection variable */
+EXTERN int redir_off INIT(= false);         // no redirection for a moment
+EXTERN FILE *redir_fd INIT(= NULL);         // message redirection file
+EXTERN int redir_reg INIT(= 0);             // message redirection register
+EXTERN int redir_vname INIT(= 0);           // message redirection variable
+EXTERN garray_T *capture_ga INIT(= NULL);   // captured output for execute()
 
 EXTERN char_u langmap_mapchar[256];     /* mapping for language keys */
 
@@ -1220,6 +1220,8 @@ EXTERN char_u e_invalpat[] INIT(= N_(
 EXTERN char_u e_bufloaded[] INIT(= N_("E139: File is loaded in another buffer"));
 EXTERN char_u e_notset[] INIT(= N_("E764: Option '%s' is not set"));
 EXTERN char_u e_invalidreg[] INIT(= N_("E850: Invalid register name"));
+EXTERN char_u e_dirnotf[] INIT(= N_(
+    "E919: Directory not found in '%s': \"%s\""));
 EXTERN char_u e_unsupportedoption[] INIT(= N_("E519: Option not supported"));
 
 
@@ -1241,7 +1243,9 @@ EXTERN char *ignoredp;
 
 // If a msgpack-rpc channel should be started over stdin/stdout
 EXTERN bool embedded_mode INIT(= false);
-EXTERN Loop loop;
+
+/// next free id for a job or rpc channel
+EXTERN uint64_t next_chan_id INIT(= 1);
 
 /// Used to track the status of external functions.
 /// Currently only used for iconv().

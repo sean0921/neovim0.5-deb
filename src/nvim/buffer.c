@@ -407,10 +407,9 @@ close_buffer (
   buf->b_nwindows = nwindows;
 
   buf_freeall(buf, (del_buf ? BFA_DEL : 0) + (wipe_buf ? BFA_WIPE : 0));
-  if (
-    win_valid(win) &&
-    win->w_buffer == buf)
-    win->w_buffer = NULL;      /* make sure we don't use the buffer now */
+  if (win_valid(win) && win->w_buffer == buf) {
+    win->w_buffer = NULL;  // make sure we don't use the buffer now
+  }
 
   /* Autocommands may have deleted the buffer. */
   if (!buf_valid(buf))
@@ -1250,6 +1249,10 @@ void enter_buffer(buf_T *buf)
   /* mark cursor position as being invalid */
   curwin->w_valid = 0;
 
+  if (buf->terminal) {
+    terminal_resize(buf->terminal, curwin->w_width, curwin->w_height);
+  }
+
   /* Make sure the buffer is loaded. */
   if (curbuf->b_ml.ml_mfp == NULL) {    /* need to load the file */
     /* If there is no filetype, allow for detecting one.  Esp. useful for
@@ -1294,14 +1297,15 @@ void enter_buffer(buf_T *buf)
   redraw_later(NOT_VALID);
 }
 
-/*
- * Change to the directory of the current buffer.
- */
+// Change to the directory of the current buffer.
+// Don't do this while still starting up.
 void do_autochdir(void)
 {
   if (p_acd) {
-    if (curbuf->b_ffname != NULL && vim_chdirfile(curbuf->b_ffname) == OK) {
-      shorten_fnames(TRUE);
+    if (starting == 0
+        && curbuf->b_ffname != NULL
+        && vim_chdirfile(curbuf->b_ffname) == OK) {
+      shorten_fnames(true);
     }
   }
 }
@@ -1339,8 +1343,8 @@ buflist_new (
   /* We can use inode numbers when the file exists.  Works better
    * for hard links. */
   FileID file_id;
-  bool file_id_valid = (sfname != NULL &&
-                        os_fileid((char *)sfname, &file_id));
+  bool file_id_valid = (sfname != NULL
+                        && os_fileid((char *)sfname, &file_id));
   if (ffname != NULL && !(flags & BLN_DUMMY)
       && (buf = buflist_findname_file_id(ffname, &file_id,
                                          file_id_valid)) != NULL) {
@@ -1534,6 +1538,7 @@ void free_buf_options(buf_T *buf, int free_p_ff)
   clear_string_option(&buf->b_p_cms);
   clear_string_option(&buf->b_p_nf);
   clear_string_option(&buf->b_p_syn);
+  clear_string_option(&buf->b_s.b_syn_isk);
   clear_string_option(&buf->b_s.b_p_spc);
   clear_string_option(&buf->b_s.b_p_spf);
   vim_regfree(buf->b_s.b_cap_prog);
@@ -1553,6 +1558,7 @@ void free_buf_options(buf_T *buf, int free_p_ff)
   clear_string_option(&buf->b_p_ep);
   clear_string_option(&buf->b_p_path);
   clear_string_option(&buf->b_p_tags);
+  clear_string_option(&buf->b_p_tc);
   clear_string_option(&buf->b_p_dict);
   clear_string_option(&buf->b_p_tsr);
   clear_string_option(&buf->b_p_qe);
@@ -2194,14 +2200,15 @@ void buflist_list(exarg_T *eap)
     len = vim_snprintf((char *)IObuff, IOSIZE - 20, "%3d%c%c%c%c%c \"%s\"",
         buf->b_fnum,
         buf->b_p_bl ? ' ' : 'u',
-        buf == curbuf ? '%' :
-        (curwin->w_alt_fnum == buf->b_fnum ? '#' : ' '),
-        buf->b_ml.ml_mfp == NULL ? ' ' :
-        (buf->b_nwindows == 0 ? 'h' : 'a'),
+        buf == curbuf ? '%' : (curwin->w_alt_fnum == buf->b_fnum ? '#' : ' '),
+        buf->b_ml.ml_mfp == NULL ? ' ' : (buf->b_nwindows == 0 ? 'h' : 'a'),
         !MODIFIABLE(buf) ? '-' : (buf->b_p_ro ? '=' : ' '),
-        (buf->b_flags & BF_READERR) ? 'x'
-        : (bufIsChanged(buf) ? '+' : ' '),
+        (buf->b_flags & BF_READERR) ? 'x' : (bufIsChanged(buf) ? '+' : ' '),
         NameBuff);
+
+    if (len > IOSIZE - 20) {
+        len = IOSIZE - 20;
+    }
 
     /* put "line 999" in column 40 or after the file name */
     i = 40 - vim_strsize(IObuff);
@@ -2846,7 +2853,7 @@ typedef enum {
 /// is "curwin".
 ///
 /// Items are drawn interspersed with the text that surrounds it
-/// Specials: %-<wid>(xxx%) => group, %= => middle marker, %< => truncation
+/// Specials: %-<wid>(xxx%) => group, %= => separation marker, %< => truncation
 /// Item: %-<minwid>.<maxwid><itemch> All but <itemch> are optional
 ///
 /// If maxwidth is not zero, the string will be filled at any middle marker
@@ -2890,7 +2897,7 @@ int build_stl_str_hl(
       Normal,
       Empty,
       Group,
-      Middle,
+      Separate,
       Highlight,
       TabPage,
       ClickFunc,
@@ -2991,14 +2998,14 @@ int build_stl_str_hl(
       continue;
     }
 
-    // STL_MIDDLEMARK: Separation place between left and right aligned items.
-    if (*fmt_p == STL_MIDDLEMARK) {
+    // STL_SEPARATE: Separation place between left and right aligned items.
+    if (*fmt_p == STL_SEPARATE) {
       fmt_p++;
       // Ignored when we are inside of a grouping
       if (groupdepth > 0) {
         continue;
       }
-      item[curitem].type = Middle;
+      item[curitem].type = Separate;
       item[curitem++].start = out_p;
       continue;
     }
@@ -3837,27 +3844,53 @@ int build_stl_str_hl(
     width = maxwidth;
 
   // If there is room left in our statusline, and room left in our buffer,
-  // add characters at the middle marker (if there is one) to
+  // add characters at the separate marker (if there is one) to
   // fill up the available space.
   } else if (width < maxwidth
-               && STRLEN(out) + maxwidth - width + 1 < outlen) {
-    for (int item_idx = 0; item_idx < itemcnt; item_idx++) {
-      if (item[item_idx].type == Middle) {
-        // Move the statusline to make room for the middle characters
-        char_u *middle_end = item[item_idx].start + (maxwidth - width);
-        STRMOVE(middle_end, item[item_idx].start);
-
-        // Fill the middle section with our fill character
-        for (char_u *s = item[item_idx].start; s < middle_end; s++)
-          *s = fillchar;
-
-        // Adjust the offset of any items after the middle
-        for (item_idx++; item_idx < itemcnt; item_idx++)
-          item[item_idx].start += maxwidth - width;
-
-        width = maxwidth;
-        break;
+             && STRLEN(out) + maxwidth - width + 1 < outlen) {
+    // Find how many separators there are, which we will use when
+    // figuring out how many groups there are.
+    int num_separators = 0;
+    for (int i = 0; i < itemcnt; i++) {
+      if (item[i].type == Separate) {
+        num_separators++;
       }
+    }
+
+    // If we have separated groups, then we deal with it now
+    if (num_separators) {
+      // Create an array of the start location for each
+      // separator mark.
+      int separator_locations[STL_MAX_ITEM];
+      int index = 0;
+      for (int i = 0; i < itemcnt; i++) {
+        if (item[i].type == Separate) {
+          separator_locations[index] = i;
+          index++;
+        }
+      }
+
+      int standard_spaces = (maxwidth - width) / num_separators;
+      int final_spaces = (maxwidth - width) -
+        standard_spaces * (num_separators - 1);
+
+      for (int i = 0; i < num_separators; i++) {
+        int dislocation = (i == (num_separators - 1)) ?
+          final_spaces : standard_spaces;
+        char_u *sep_loc = item[separator_locations[i]].start + dislocation;
+        STRMOVE(sep_loc, item[separator_locations[i]].start);
+        for (char_u *s = item[separator_locations[i]].start; s < sep_loc; s++) {
+          *s = fillchar;
+        }
+
+        for (int item_idx = separator_locations[i] + 1;
+             item_idx < itemcnt;
+             item_idx++) {
+          item[item_idx].start += dislocation;
+        }
+      }
+
+      width = maxwidth;
     }
   }
 
@@ -3997,8 +4030,8 @@ void fname_expand(buf_T *buf, char_u **ffname, char_u **sfname)
   if (!buf->b_p_bin) {
     char_u  *rfname;
 
-    /* If the file name is a shortcut file, use the file it links to. */
-    rfname = mch_resolve_shortcut(*ffname);
+    // If the file name is a shortcut file, use the file it links to.
+    rfname = os_resolve_shortcut(*ffname);
     if (rfname != NULL) {
       xfree(*ffname);
       *ffname = rfname;
@@ -4948,7 +4981,7 @@ int bufhl_add_hl(buf_T *buf,
   bufhl_vec_T* lineinfo = map_ref(linenr_T, bufhl_vec_T)(buf->b_bufhl_info,
                                                          lnum, true);
 
-  bufhl_hl_item_T *hlentry = kv_pushp(bufhl_hl_item_T, *lineinfo);
+  bufhl_hl_item_T *hlentry = kv_pushp(*lineinfo);
   hlentry->src_id = src_id;
   hlentry->hl_id = hl_id;
   hlentry->start = col_start;
