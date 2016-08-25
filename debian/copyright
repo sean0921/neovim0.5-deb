@@ -15,7 +15,7 @@ Files: runtime/*
        test/functional/legacy/*
 Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
            2006 Benji Fisher <benji@member.ams.org>
-           1999-2014 Charles E. Campbell, Jr.
+           1999-2016 Charles E. Campbell, Jr.
            2003 Fred Barnes
            2003 Mario Schweigler
            2004-2008 Michael Geddes
@@ -28,9 +28,16 @@ License: Vim
 
 Files: src/nvim/api/*
        src/nvim/bufhl_defs.h
+       src/nvim/eval/*
        src/nvim/event/*
+       src/nvim/func_attr.h
+       src/nvim/log.*
+       src/nvim/map.*
        src/nvim/memory.*
        src/nvim/msgpack_rpc/*
+       src/nvim/os/fileio.*
+       src/nvim/os/pty_process*
+       src/nvim/os/stdpaths.*
        src/nvim/rbuffer.*
        src/nvim/shada.*
        src/nvim/state.*
@@ -39,20 +46,28 @@ Files: src/nvim/api/*
        src/nvim/ui*
        src/nvim/ugrid.*
        src/nvim/*.lua
+       runtime/autoload/health.vim
+       runtime/autoload/health/*
+       runtime/autoload/msgpack.vim
        runtime/autoload/provider/*
        runtime/autoload/remote/*
        runtime/autoload/shada.vim
        runtime/autoload/vimexpect.vim
-       runtime/autoload/msgpack.vim
        runtime/doc/api.txt
+       runtime/doc/if_ruby.txt
        runtime/doc/job_control.txt
        runtime/doc/msgpack_rpc.txt
        runtime/doc/nvim*
+       runtime/doc/pi_health.txt
+       runtime/doc/provider.txt
        runtime/doc/remote_plugin.txt
+       runtime/doc/vim_diff.txt
+       runtime/plugin/health.vim
+       runtime/plugin/man.vim
 Copyright: Neovim contributors
 License: Apache
 
-Files: clint.py
+Files: src/clint.py
 Copyright: 2009 Google Inc.
 License: BSD-3-clause
 
@@ -65,7 +80,7 @@ Copyright: 2002 Michael C. Toren <mct@toren.net>
 License: GPL-2
 
 Files: unicode/*
-Copyright: 1991-2015 Unicode, Inc.
+Copyright: 2016 Unicode®, Inc.
 License: Unicode
 
 Files: src/nvim/lib/khash.h
