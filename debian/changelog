@@ -1,4 +1,4 @@
-neovim (0.1.5-1) UNRELEASED; urgency=medium
+neovim (0.1.5-1) experimental; urgency=medium
 
   [ upstream changes ]
   * Re-introduce if_ruby support, if neovim Gem is installed.
@@ -8,7 +8,7 @@ neovim (0.1.5-1) UNRELEASED; urgency=medium
   * $NVIM_TUI_ENABLE_TRUE_COLOR replaced by Vim-compatible 'termguicolors'
     option
 
- -- James McCoy <jamessan@debian.org>  Mon, 22 Aug 2016 20:55:49 -0400
+ -- James McCoy <jamessan@debian.org>  Wed, 24 Aug 2016 21:22:40 -0400
 
 neovim (0.1.4-1) experimental; urgency=medium
 
