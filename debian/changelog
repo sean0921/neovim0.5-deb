@@ -1,8 +1,9 @@
-neovim (0.1.5-2) UNRELEASED; urgency=medium
+neovim (0.1.5-2) unstable; urgency=medium
 
+  * Upload to unstable.
   * Exclude libjemalloc-dev from Build-Depends on hurd.
 
- -- James McCoy <jamessan@debian.org>  Wed, 24 Aug 2016 22:54:54 -0400
+ -- James McCoy <jamessan@debian.org>  Fri, 16 Sep 2016 21:53:01 -0400
 
 neovim (0.1.5-1) experimental; urgency=medium
 
