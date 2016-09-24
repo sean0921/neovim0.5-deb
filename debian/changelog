@@ -1,10 +1,10 @@
-neovim (0.1.5-3) UNRELEASED; urgency=medium
+neovim (0.1.5-3) unstable; urgency=medium
 
   * Add lua5.1 as alternative Build-Depends for luajit/libluajit-5.1-dev.
     This should enable building on more architectures, at the expense of less
     testing.  (Closes: #812741)
 
- -- James McCoy <jamessan@debian.org>  Sat, 24 Sep 2016 12:53:34 -0400
+ -- James McCoy <jamessan@debian.org>  Sat, 24 Sep 2016 13:43:03 -0400
 
 neovim (0.1.5-2) unstable; urgency=medium
 
