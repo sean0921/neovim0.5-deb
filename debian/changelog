@@ -1,6 +1,7 @@
 neovim (0.1.5-4) UNRELEASED; urgency=medium
 
   * Arch-qualify (lib)luajit Build-Depends to really fix #812741.
+  * Add xxd Recommends to neovim now that it has its own package.
 
  -- James McCoy <jamessan@debian.org>  Sat, 24 Sep 2016 20:48:49 -0400
 
