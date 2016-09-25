@@ -4,24 +4,24 @@ Priority: extra
 Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends: autoconf,
-               automake,
-               cmake,
-               debhelper (>= 9),
-               libacl1-dev,
-               libjemalloc-dev [!hurd-any],
-               libkvm-dev [kfreebsd-any],
-               libluajit-5.1-dev | lua5.1,
-               libmsgpack-dev (>= 1.0.0),
-               libtermkey-dev,
-               libunibilium-dev,
-               libuv1-dev,
-               libvterm-dev,
-               lua-bitop,
-               lua-lpeg,
-               lua-mpack,
-               luajit | lua5.1,
-               ninja-build,
-               pkg-config
+ automake,
+ cmake,
+ debhelper (>= 9),
+ libacl1-dev,
+ libjemalloc-dev [!hurd-any],
+ libkvm-dev [kfreebsd-any],
+ libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc],
+ libmsgpack-dev (>= 1.0.0),
+ libtermkey-dev,
+ libunibilium-dev,
+ libuv1-dev,
+ libvterm-dev,
+ lua-bitop,
+ lua-lpeg,
+ lua-mpack,
+ luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc] | lua5.1,
+ ninja-build,
+ pkg-config
 Standards-Version: 3.9.8
 Homepage: https://neovim.io/
 Vcs-Git: https://anonscm.debian.org/git/pkg-vim/neovim.git

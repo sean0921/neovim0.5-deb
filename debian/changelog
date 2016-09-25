@@ -1,3 +1,9 @@
+neovim (0.1.5-4) UNRELEASED; urgency=medium
+
+  * Arch-qualify (lib)luajit Build-Depends to really fix #812741.
+
+ -- James McCoy <jamessan@debian.org>  Sat, 24 Sep 2016 20:48:49 -0400
+
 neovim (0.1.5-3) unstable; urgency=medium
 
   * Add lua5.1 as alternative Build-Depends for luajit/libluajit-5.1-dev.
