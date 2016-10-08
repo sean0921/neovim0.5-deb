@@ -2,6 +2,8 @@ neovim (0.1.5-5) UNRELEASED; urgency=medium
 
   * Run Neovim's tests during the build
     + Add lua-nvim, lua-busted, and libnss-wrapper to Build-Depends
+  * Add support for the nocheck Build-Profile to exclude test-related
+    Build-Depends.
 
  -- James McCoy <jamessan@debian.org>  Sat, 08 Oct 2016 13:25:41 -0400
 
