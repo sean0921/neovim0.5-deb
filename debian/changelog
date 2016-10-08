@@ -1,4 +1,4 @@
-neovim (0.1.5-5) UNRELEASED; urgency=medium
+neovim (0.1.5-5) unstable; urgency=medium
 
   * Run Neovim's tests during the build
     + Add lua-nvim, lua-busted, and libnss-wrapper to Build-Depends
@@ -10,7 +10,7 @@ neovim (0.1.5-5) UNRELEASED; urgency=medium
   * Add alternatives for ex, rvim, rview, vi, vim, view, and vimdiff.  Thanks
     to Josh Triplett for the patch!  (Closes: #830580)
 
- -- James McCoy <jamessan@debian.org>  Sat, 08 Oct 2016 13:25:41 -0400
+ -- James McCoy <jamessan@debian.org>  Sat, 08 Oct 2016 15:08:57 -0400
 
 neovim (0.1.5-4) unstable; urgency=medium
 
