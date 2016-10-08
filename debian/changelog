@@ -1,3 +1,10 @@
+neovim (0.1.5-5) UNRELEASED; urgency=medium
+
+  * Run Neovim's tests during the build
+    + Add lua-nvim, lua-busted, and libnss-wrapper to Build-Depends
+
+ -- James McCoy <jamessan@debian.org>  Sat, 08 Oct 2016 13:25:41 -0400
+
 neovim (0.1.5-4) unstable; urgency=medium
 
   * Arch-qualify (lib)luajit Build-Depends to really fix #812741.
