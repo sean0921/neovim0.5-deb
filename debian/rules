@@ -19,6 +19,9 @@ ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit))
   UNITTEST = unittest
 endif
 
+ID = $(shell id | cut -d' ' -f 1 | egrep -o '[0-9]+')
+GID = $(shell id | cut -d' ' -f 2 | egrep -o '[0-9]+')
+
 %:
 	dh $@ --parallel
 
@@ -32,8 +35,8 @@ override_dh_install:
 	dh_install --fail-missing
 
 debian/passwd:
-	printf -- "$(USER):x:1000:1000:nvim test:$(CURDIR)/debian/fakehome:/bin/false\n" > debian/passwd
-	printf -- "users:x:1000\n" > debian/group
+	printf -- "$(USER):x:$(ID):$(GID):nvim test:$(CURDIR)/debian/fakehome:/bin/false\n" > debian/passwd
+	printf -- "users:x:$(GID):\n" > debian/group
 
 debian/fakehome:
 	mkdir -p debian/fakehome
