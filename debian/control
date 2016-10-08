@@ -3,9 +3,7 @@ Section: editors
 Priority: extra
 Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
-Build-Depends: autoconf,
- automake,
- cmake,
+Build-Depends: cmake,
  debhelper (>= 9),
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
