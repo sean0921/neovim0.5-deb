@@ -19,8 +19,8 @@ ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit))
   UNITTEST = unittest
 endif
 
-ID = $(shell id | cut -d' ' -f 1 | egrep -o '[0-9]+')
-GID = $(shell id | cut -d' ' -f 2 | egrep -o '[0-9]+')
+ID = $(shell id -u)
+GID = $(shell id -g)
 
 %:
 	dh $@ --parallel
