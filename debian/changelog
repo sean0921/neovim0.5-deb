@@ -1,9 +1,9 @@
-neovim (0.1.5-6) UNRELEASED; urgency=medium
+neovim (0.1.5-6) unstable; urgency=medium
 
   * Fix test failures by setting id/gid properly in the passwd/group files
     used by libnss_wrapper.
 
- -- James McCoy <jamessan@debian.org>  Sat, 08 Oct 2016 20:16:50 -0400
+ -- James McCoy <jamessan@debian.org>  Sat, 08 Oct 2016 20:35:26 -0400
 
 neovim (0.1.5-5) unstable; urgency=medium
 
