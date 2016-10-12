@@ -1,3 +1,9 @@
+neovim (0.1.5-8) unstable; urgency=medium
+
+  * Disable tests for "indep" builds.
+
+ -- James McCoy <jamessan@debian.org>  Wed, 12 Oct 2016 16:24:00 -0400
+
 neovim (0.1.5-7) unstable; urgency=medium
 
   * Only run tests for "arch" builds.

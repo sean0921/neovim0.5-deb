@@ -41,5 +41,7 @@ debian/passwd:
 debian/fakehome:
 	mkdir -p debian/fakehome
 
+override_dh_auto_test-indep:
+
 override_dh_auto_test-arch: debian/passwd debian/fakehome
 	env "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" make $(UNITTEST) $(FUNCTIONALTEST) oldtest VERBOSE=1 USE_BUNDLED_DEPS=OFF
