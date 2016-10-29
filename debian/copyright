@@ -54,6 +54,7 @@ Files: src/nvim/api/*
        runtime/autoload/shada.vim
        runtime/autoload/vimexpect.vim
        runtime/doc/api.txt
+       runtime/doc/deprecated.txt
        runtime/doc/if_ruby.txt
        runtime/doc/job_control.txt
        runtime/doc/msgpack_rpc.txt
