@@ -3,12 +3,13 @@ Section: editors
 Priority: extra
 Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
-Build-Depends: cmake,
+Build-Depends:
+ cmake,
  debhelper (>= 9),
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
  libkvm-dev [kfreebsd-any],
- libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc],
+ libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc powerpcspe],
  libmsgpack-dev (>= 1.0.0),
  libnss-wrapper <!nocheck>,
  libtermkey-dev,
@@ -19,8 +20,8 @@ Build-Depends: cmake,
  lua-busted <!nocheck>,
  lua-lpeg,
  lua-mpack,
- lua-nvim [amd64 armel armhf i386 mips mips64el mipsel powerpc ppc64el] <!nocheck>,
- luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc] | lua5.1,
+ lua-nvim [alpha amd64 armel armhf hppa i386 mips mips64el mipsel powerpc ppc64el sparc64 x32] <!nocheck>,
+ luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc powerpcspe] | lua5.1,
  ninja-build,
  pkg-config
 Standards-Version: 3.9.8
@@ -30,8 +31,11 @@ Vcs-Browser: https://anonscm.debian.org/cgit/pkg-vim/neovim.git
 
 Package: neovim
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, neovim-runtime (= ${source:Version})
-Recommends: xsel | xclip, python-neovim, python3-neovim, xxd
+Depends:
+ neovim-runtime (= ${source:Version}),
+ ${misc:Depends},
+ ${shlibs:Depends}
+Recommends: python-neovim, python3-neovim, xsel | xclip, xxd
 Suggests: ctags, vim-scripts
 Description: heavily refactored vim fork
  Neovim is a fork of Vim focused on modern code and features, rather than
