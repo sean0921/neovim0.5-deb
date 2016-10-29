@@ -1,9 +1,11 @@
-neovim (0.1.5-9) UNRELEASED; urgency=medium
+neovim (0.1.6-1) UNRELEASED; urgency=medium
 
+  * New upstream release.
+    + Add gperf to Build-Depends
   * Expand architectures which Build-Depend on luajit (powerpcspe) and
     lua-nvim (alpha, hppa, sparc64, x32).
 
- -- James McCoy <jamessan@debian.org>  Fri, 28 Oct 2016 21:19:31 -0400
+ -- James McCoy <jamessan@debian.org>  Fri, 28 Oct 2016 21:47:20 -0400
 
 neovim (0.1.5-8) unstable; urgency=medium
 

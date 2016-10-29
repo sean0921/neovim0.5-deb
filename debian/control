@@ -6,6 +6,7 @@ Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends:
  cmake,
  debhelper (>= 9),
+ gperf,
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
  libkvm-dev [kfreebsd-any],
