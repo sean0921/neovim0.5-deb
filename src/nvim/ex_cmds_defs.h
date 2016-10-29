@@ -126,56 +126,53 @@ struct exarg {
   struct condstack *cstack;     ///< condition stack for ":if" etc.
 };
 
-#define FORCE_BIN 1             /* ":edit ++bin file" */
-#define FORCE_NOBIN 2           /* ":edit ++nobin file" */
+#define FORCE_BIN 1             // ":edit ++bin file"
+#define FORCE_NOBIN 2           // ":edit ++nobin file"
 
-/* Values for "flags" */
-#define EXFLAG_LIST     0x01    /* 'l': list */
-#define EXFLAG_NR       0x02    /* '#': number */
-#define EXFLAG_PRINT    0x04    /* 'p': print */
+// Values for "flags"
+#define EXFLAG_LIST     0x01    // 'l': list
+#define EXFLAG_NR       0x02    // '#': number
+#define EXFLAG_PRINT    0x04    // 'p': print
 
-/*
- * used for completion on the command line
- */
-typedef struct expand {
-  int xp_context;                       /* type of expansion */
-  char_u      *xp_pattern;              /* start of item to expand */
-  int xp_pattern_len;                   /* bytes in xp_pattern before cursor */
-  char_u      *xp_arg;                  /* completion function */
-  int xp_scriptID;                      /* SID for completion function */
-  int xp_backslash;                     /* one of the XP_BS_ values */
+// used for completion on the command line
+struct expand {
+  int xp_context;               // type of expansion
+  char_u *xp_pattern;           // start of item to expand
+  int xp_pattern_len;           // bytes in xp_pattern before cursor
+  char_u *xp_arg;               // completion function
+  int xp_scriptID;              // SID for completion function
+  int xp_backslash;             // one of the XP_BS_ values
 #ifndef BACKSLASH_IN_FILENAME
-  int xp_shell;                         /* TRUE for a shell command, more
-                                           characters need to be escaped */
+  int xp_shell;                 // TRUE for a shell command, more
+                                // characters need to be escaped
 #endif
-  int xp_numfiles;                      /* number of files found by
-                                                    file name completion */
-  char_u      **xp_files;               /* list of files */
-  char_u      *xp_line;                 /* text being completed */
-  int xp_col;                           /* cursor position in line */
-} expand_T;
+  int xp_numfiles;              // number of files found by file name completion
+  char_u **xp_files;            // list of files
+  char_u *xp_line;              // text being completed
+  int xp_col;                   // cursor position in line
+};
 
-/* values for xp_backslash */
-#define XP_BS_NONE      0       /* nothing special for backslashes */
-#define XP_BS_ONE       1       /* uses one backslash before a space */
-#define XP_BS_THREE     2       /* uses three backslashes before a space */
+// values for xp_backslash
+#define XP_BS_NONE      0       // nothing special for backslashes
+#define XP_BS_ONE       1       // uses one backslash before a space
+#define XP_BS_THREE     2       // uses three backslashes before a space
 
 /// Command modifiers ":vertical", ":browse", ":confirm", ":hide", etc. set a
 /// flag.  This needs to be saved for recursive commands, put them in a
 /// structure for easy manipulation.
 typedef struct {
-  int hide;          ///< TRUE when ":hide" was used
-  int split;         ///< flags for win_split()
-  int tab;           ///< > 0 when ":tab" was used
-  int confirm;       ///< TRUE to invoke yes/no dialog
-  int keepalt;       ///< TRUE when ":keepalt" was used
-  int keepmarks;     ///< TRUE when ":keepmarks" was used
-  int keepjumps;     ///< TRUE when ":keepjumps" was used
-  int lockmarks;     ///< TRUE when ":lockmarks" was used
-  int keeppatterns;  ///< TRUE when ":keeppatterns" was used
-  bool noswapfile;   ///< true when ":noswapfile" was used
-  bool browse;       ///< TRUE to invoke file dialog
-  char_u *save_ei;   ///< saved value of 'eventignore'
+  int split;          ///< flags for win_split()
+  int tab;            ///< > 0 when ":tab" was used
+  bool browse;        ///< true to invoke file dialog
+  bool confirm;       ///< true to invoke yes/no dialog
+  bool hide;          ///< true when ":hide" was used
+  bool keepalt;       ///< true when ":keepalt" was used
+  bool keepjumps;     ///< true when ":keepjumps" was used
+  bool keepmarks;     ///< true when ":keepmarks" was used
+  bool keeppatterns;  ///< true when ":keeppatterns" was used
+  bool lockmarks;     ///< true when ":lockmarks" was used
+  bool noswapfile;    ///< true when ":noswapfile" was used
+  char_u *save_ei;    ///< saved value of 'eventignore'
 } cmdmod_T;
 
 #endif  // NVIM_EX_CMDS_DEFS_H

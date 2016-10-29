@@ -31,7 +31,6 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc2.h"
 #include "nvim/garray.h"
 #include "nvim/move.h"
 #include "nvim/mouse.h"
@@ -41,6 +40,7 @@
 #include "nvim/regexp.h"
 #include "nvim/screen.h"
 #include "nvim/search.h"
+#include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/tag.h"
 #include "nvim/ui.h"
@@ -742,10 +742,14 @@ open_line (
     if (ml_append(curwin->w_cursor.lnum, p_extra, (colnr_T)0, FALSE)
         == FAIL)
       goto theend;
-    /* Postpone calling changed_lines(), because it would mess up folding
-     * with markers. */
-    mark_adjust(curwin->w_cursor.lnum + 1, (linenr_T)MAXLNUM, 1L, 0L);
-    did_append = TRUE;
+    // Postpone calling changed_lines(), because it would mess up folding
+    // with markers.
+    // Skip mark_adjust when adding a line after the last one, there can't
+    // be marks there.
+    if (curwin->w_cursor.lnum + 1 < curbuf->b_ml.ml_line_count) {
+      mark_adjust(curwin->w_cursor.lnum + 1, (linenr_T)MAXLNUM, 1L, 0L);
+    }
+    did_append = true;
   } else {
     /*
      * In VREPLACE mode we are starting to replace the next line.
@@ -1742,18 +1746,6 @@ int gchar_pos(pos_T *pos)
 }
 
 /*
- * Skip to next part of an option argument: Skip space and comma.
- */
-char_u *skip_to_option_part(char_u *p)
-{
-  if (*p == ',')
-    ++p;
-  while (*p == ' ')
-    ++p;
-  return p;
-}
-
-/*
  * Call this function when something in the current buffer is changed.
  *
  * Most often called through changed_bytes() and changed_lines(), which also
@@ -1871,7 +1863,11 @@ void appended_lines(linenr_T lnum, long count)
  */
 void appended_lines_mark(linenr_T lnum, long count)
 {
-  mark_adjust(lnum + 1, (linenr_T)MAXLNUM, count, 0L);
+  // Skip mark_adjust when adding a line after the last one, there can't
+  // be marks there.
+  if (lnum + count < curbuf->b_ml.ml_line_count) {
+    mark_adjust(lnum + 1, (linenr_T)MAXLNUM, count, 0L);
+  }
   changed_lines(lnum + 1, 0, lnum + 1, count);
 }
 
@@ -2681,6 +2677,42 @@ void fast_breakcheck(void)
     breakcheck_count = 0;
     os_breakcheck();
   }
+}
+
+// Call shell. Calls os_call_shell, with 'shellxquote' added.
+int call_shell(char_u *cmd, ShellOpts opts, char_u *extra_shell_arg)
+{
+  int retval;
+  proftime_T wait_time;
+
+  if (p_verbose > 3) {
+    verbose_enter();
+    smsg(_("Calling shell to execute: \"%s\""),
+         cmd == NULL ? p_sh : cmd);
+    ui_putc('\n');
+    verbose_leave();
+  }
+
+  if (do_profiling == PROF_YES) {
+    prof_child_enter(&wait_time);
+  }
+
+  if (*p_sh == NUL) {
+    EMSG(_(e_shellempty));
+    retval = -1;
+  } else {
+    // The external command may update a tags file, clear cached tags.
+    tag_freematch();
+
+    retval = os_call_shell(cmd, opts, extra_shell_arg);
+  }
+
+  set_vim_var_nr(VV_SHELL_ERROR, (varnumber_T)retval);
+  if (do_profiling == PROF_YES) {
+    prof_child_exit(&wait_time);
+  }
+
+  return retval;
 }
 
 /// Get the stdout of an external command.

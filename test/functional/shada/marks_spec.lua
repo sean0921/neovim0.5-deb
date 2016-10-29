@@ -14,6 +14,8 @@ local nvim_current_line = function()
   return curwinmeths.get_cursor()[1]
 end
 
+if helpers.pending_win32(pending) then return end
+
 describe('ShaDa support code', function()
   local testfilename = 'Xtestfile-functional-shada-marks'
   local testfilename_2 = 'Xtestfile-functional-shada-marks-2'
@@ -96,6 +98,18 @@ describe('ShaDa support code', function()
     nvim_command('qall')
     reset()
     nvim_command('edit ' .. testfilename)
+    nvim_command('normal! `"')
+    eq(2, nvim_current_line())
+  end)
+
+  it('is able to dump and read back mark " from a closed tab', function()
+    nvim_command('edit ' .. testfilename)
+    nvim_command('edit ' .. testfilename_2)
+    nvim_command('2')
+    nvim_command('q!')
+    nvim_command('qall')
+    reset()
+    nvim_command('edit ' .. testfilename_2)
     nvim_command('normal! `"')
     eq(2, nvim_current_line())
   end)

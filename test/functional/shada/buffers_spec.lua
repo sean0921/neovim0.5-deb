@@ -8,6 +8,8 @@ local reset, set_additional_cmd, clear =
   shada_helpers.reset, shada_helpers.set_additional_cmd,
   shada_helpers.clear
 
+if helpers.pending_win32(pending) then return end
+
 describe('ShaDa support code', function()
   local testfilename = 'Xtestfile-functional-shada-buffers'
   local testfilename_2 = 'Xtestfile-functional-shada-buffers-2'
@@ -78,9 +80,9 @@ describe('ShaDa support code', function()
   it('does not dump unnamed buffers', function()
     set_additional_cmd('set shada+=% hidden')
     reset()
-    curbufmeths.set_line(0, 'foo')
+    curbufmeths.set_lines(0, 1, true, {'foo'})
     nvim_command('enew')
-    curbufmeths.set_line(0, 'bar')
+    curbufmeths.set_lines(0, 1, true, {'bar'})
     eq(2, funcs.bufnr('$'))
     nvim_command('qall!')
     reset()

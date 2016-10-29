@@ -36,6 +36,7 @@
 #include "nvim/ex_eval.h"
 #include "nvim/ex_getln.h"
 #include "nvim/fileio.h"
+#include "nvim/file_search.h"
 #include "nvim/fold.h"
 #include "nvim/getchar.h"
 #include "nvim/hashtab.h"
@@ -48,7 +49,6 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/garray.h"
 #include "nvim/move.h"
 #include "nvim/option.h"
@@ -276,30 +276,25 @@ bool buf_valid(buf_T *buf)
   return false;
 }
 
-/*
- * Close the link to a buffer.
- * "action" is used when there is no longer a window for the buffer.
- * It can be:
- * 0			buffer becomes hidden
- * DOBUF_UNLOAD		buffer is unloaded
- * DOBUF_DELETE		buffer is unloaded and removed from buffer list
- * DOBUF_WIPE		buffer is unloaded and really deleted
- * When doing all but the first one on the current buffer, the caller should
- * get a new buffer very soon!
- *
- * The 'bufhidden' option can force freeing and deleting.
- *
- * When "abort_if_last" is TRUE then do not close the buffer if autocommands
- * cause there to be only one window with this buffer.  e.g. when ":quit" is
- * supposed to close the window but autocommands close all other windows.
- */
-void 
-close_buffer (
-    win_T *win,               /* if not NULL, set b_last_cursor */
-    buf_T *buf,
-    int action,
-    int abort_if_last
-)
+/// Close the link to a buffer.
+///
+/// @param win    If not NULL, set b_last_cursor.
+/// @param buf
+/// @param action Used when there is no longer a window for the buffer.
+///               Possible values:
+///                 0            buffer becomes hidden
+///                 DOBUF_UNLOAD buffer is unloaded
+///                 DOBUF_DELETE buffer is unloaded and removed from buffer list
+///                 DOBUF_WIPE   buffer is unloaded and really deleted
+///               When doing all but the first one on the current buffer, the
+///               caller should get a new buffer very soon!
+///               The 'bufhidden' option can force freeing and deleting.
+/// @param abort_if_last
+///               If TRUE, do not close the buffer if autocommands cause
+///               there to be only one window with this buffer. e.g. when
+///               ":quit" is supposed to close the window but autocommands
+///               close all other windows.
+void close_buffer(win_T *win, buf_T *buf, int action, int abort_if_last)
 {
   bool unload_buf = (action != 0);
   bool del_buf = (action == DOBUF_DEL || action == DOBUF_WIPE);
@@ -328,13 +323,14 @@ close_buffer (
     wipe_buf = true;
   }
 
-  if (win_valid(win)) {
-    /* Set b_last_cursor when closing the last window for the buffer.
-     * Remember the last cursor position and window options of the buffer.
-     * This used to be only for the current window, but then options like
-     * 'foldmethod' may be lost with a ":only" command. */
-    if (buf->b_nwindows == 1)
+  if (win_valid_any_tab(win)) {
+    // Set b_last_cursor when closing the last window for the buffer.
+    // Remember the last cursor position and window options of the buffer.
+    // This used to be only for the current window, but then options like
+    // 'foldmethod' may be lost with a ":only" command.
+    if (buf->b_nwindows == 1) {
       set_last_cursor(win);
+    }
     buflist_setfpos(buf, win,
         win->w_cursor.lnum == 1 ? 0 : win->w_cursor.lnum,
         win->w_cursor.col, TRUE);
@@ -407,7 +403,7 @@ close_buffer (
   buf->b_nwindows = nwindows;
 
   buf_freeall(buf, (del_buf ? BFA_DEL : 0) + (wipe_buf ? BFA_WIPE : 0));
-  if (win_valid(win) && win->w_buffer == buf) {
+  if (win_valid_any_tab(win) && win->w_buffer == buf) {
     win->w_buffer = NULL;  // make sure we don't use the buffer now
   }
 
@@ -483,17 +479,20 @@ void buf_clear_file(buf_T *buf)
   buf->b_ml.ml_flags = ML_EMPTY;                /* empty buffer */
 }
 
-/*
- * buf_freeall() - free all things allocated for a buffer that are related to
- * the file.  flags:
- * BFA_DEL	  buffer is going to be deleted
- * BFA_WIPE	  buffer is going to be wiped out
- * BFA_KEEP_UNDO  do not free undo information
- */
+/// buf_freeall() - free all things allocated for a buffer that are related to
+/// the file.  Careful: get here with "curwin" NULL when exiting.
+///
+/// @param flags BFA_DEL buffer is going to be deleted
+///              BFA_WIPE buffer is going to be wiped out
+///              BFA_KEEP_UNDO  do not free undo information
 void buf_freeall(buf_T *buf, int flags)
 {
   bool is_curbuf = (buf == curbuf);
+  int is_curwin = (curwin != NULL && curwin->w_buffer == buf);
+  win_T *the_curwin = curwin;
+  tabpage_T *the_curtab = curtab;
 
+  // Make sure the buffer isn't closed by autocommands.
   buf->b_closing = true;
   apply_autocmds(EVENT_BUFUNLOAD, buf->b_fname, buf->b_fname, FALSE, buf);
   if (!buf_valid(buf))              /* autocommands may delete the buffer */
@@ -510,8 +509,18 @@ void buf_freeall(buf_T *buf, int flags)
       return;
   }
   buf->b_closing = false;
-  if (aborting())           /* autocmds may abort script processing */
+
+  // If the buffer was in curwin and the window has changed, go back to that
+  // window, if it still exists.  This avoids that ":edit x" triggering a
+  // "tabnext" BufUnload autocmd leaves a window behind without a buffer.
+  if (is_curwin && curwin != the_curwin &&  win_valid_any_tab(the_curwin)) {
+    block_autocmds();
+    goto_tabpage_win(the_curtab, the_curwin);
+    unblock_autocmds();
+  }
+  if (aborting()) {  // autocmds may abort script processing
     return;
+  }
 
   /*
    * It's possible that autocommands change curbuf to the one being deleted.
@@ -1397,8 +1406,7 @@ buflist_new (
   }
   if (buf != curbuf || curbuf == NULL) {
     buf = xcalloc(1, sizeof(buf_T));
-    handle_register_buffer(buf);
-    /* init b: variables */
+    // init b: variables
     buf->b_vars = dict_alloc();
     init_var_dict(buf->b_vars, &buf->b_bufvar, VAR_SCOPE);
   }
@@ -1451,11 +1459,12 @@ buflist_new (
     lastbuf = buf;
 
     buf->b_fnum = top_file_num++;
-    if (top_file_num < 0) {             /* wrap around (may cause duplicates) */
+    handle_register_buffer(buf);
+    if (top_file_num < 0) {  // wrap around (may cause duplicates)
       EMSG(_("W14: Warning: List of file names overflow"));
       if (emsg_silent == 0) {
         ui_flush();
-        os_delay(3000L, true);          /* make sure it is noticed */
+        os_delay(3000L, true);  // make sure it is noticed
       }
       top_file_num = 1;
     }
@@ -4514,7 +4523,7 @@ chk_modeline (
   char_u      *e;
   char_u      *linecopy;                /* local copy of any modeline found */
   int prev;
-  int vers;
+  intmax_t vers;
   int end;
   int retval = OK;
   char_u      *save_sourcing_name;
@@ -4533,7 +4542,10 @@ chk_modeline (
           e = s + 4;
         else
           e = s + 3;
-        vers = getdigits_int(&e);
+        if (getdigits_safe(&e, &vers) != OK) {
+          continue;
+        }
+
         if (*e == ':'
             && (s[0] != 'V'
                 || STRNCMP(skipwhite(e + 1), "set", 3) == 0)
@@ -4541,8 +4553,9 @@ chk_modeline (
                 || (VIM_VERSION_100 >= vers && isdigit(s[3]))
                 || (VIM_VERSION_100 < vers && s[3] == '<')
                 || (VIM_VERSION_100 > vers && s[3] == '>')
-                || (VIM_VERSION_100 == vers && s[3] == '=')))
+                || (VIM_VERSION_100 == vers && s[3] == '='))) {
           break;
+        }
       }
     }
     prev = *s;
@@ -5231,12 +5244,12 @@ wipe_buffer (
     int aucmd                   /* When TRUE trigger autocommands. */
 )
 {
-  if (buf->b_fnum == top_file_num - 1)
-    --top_file_num;
-
-  if (!aucmd)               /* Don't trigger BufDelete autocommands here. */
+  if (!aucmd) {
+    // Don't trigger BufDelete autocommands here.
     block_autocmds();
-  close_buffer(NULL, buf, DOBUF_WIPE, FALSE);
-  if (!aucmd)
+  }
+  close_buffer(NULL, buf, DOBUF_WIPE, false);
+  if (!aucmd) {
     unblock_autocmds();
+  }
 }

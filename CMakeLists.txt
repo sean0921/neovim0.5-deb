@@ -8,6 +8,9 @@ endif()
 # Point CMake at any custom modules we may ship
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
+# We don't support building in-tree.
+include(PreventInTreeBuilds)
+
 # Prefer our bundled versions of dependencies.
 set(DEPS_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/.deps/usr" CACHE PATH "Path prefix for finding dependencies")
 if(CMAKE_CROSSCOMPILING AND NOT UNIX)
@@ -56,11 +59,16 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
   STRINGS "Debug" "Dev" "Release" "MinSizeRel" "RelWithDebInfo")
 
 # If not in a git repo (e.g., a tarball) these tokens define the complete
-# version string, else it is combined with the result of `git describe`.
+# version string, else they are combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
 set(NVIM_VERSION_MINOR 1)
-set(NVIM_VERSION_PATCH 5)
+set(NVIM_VERSION_PATCH 6)
 set(NVIM_VERSION_PRERELEASE "") # for package maintainers
+
+# API level
+set(NVIM_API_LEVEL 1)         # Bump this after any API change.
+set(NVIM_API_LEVEL_COMPAT 0)  # Adjust this after a _breaking_ API change.
+set(NVIM_API_PRERELEASE false)
 
 file(TO_CMAKE_PATH ${CMAKE_CURRENT_LIST_DIR}/.git FORCED_GIT_DIR)
 include(GetGitRevisionDescription)
@@ -253,6 +261,10 @@ option(
 if(TRAVIS_CI_BUILD)
   message(STATUS "Travis CI build enabled.")
   add_definitions(-Werror)
+  if(DEFINED ENV{BUILD_32BIT})
+    # Get some test coverage for unsigned char
+    add_definitions(-funsigned-char)
+  endif()
 endif()
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
@@ -328,7 +340,12 @@ if((CLANG_ASAN_UBSAN OR CLANG_MSAN OR CLANG_TSAN) AND NOT CMAKE_C_COMPILER_ID MA
   message(FATAL_ERROR "Sanitizers are only supported for Clang.")
 endif()
 
-option(ENABLE_JEMALLOC "enable jemalloc" ON)
+if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+  message(STATUS "detected OpenBSD; disabled jemalloc. #5318")
+  option(ENABLE_JEMALLOC "enable jemalloc" OFF)
+else()
+  option(ENABLE_JEMALLOC "enable jemalloc" ON)
+endif()
 
 if (ENABLE_JEMALLOC)
   if(CLANG_ASAN_UBSAN OR CLANG_MSAN OR CLANG_TSAN)
@@ -395,7 +412,7 @@ endif()
 message(STATUS "Using the Lua interpreter ${LUA_PRG}.")
 
 # Setup busted.
-find_program(BUSTED_PRG busted)
+find_program(BUSTED_PRG NAMES busted busted.bat)
 find_program(BUSTED_LUA_PRG busted-lua)
 if(NOT BUSTED_OUTPUT_TYPE)
   if(WIN32)
@@ -406,6 +423,8 @@ if(NOT BUSTED_OUTPUT_TYPE)
 endif()
 
 find_program(LUACHECK_PRG luacheck)
+
+find_program(GPERF_PRG gperf)
 
 include(InstallHelpers)
 
@@ -498,6 +517,7 @@ if(BUSTED_PRG)
         -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
         -DBUILD_DIR=${CMAKE_BINARY_DIR}
         -DTEST_TYPE=unit
+        -DSYSTEM_NAME=${CMAKE_SYSTEM_NAME}
         -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
       DEPENDS ${UNITTEST_PREREQS}
       ${TEST_TARGET_ARGS})
@@ -516,6 +536,7 @@ if(BUSTED_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=functional
+      -DSYSTEM_NAME=${CMAKE_SYSTEM_NAME}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
     DEPENDS ${FUNCTIONALTEST_PREREQS}
     ${TEST_TARGET_ARGS})
@@ -530,6 +551,7 @@ if(BUSTED_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=benchmark
+      -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
     DEPENDS ${BENCHMARK_PREREQS}
     ${TEST_TARGET_ARGS})
@@ -546,6 +568,7 @@ if(BUSTED_LUA_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=functional
+      -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
     DEPENDS ${FUNCTIONALTEST_PREREQS}
     ${TEST_TARGET_ARGS})
@@ -556,6 +579,7 @@ if(LUACHECK_PRG)
     COMMAND ${CMAKE_COMMAND}
       -DLUACHECK_PRG=${LUACHECK_PRG}
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
+      -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTestsLint.cmake)
 endif()
 

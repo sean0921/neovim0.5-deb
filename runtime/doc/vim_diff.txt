@@ -36,7 +36,9 @@ these differences.
 - 'autoindent' is set by default
 - 'autoread' is set by default
 - 'backspace' defaults to "indent,eol,start"
+- 'backupdir' defaults to .,~/.local/share/nvim/backup (|xdg|)
 - 'complete' doesn't include "i"
+- 'directory' defaults to ~/.local/share/nvim/swap// (|xdg|), auto-created
 - 'display' defaults to "lastline"
 - 'encoding' defaults to "utf-8"
 - 'formatoptions' defaults to "tcqj"
@@ -54,6 +56,7 @@ these differences.
 - 'tabpagemax' defaults to 50
 - 'tags' defaults to "./tags;,tags"
 - 'ttyfast' is always set
+- 'undodir' defaults to ~/.local/share/nvim/undo (|xdg|), auto-created
 - 'viminfo' includes "!"
 - 'wildmenu' is set by default
 
@@ -71,6 +74,15 @@ Job control			|job-control|
 Remote plugins			|remote-plugin|
 Python plugins			|provider-python|
 Clipboard integration		|provider-clipboard|
+
+
+USER EXPERIENCE  ~
+
+A major goal of Nvim is to work intuitively and consistently. For example,
+Nvim does not have `-X`, a platform-specific option available in some Vim
+builds (with potential surprises: http://stackoverflow.com/q/14635295). Nvim
+avoids features that cannot be provided on all platforms--instead that is
+delegated to external plugins/extensions.
 
 
 OTHER FEATURES ~
@@ -93,13 +105,22 @@ Some `CTRL-SHIFT-...` key chords are distinguished from `CTRL-...` variants
 
 Options:
   'statusline' supports unlimited alignment sections
+  'tabline' %@Func@foo%X can call any function on mouse-click
+
+Variables:
+  |v:event|
+  |v:windowid| is always available (for use by external UIs)
 
 Commands:
   |:CheckHealth|
+  |:drop| is available on all platforms
   |:Man| is available by default, with many improvements such as completion
 
 Functions:
+  |dictwatcheradd()| notifies a callback whenever a |Dict| is modified
+  |dictwatcherdel()|
   |execute()| works with |:redir|
+  |msgpackdump()|, |msgpackparse()| provide msgpack de/serialization
 
 Events:
   |TabNew|
@@ -111,6 +132,7 @@ Events:
 
 Highlight groups:
   |hl-EndOfBuffer|
+  |hl-QuickFixLine|
   |hl-TermCursor|
   |hl-TermCursorNC|
 
@@ -127,10 +149,10 @@ are always available and may be used simultaneously in separate plugins.  The
 `neovim` pip package must be installed to use Python plugins in Nvim (see
 |provider-python|).
 
-|:!| and |system()| do not support "interactive" commands; use |:terminal| for
-that instead. Terminal Vim supports interactive |:!| and |system()|, but gui
-Vim does not. See ":help gui-pty" in Vim:
-   http://vimdoc.sourceforge.net/htmldoc/gui_x11.html#gui-pty
+|:!| does not support "interactive" commands. Use |:terminal| instead.
+(GUI Vim has a similar limitation, see ":help gui-pty" in Vim.)
+
+|system()| does not support writing/reading "backgrounded" commands. |E5677|
 
 |mkdir()| behaviour changed:
 1. Assuming /tmp/foo does not exist and /tmp can be written to
@@ -219,10 +241,12 @@ planned for the current milestone.
 
 These features are in Vim, but have been intentionally removed from Nvim.
 
-Vi-compatible mode:
+			*'cp'* *'nocompatible'* *'nocp'* *'compatible'*
+Nvim is always "non-compatible" with Vi.
   ":set nocompatible" is ignored
   ":set compatible" is an error
 
+			*'ed'* *'edcompatible'* *'noed'* *'noedcompatible'*
 Ed-compatible mode:
   ":set noedcompatible" is ignored
   ":set edcompatible" is an error
@@ -232,8 +256,8 @@ Ed-compatible mode:
   ":set nottyfast" is an error
 
 Encryption support:
-  'cryptmethod'
-  'key'
+  *'cryptmethod'* *'cm'*
+  *'key'*
 
 MS-DOS support:
   'bioskey'
@@ -244,27 +268,27 @@ Highlight groups:
 
 Other options:
   'antialias'
-  'cpoptions' ('g', 'w', 'H', '*', '-', 'j', and all POSIX flags were removed)
-  'guioptions' (only the 't' flag was removed)
-  'guipty'
-  'imactivatefunc'
-  'imactivatekey'
-  'imstatusfunc'
-  'macatsui'
-  'restorescreen'
+  'cpoptions' ("g", "w", "H", "*", "-", "j", and all POSIX flags were removed)
+  'guioptions' "t" flag was removed
+  *'guipty'* (Nvim uses pipes and PTYs consistently on all platforms.)
+  *'imactivatefunc'* *'imaf'*
+  *'imactivatekey'* *'imak'*
+  *'imstatusfunc'* *'imsf'*
+  *'macatsui'*
+  *'restorescreen'* *'rs'* *'norestorescreen'* *'nors'*
   'shelltype'
-  'shortname'
-  'swapsync'
-  'term'
-  'termencoding' (Vim 7.4.852 also removed this for Windows)
+  *'shortname'* *'sn'* *'noshortname'* *'nosn'*
+  *'swapsync'* *'sws'*
+  *'term'* *E529* *E530* *E531*
+  *'termencoding'* *'tenc'* (Vim 7.4.852 also removed this for Windows)
   'textauto'
   'textmode'
-  'toolbar'
-  'toolbariconsize'
-  'ttybuiltin'
-  'ttymouse'
-  'ttyscroll'
-  'ttytype'
+  *'toolbar'* *'tb'*
+  *'toolbariconsize'* *'tbis'*
+  *'ttybuiltin'* *'tbi'* *'nottybuiltin'* *'notbi'*
+  *'ttymouse'* *'ttym'*
+  *'ttyscroll'* *'tsl'*
+  *'ttytype'* *'tty'*
   'weirdinvert'
 
 Other commands:

@@ -1,8 +1,12 @@
 require('coxpcall')
 local lfs = require('lfs')
-local ChildProcessStream = require('nvim.child_process_stream')
-local Session = require('nvim.session')
 local global_helpers = require('test.helpers')
+
+-- nvim client: Found in .deps/usr/share/lua/<version>/nvim/ if "bundled".
+local Session = require('nvim.session')
+local TcpStream = require('nvim.tcp_stream')
+local SocketStream = require('nvim.socket_stream')
+local ChildProcessStream = require('nvim.child_process_stream')
 
 local check_logs = global_helpers.check_logs
 local neq = global_helpers.neq
@@ -132,12 +136,16 @@ local function stop()
   session:stop()
 end
 
+-- Executes an ex-command. VimL errors manifest as client (lua) errors, but
+-- v:errmsg will not be updated.
 local function nvim_command(cmd)
-  request('vim_command', cmd)
+  request('nvim_command', cmd)
 end
 
+-- Evaluates a VimL expression.
+-- Fails on VimL error, but does not update v:errmsg.
 local function nvim_eval(expr)
-  return request('vim_eval', expr)
+  return request('nvim_eval', expr)
 end
 
 local os_name = (function()
@@ -156,13 +164,17 @@ local os_name = (function()
   end)
 end)()
 
+-- Executes a VimL function.
+-- Fails on VimL error, but does not update v:errmsg.
 local function nvim_call(name, ...)
-  return request('vim_call_function', name, {...})
+  return request('nvim_call_function', name, {...})
 end
 
+-- Sends user input to Nvim.
+-- Does not fail on VimL error, but v:errmsg will be updated.
 local function nvim_feed(input)
   while #input > 0 do
-    local written = request('vim_input', input)
+    local written = request('nvim_input', input)
     input = input:sub(written + 1)
   end
 end
@@ -223,6 +235,14 @@ local function spawn(argv, merge, env)
   return Session.new(child_stream)
 end
 
+-- Creates a new Session connected by domain socket (named pipe) or TCP.
+local function connect(file_or_address)
+  local addr, port = string.match(file_or_address, "(.*):(%d+)")
+  local stream = (addr and port) and TcpStream.open(addr, port) or
+    SocketStream.open(file_or_address)
+  return Session.new(stream)
+end
+
 local function clear(...)
   local args = {unpack(nvim_argv)}
   local new_args
@@ -269,6 +289,8 @@ local function insert(...)
   nvim_feed('<ESC>')
 end
 
+-- Executes an ex-command by user input. Because nvim_input() is used, VimL
+-- errors will not manifest as client (lua) errors. Use command() for that.
 local function execute(...)
   for _, v in ipairs({...}) do
     if v:sub(1, 1) ~= '/' then
@@ -291,43 +313,81 @@ local function write_file(name, text, dont_dedent)
   file:close()
 end
 
-local function source(code)
-  local tmpname = os.tmpname()
-  if os_name() == 'osx' and string.match(tmpname, '^/tmp') then
-   tmpname = '/private'..tmpname
+-- Tries to get platform name from $SYSTEM_NAME, uname; fallback is "Windows".
+local uname = (function()
+  local platform = nil
+  return (function()
+    if platform then
+      return platform
+    end
+
+    platform = os.getenv("SYSTEM_NAME")
+    if platform then
+      return platform
+    end
+
+    local status, f = pcall(io.popen, "uname -s")
+    if status then
+      platform = f:read("*l")
+    else
+      platform = 'Windows'
+    end
+    return platform
+  end)
+end)()
+
+local function tmpname()
+  local fname = os.tmpname()
+  if uname() == 'Windows' and fname:sub(1, 2) == '\\s' then
+    -- In Windows tmpname() returns a filename starting with
+    -- special sequence \s, prepend $TEMP path
+    local tmpdir = os.getenv('TEMP')
+    return tmpdir..fname
+  elseif fname:match('^/tmp') and uname() == 'Darwin' then
+    -- In OS X /tmp links to /private/tmp
+    return '/private'..fname
+  else
+    return fname
   end
-  write_file(tmpname, code)
-  nvim_command('source '..tmpname)
-  os.remove(tmpname)
-  return tmpname
+end
+
+local function source(code)
+  local fname = tmpname()
+  write_file(fname, code)
+  nvim_command('source '..fname)
+  os.remove(fname)
+  return fname
 end
 
 local function nvim(method, ...)
-  return request('vim_'..method, ...)
+  return request('nvim_'..method, ...)
+end
+
+local function ui(method, ...)
+  return request('nvim_ui_'..method, ...)
 end
 
 local function nvim_async(method, ...)
-  session:notify('vim_'..method, ...)
+  session:notify('nvim_'..method, ...)
 end
 
 local function buffer(method, ...)
-  return request('buffer_'..method, ...)
+  return request('nvim_buf_'..method, ...)
 end
 
 local function window(method, ...)
-  return request('window_'..method, ...)
+  return request('nvim_win_'..method, ...)
 end
 
 local function tabpage(method, ...)
-  return request('tabpage_'..method, ...)
+  return request('nvim_tabpage_'..method, ...)
 end
 
 local function curbuf(method, ...)
-  local buf = nvim('get_current_buffer')
   if not method then
-    return buf
+    return nvim('get_current_buf')
   end
-  return buffer(method, buf, ...)
+  return buffer(method, 0, ...)
 end
 
 local function wait()
@@ -337,8 +397,8 @@ local function wait()
 end
 
 -- sleeps the test runner (_not_ the nvim instance)
-local function sleep(timeout)
-  run(nil, nil, nil, timeout)
+local function sleep(ms)
+  run(nil, nil, nil, ms)
 end
 
 local function curbuf_contents()
@@ -347,26 +407,24 @@ local function curbuf_contents()
 end
 
 local function curwin(method, ...)
-  local win = nvim('get_current_window')
   if not method then
-    return win
+    return nvim('get_current_win')
   end
-  return window(method, win, ...)
+  return window(method, 0, ...)
 end
 
 local function curtab(method, ...)
-  local tab = nvim('get_current_tabpage')
   if not method then
-    return tab
+    return nvim('get_current_tabpage')
   end
-  return tabpage(method, tab, ...)
+  return tabpage(method, 0, ...)
 end
 
 local function expect(contents)
   return eq(dedent(contents), curbuf_contents())
 end
 
-local function rmdir(path)
+local function do_rmdir(path)
   if lfs.attributes(path, 'mode') ~= 'directory' then
     return nil
   end
@@ -374,7 +432,7 @@ local function rmdir(path)
     if file ~= '.' and file ~= '..' then
       local abspath = path..'/'..file
       if lfs.attributes(abspath, 'mode') == 'directory' then
-        local ret = rmdir(abspath)  -- recurse
+        local ret = do_rmdir(abspath)  -- recurse
         if not ret then
           return nil
         end
@@ -387,11 +445,21 @@ local function rmdir(path)
       end
     end
   end
-  local ret, err = os.remove(path)
+  local ret, err = lfs.rmdir(path)
   if not ret then
-    error('os.remove: '..err)
+    error('lfs.rmdir('..path..'): '..err)
   end
   return ret
+end
+
+local function rmdir(path)
+  local ret, _ = pcall(do_rmdir, path)
+  -- During teardown, the nvim process may not exit quickly enough, then rmdir()
+  -- will fail (on Windows).
+  if not ret then  -- Try again.
+    sleep(1000)
+    do_rmdir(path)
+  end
 end
 
 local exc_exec = function(cmd)
@@ -430,8 +498,23 @@ local function create_callindex(func)
   return table
 end
 
+-- Helper to skip tests. Returns true in Windows systems.
+-- pending_func is pending() from busted
+local function pending_win32(pending_func)
+  clear()
+  if uname() == 'Windows' then
+    if pending_func ~= nil then
+      pending_func('FIXME: Windows', function() end)
+    end
+    return true
+  else
+    return false
+  end
+end
+
 local funcs = create_callindex(nvim_call)
 local meths = create_callindex(nvim)
+local uimeths = create_callindex(ui)
 local bufmeths = create_callindex(buffer)
 local winmeths = create_callindex(window)
 local tabmeths = create_callindex(tabpage)
@@ -446,6 +529,7 @@ return function(after_each)
   return {
     prepend_argv = prepend_argv,
     clear = clear,
+    connect = connect,
     spawn = spawn,
     dedent = dedent,
     source = source,
@@ -490,9 +574,12 @@ return function(after_each)
     bufmeths = bufmeths,
     winmeths = winmeths,
     tabmeths = tabmeths,
+    uimeths = uimeths,
     curbufmeths = curbufmeths,
     curwinmeths = curwinmeths,
     curtabmeths = curtabmeths,
+    pending_win32 = pending_win32,
+    tmpname = tmpname,
     NIL = mpack.NIL,
   }
 end

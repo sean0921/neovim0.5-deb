@@ -12,10 +12,8 @@
 #include "nvim/ex_cmds2.h"
 #include "nvim/fold.h"
 #include "nvim/main.h"
-#include "nvim/mbyte.h"
 #include "nvim/ascii.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/mbyte.h"
 #include "nvim/garray.h"
 #include "nvim/memory.h"
@@ -27,6 +25,7 @@
 #include "nvim/os/time.h"
 #include "nvim/os/input.h"
 #include "nvim/os/signal.h"
+#include "nvim/popupmnu.h"
 #include "nvim/screen.h"
 #include "nvim/syntax.h"
 #include "nvim/window.h"
@@ -35,6 +34,7 @@
 #else
 # include "nvim/msgpack_rpc/server.h"
 #endif
+#include "nvim/api/private/helpers.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "ui.c.generated.h"
@@ -53,12 +53,10 @@ static bool pending_cursor_update = false;
 static int busy = 0;
 static int height, width;
 
-// This set of macros allow us to use UI_CALL to invoke any function on
-// registered UI instances. The functions can have 0-5 arguments(configurable
-// by SELECT_NTH)
+// UI_CALL invokes a function on all registered UI instances. The functions can
+// have 0-5 arguments (configurable by SELECT_NTH).
 //
-// See http://stackoverflow.com/a/11172679 for a better explanation of how it
-// works.
+// See http://stackoverflow.com/a/11172679 for how it works.
 #ifdef _MSC_VER
 # define UI_CALL(funname, ...) \
     do { \
@@ -143,6 +141,15 @@ void ui_set_icon(char *icon)
   UI_CALL(flush);
 }
 
+void ui_event(char *name, Array args)
+{
+  bool args_consumed = false;
+  UI_CALL(event, name, args, &args_consumed);
+  if (!args_consumed) {
+    api_free_array(args);
+  }
+}
+
 // May update the shape of the cursor.
 void ui_cursor_shape(void)
 {
@@ -156,15 +163,28 @@ void ui_refresh(void)
   }
 
   int width = INT_MAX, height = INT_MAX;
+  bool pum_external = true;
 
   for (size_t i = 0; i < ui_count; i++) {
     UI *ui = uis[i];
-    width = ui->width < width ? ui->width : width;
-    height = ui->height < height ? ui->height : height;
+    width = MIN(ui->width, width);
+    height = MIN(ui->height, height);
+    pum_external &= ui->pum_external;
   }
 
   row = col = 0;
   screen_resize(width, height);
+  pum_set_external(pum_external);
+}
+
+static void ui_refresh_handler(void **argv)
+{
+  ui_refresh();
+}
+
+void ui_schedule_refresh(void)
+{
+  loop_schedule(&main_loop, event_create(1, ui_refresh_handler, 0));
 }
 
 void ui_resize(int new_width, int new_height)
@@ -240,7 +260,7 @@ void ui_detach_impl(UI *ui)
   }
 
   if (--ui_count) {
-    ui_refresh();
+    ui_schedule_refresh();
   }
 }
 
@@ -382,6 +402,9 @@ static void send_output(uint8_t **ptr)
       UI_CALL(put, NULL, 0);
       col++;
     }
+    if (utf_ambiguous_width(utf_ptr2char(p))) {
+      pending_cursor_update = true;
+    }
     if (col >= width) {
       ui_linefeed();
     }
@@ -519,3 +542,4 @@ static void ui_mode_change(void)
   UI_CALL(mode_change, mode);
   conceal_check_cursur_line();
 }
+

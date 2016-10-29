@@ -7,6 +7,7 @@
 #include "nvim/api/private/helpers.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/handle.h"
+#include "nvim/msgpack_rpc/helpers.h"
 #include "nvim/ascii.h"
 #include "nvim/vim.h"
 #include "nvim/buffer.h"
@@ -17,6 +18,7 @@
 #include "nvim/map.h"
 #include "nvim/option.h"
 #include "nvim/option_defs.h"
+#include "nvim/version.h"
 #include "nvim/eval/typval_encode.h"
 #include "nvim/lib/kvec.h"
 
@@ -27,6 +29,7 @@ typedef struct {
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "api/private/helpers.c.generated.h"
+# include "api/private/funcs_metadata.generated.h"
 #endif
 
 /// Start block that may cause vimscript exceptions
@@ -104,10 +107,11 @@ Object dict_get_value(dict_T *dict, String key, Error *err)
 /// @param value The new value
 /// @param del Delete key in place of setting it. Argument `value` is ignored in
 ///            this case.
+/// @param retval If true the old value will be converted and returned.
 /// @param[out] err Details of an error that may have occurred
-/// @return the old value, if any
+/// @return The old value if `retval` is true and the key was present, else NIL
 Object dict_set_value(dict_T *dict, String key, Object value, bool del,
-                      Error *err)
+                      bool retval, Error *err)
 {
   Object rv = OBJECT_INIT;
 
@@ -135,7 +139,9 @@ Object dict_set_value(dict_T *dict, String key, Object value, bool del,
       api_set_error(err, Validation, _("Key \"%s\" doesn't exist"), key.data);
     } else {
       // Return the old value
-      rv = vim_to_object(&di->di_tv);
+      if (retval) {
+        rv = vim_to_object(&di->di_tv);
+      }
       // Delete the entry
       hashitem_T *hi = hash_find(&dict->dv_hashtab, di->di_key);
       hash_remove(&dict->dv_hashtab, hi);
@@ -156,7 +162,9 @@ Object dict_set_value(dict_T *dict, String key, Object value, bool del,
       dict_add(dict, di);
     } else {
       // Return the old value
-      rv = vim_to_object(&di->di_tv);
+      if (retval) {
+        rv = vim_to_object(&di->di_tv);
+      }
       clear_tv(&di->di_tv);
     }
 
@@ -363,11 +371,10 @@ static inline void typval_encode_list_start(EncodedData *const edata,
                                             const size_t len)
   FUNC_ATTR_ALWAYS_INLINE FUNC_ATTR_NONNULL_ALL
 {
-  const Object obj = OBJECT_INIT;
   kv_push(edata->stack, ARRAY_OBJ(((Array) {
     .capacity = len,
     .size = 0,
-    .items = xmalloc(len * sizeof(*obj.data.array.items)),
+    .items = xmalloc(len * sizeof(*((Object *)NULL)->data.array.items)),
   })));
 }
 
@@ -404,11 +411,10 @@ static inline void typval_encode_dict_start(EncodedData *const edata,
                                             const size_t len)
   FUNC_ATTR_ALWAYS_INLINE FUNC_ATTR_NONNULL_ALL
 {
-  const Object obj = OBJECT_INIT;
   kv_push(edata->stack, DICTIONARY_OBJ(((Dictionary) {
     .capacity = len,
     .size = 0,
-    .items = xmalloc(len * sizeof(*obj.data.dictionary.items)),
+    .items = xmalloc(len * sizeof(*((Object *)NULL)->data.dictionary.items)),
   })));
 }
 
@@ -507,6 +513,10 @@ Object vim_to_object(typval_T *obj)
 
 buf_T *find_buffer_by_handle(Buffer buffer, Error *err)
 {
+  if (buffer == 0) {
+    return curbuf;
+  }
+
   buf_T *rv = handle_get_buffer(buffer);
 
   if (!rv) {
@@ -518,6 +528,10 @@ buf_T *find_buffer_by_handle(Buffer buffer, Error *err)
 
 win_T * find_window_by_handle(Window window, Error *err)
 {
+  if (window == 0) {
+    return curwin;
+  }
+
   win_T *rv = handle_get_window(window);
 
   if (!rv) {
@@ -529,6 +543,10 @@ win_T * find_window_by_handle(Window window, Error *err)
 
 tabpage_T * find_tab_by_handle(Tabpage tabpage, Error *err)
 {
+  if (tabpage == 0) {
+    return curtab;
+  }
+
   tabpage_T *rv = handle_get_tabpage(tabpage);
 
   if (!rv) {
@@ -572,10 +590,16 @@ String cstr_as_string(char *str) FUNC_ATTR_PURE
   return (String) {.data = str, .size = strlen(str)};
 }
 
+/// Converts from type Object to a VimL value.
+///
+/// @param obj  Object to convert from.
+/// @param tv   Conversion result is placed here. On failure member v_type is
+///             set to VAR_UNKNOWN (no allocation was made for this variable).
+/// returns     true if conversion is successful, otherwise false.
 bool object_to_vim(Object obj, typval_T *tv, Error *err)
 {
   tv->v_type = VAR_UNKNOWN;
-  tv->v_lock = 0;
+  tv->v_lock = VAR_UNLOCKED;
 
   switch (obj.type) {
     case kObjectTypeNil:
@@ -616,9 +640,8 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
       }
       break;
 
-    case kObjectTypeArray:
-      tv->v_type = VAR_LIST;
-      tv->vval.v_list = list_alloc();
+    case kObjectTypeArray: {
+      list_T *list = list_alloc();
 
       for (uint32_t i = 0; i < obj.data.array.size; i++) {
         Object item = obj.data.array.items[i];
@@ -627,45 +650,51 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
         if (!object_to_vim(item, &li->li_tv, err)) {
           // cleanup
           listitem_free(li);
-          list_free(tv->vval.v_list, true);
+          list_free(list, true);
           return false;
         }
 
-        list_append(tv->vval.v_list, li);
+        list_append(list, li);
       }
-      tv->vval.v_list->lv_refcount++;
-      break;
+      list->lv_refcount++;
 
-    case kObjectTypeDictionary:
-      tv->v_type = VAR_DICT;
-      tv->vval.v_dict = dict_alloc();
+      tv->v_type = VAR_LIST;
+      tv->vval.v_list = list;
+      break;
+    }
+
+    case kObjectTypeDictionary: {
+      dict_T *dict = dict_alloc();
 
       for (uint32_t i = 0; i < obj.data.dictionary.size; i++) {
         KeyValuePair item = obj.data.dictionary.items[i];
         String key = item.key;
 
         if (key.size == 0) {
-          api_set_error(err,
-                        Validation,
+          api_set_error(err, Validation,
                         _("Empty dictionary keys aren't allowed"));
           // cleanup
-          dict_free(tv->vval.v_dict, true);
+          dict_free(dict, true);
           return false;
         }
 
-        dictitem_T *di = dictitem_alloc((uint8_t *) key.data);
+        dictitem_T *di = dictitem_alloc((uint8_t *)key.data);
 
         if (!object_to_vim(item.value, &di->di_tv, err)) {
           // cleanup
           dictitem_free(di);
-          dict_free(tv->vval.v_dict, true);
+          dict_free(dict, true);
           return false;
         }
 
-        dict_add(tv->vval.v_dict, di);
+        dict_add(dict, di);
       }
-      tv->vval.v_dict->dv_refcount++;
+      dict->dv_refcount++;
+
+      tv->v_type = VAR_DICT;
+      tv->vval.v_dict = dict;
       break;
+    }
     default:
       abort();
   }
@@ -735,12 +764,29 @@ Dictionary api_metadata(void)
   static Dictionary metadata = ARRAY_DICT_INIT;
 
   if (!metadata.size) {
-    msgpack_rpc_init_function_metadata(&metadata);
+    PUT(metadata, "version", DICTIONARY_OBJ(version_dict()));
+    init_function_metadata(&metadata);
     init_error_type_metadata(&metadata);
     init_type_metadata(&metadata);
   }
 
   return copy_object(DICTIONARY_OBJ(metadata)).data.dictionary;
+}
+
+static void init_function_metadata(Dictionary *metadata)
+{
+  msgpack_unpacked unpacked;
+  msgpack_unpacked_init(&unpacked);
+  if (msgpack_unpack_next(&unpacked,
+                          (const char *)funcs_metadata,
+                          sizeof(funcs_metadata),
+                          NULL) != MSGPACK_UNPACK_SUCCESS) {
+    abort();
+  }
+  Object functions;
+  msgpack_rpc_to_object(&unpacked.data, &functions);
+  msgpack_unpacked_destroy(&unpacked);
+  PUT(*metadata, "functions", functions);
 }
 
 static void init_error_type_metadata(Dictionary *metadata)
@@ -758,18 +804,22 @@ static void init_error_type_metadata(Dictionary *metadata)
 
   PUT(*metadata, "error_types", DICTIONARY_OBJ(types));
 }
+
 static void init_type_metadata(Dictionary *metadata)
 {
   Dictionary types = ARRAY_DICT_INIT;
 
   Dictionary buffer_metadata = ARRAY_DICT_INIT;
   PUT(buffer_metadata, "id", INTEGER_OBJ(kObjectTypeBuffer));
+  PUT(buffer_metadata, "prefix", STRING_OBJ(cstr_to_string("nvim_buf_")));
 
   Dictionary window_metadata = ARRAY_DICT_INIT;
   PUT(window_metadata, "id", INTEGER_OBJ(kObjectTypeWindow));
+  PUT(window_metadata, "prefix", STRING_OBJ(cstr_to_string("nvim_win_")));
 
   Dictionary tabpage_metadata = ARRAY_DICT_INIT;
   PUT(tabpage_metadata, "id", INTEGER_OBJ(kObjectTypeTabpage));
+  PUT(tabpage_metadata, "prefix", STRING_OBJ(cstr_to_string("nvim_tabpage_")));
 
   PUT(types, "Buffer", DICTIONARY_OBJ(buffer_metadata));
   PUT(types, "Window", DICTIONARY_OBJ(window_metadata));

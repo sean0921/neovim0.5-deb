@@ -19,7 +19,6 @@
 #include "nvim/message.h"
 #include "nvim/memory.h"
 #include "nvim/ui.h"
-#include "nvim/misc2.h"
 #include "nvim/screen.h"
 #include "nvim/memline.h"
 #include "nvim/option_defs.h"
@@ -54,12 +53,12 @@ char **shell_build_argv(const char *cmd, const char *extra_args)
   size_t i = tokenize(p_sh, rv);
 
   if (extra_args) {
-    rv[i++] = xstrdup(extra_args);   // Push a copy of `extra_args`
+    rv[i++] = xstrdup(extra_args);        // Push a copy of `extra_args`
   }
 
   if (cmd) {
-    i += tokenize(p_shcf, rv + i);   // Split 'shellcmdflag'
-    rv[i++] = xstrdup(cmd);          // Push a copy of the command.
+    i += tokenize(p_shcf, rv + i);        // Split 'shellcmdflag'
+    rv[i++] = shell_xescape_xquote(cmd);  // Copy (and escape) `cmd`.
   }
 
   rv[i] = NULL;
@@ -163,7 +162,7 @@ int os_call_shell(char_u *cmd, ShellOpts opts, char_u *extra_args)
 /// @param input The input to the shell (NULL for no input), passed to the
 ///              stdin of the resulting process.
 /// @param len The length of the input buffer (not used if `input` == NULL)
-/// @param[out] output A pointer to to a location where the output will be
+/// @param[out] output Pointer to a location where the output will be
 ///                    allocated and stored. Will point to NULL if the shell
 ///                    command did not output anything. If NULL is passed,
 ///                    the shell output will be ignored.
@@ -208,7 +207,7 @@ static int do_os_system(char **argv,
   Stream in, out, err;
   LibuvProcess uvproc = libuv_process_init(&main_loop, &buf);
   Process *proc = &uvproc.process;
-  Queue *events = queue_new_child(main_loop.events);
+  MultiQueue *events = multiqueue_new_child(main_loop.events);
   proc->events = events;
   proc->argv = argv;
   proc->in = input != NULL ? &in : NULL;
@@ -222,13 +221,13 @@ static int do_os_system(char **argv,
       msg_outtrans((char_u *)prog);
       msg_putchar('\n');
     }
-    queue_free(events);
+    multiqueue_free(events);
     return -1;
   }
 
   // We want to deal with stream events as fast a possible while queueing
   // process events, so reset everything to NULL. It prevents closing the
-  // streams while there's still data in the OS buffer(due to the process
+  // streams while there's still data in the OS buffer (due to the process
   // exiting before all data is read).
   if (input != NULL) {
     proc->in->events = NULL;
@@ -278,8 +277,8 @@ static int do_os_system(char **argv,
     }
   }
 
-  assert(queue_empty(events));
-  queue_free(events);
+  assert(multiqueue_empty(events));
+  multiqueue_free(events);
 
   return status;
 }
@@ -546,5 +545,51 @@ static size_t write_output(char *output, size_t remaining, bool to_buffer,
 
 static void shell_write_cb(Stream *stream, void *data, int status)
 {
+  if (status) {
+    // Can happen if system() tries to send input to a shell command that was
+    // backgrounded (:call system("cat - &", "foo")). #3529 #5241
+    EMSG2(_("E5677: Error writing input to shell-command: %s"),
+          uv_err_name(status));
+  }
+  if (stream->closed) {  // Process may have exited before this write.
+    ELOG("stream was already closed");
+    return;
+  }
   stream_close(stream, NULL, NULL);
 }
+
+/// Applies 'shellxescape' (p_sxe) and 'shellxquote' (p_sxq) to a command.
+///
+/// @param cmd Command string
+/// @return    Escaped/quoted command string (allocated).
+static char *shell_xescape_xquote(const char *cmd)
+  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_MALLOC FUNC_ATTR_WARN_UNUSED_RESULT
+{
+  if (*p_sxq == NUL) {
+    return xstrdup(cmd);
+  }
+
+  const char *ecmd = cmd;
+  if (*p_sxe != NUL && STRCMP(p_sxq, "(") == 0) {
+    ecmd = (char *)vim_strsave_escaped_ext((char_u *)cmd, p_sxe, '^', false);
+  }
+  size_t ncmd_size = strlen(ecmd) + STRLEN(p_sxq) * 2 + 1;
+  char *ncmd = xmalloc(ncmd_size);
+
+  // When 'shellxquote' is ( append ).
+  // When 'shellxquote' is "( append )".
+  if (STRCMP(p_sxq, "(") == 0) {
+    vim_snprintf(ncmd, ncmd_size, "(%s)", ecmd);
+  } else if (STRCMP(p_sxq, "\"(") == 0) {
+    vim_snprintf(ncmd, ncmd_size, "\"(%s)\"", ecmd);
+  } else {
+    vim_snprintf(ncmd, ncmd_size, "%s%s%s", p_sxq, ecmd, p_sxq);
+  }
+
+  if (ecmd != cmd) {
+    xfree((void *)ecmd);
+  }
+
+  return ncmd;
+}
+

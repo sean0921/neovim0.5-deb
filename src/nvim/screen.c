@@ -108,7 +108,6 @@
 #include "nvim/menu.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/garray.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -120,6 +119,7 @@
 #include "nvim/regexp.h"
 #include "nvim/search.h"
 #include "nvim/spell.h"
+#include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/syntax.h"
 #include "nvim/terminal.h"
@@ -420,9 +420,10 @@ void update_screen(int type)
     }
   }
   end_search_hl();
-  /* May need to redraw the popup menu. */
-  if (pum_visible())
+  // May need to redraw the popup menu.
+  if (pum_drawn()) {
     pum_redraw();
+  }
 
   /* Reset b_mod_set flags.  Going through all windows is probably faster
    * than going through all buffers (there could be many buffers). */
@@ -1400,7 +1401,7 @@ static void win_update(win_T *wp)
                  && wp->w_lines[idx].wl_valid
                  && wp->w_lines[idx].wl_lnum == lnum
                  && lnum > wp->w_topline
-                 && !(dy_flags & DY_LASTLINE)
+                 && !(dy_flags & (DY_LASTLINE | DY_TRUNCATE))
                  && srow + wp->w_lines[idx].wl_size > wp->w_height
                  && diff_check_fill(wp, lnum) == 0
                  ) {
@@ -1483,10 +1484,20 @@ static void win_update(win_T *wp)
       /* Window ends in filler lines. */
       wp->w_botline = lnum;
       wp->w_filler_rows = wp->w_height - srow;
-    } else if (dy_flags & DY_LASTLINE) {      /* 'display' has "lastline" */
-      /*
-       * Last line isn't finished: Display "@@@" at the end.
-       */
+    } else if (dy_flags & DY_TRUNCATE) {      // 'display' has "truncate"
+      int scr_row = wp->w_winrow + wp->w_height - 1;
+
+      // Last line isn't finished: Display "@@@" in the last screen line.
+      screen_puts_len((char_u *)"@@", 2, scr_row, wp->w_wincol,
+                      hl_attr(HLF_AT));
+
+      screen_fill(scr_row, scr_row + 1,
+                  (int)wp->w_wincol + 2, (int)W_ENDCOL(wp),
+                  '@', ' ', hl_attr(HLF_AT));
+      set_empty_rows(wp, srow);
+      wp->w_botline = lnum;
+    } else if (dy_flags & DY_LASTLINE) {      // 'display' has "lastline"
+      // Last line isn't finished: Display "@@@" at the end.
       screen_fill(wp->w_winrow + wp->w_height - 1,
                   wp->w_winrow + wp->w_height,
                   W_ENDCOL(wp) - 3, W_ENDCOL(wp),
@@ -2209,8 +2220,8 @@ win_line (
                                         ///< force wrapping
   int vcol_off        = 0;              ///< offset for concealed characters
   int did_wcol        = false;
-  int match_conc      = false;          ///< cchar for match functions
-  int has_match_conc  = false;          ///< match wants to conceal
+  int match_conc      = 0;              ///< cchar for match functions
+  int has_match_conc  = 0;              ///< match wants to conceal
   int old_boguscols = 0;
 # define VCOL_HLC (vcol - vcol_off)
 # define FIX_FOR_BOGUSCOLS \
@@ -2403,11 +2414,14 @@ win_line (
   if (v != 0)
       line_attr = sign_get_attr((int)v, TRUE);
 
-  /* Highlight the current line in the quickfix window. */
-  if (bt_quickfix(wp->w_buffer) && qf_current_entry(wp) == lnum)
-    line_attr = hl_attr(HLF_L);
-  if (line_attr != 0)
-    area_highlighting = TRUE;
+  // Highlight the current line in the quickfix window.
+  if (bt_quickfix(wp->w_buffer) && qf_current_entry(wp) == lnum) {
+    line_attr = hl_attr(HLF_QFL);
+  }
+
+  if (line_attr != 0) {
+    area_highlighting = true;
+  }
 
   line = ml_get_buf(wp->w_buffer, lnum, FALSE);
   ptr = line;
@@ -2624,7 +2638,12 @@ win_line (
    * then. */
   if (wp->w_p_cul && lnum == wp->w_cursor.lnum
       && !(wp == curwin && VIsual_active)) {
-    line_attr = hl_attr(HLF_CUL);
+    if (line_attr != 0 && !(State & INSERT) && bt_quickfix(wp->w_buffer)
+        && qf_current_entry(wp) == lnum) {
+      line_attr = hl_combine_attr(hl_attr(HLF_CUL), line_attr);
+    } else {
+      line_attr = hl_attr(HLF_CUL);
+    }
     area_highlighting = true;
   }
 
@@ -2647,7 +2666,7 @@ win_line (
 
   // Repeat for the whole displayed line.
   for (;; ) {
-    has_match_conc = false;
+    has_match_conc = 0;
     // Skip this quickly when working on the text.
     if (draw_state != WL_LINE) {
       if (draw_state == WL_CMDLINE - 1 && n_extra == 0) {
@@ -2897,10 +2916,10 @@ win_line (
               shl->attr_cur = shl->attr;
               if (cur != NULL && syn_name2id((char_u *)"Conceal")
                   == cur->hlg_id) {
-                has_match_conc = true;
+                has_match_conc = v == (long)shl->startcol ? 2 : 1;
                 match_conc = cur->conceal_char;
               } else {
-                has_match_conc = match_conc = false;
+                has_match_conc = match_conc = 0;
               }
             } else if (v == (long)shl->endcol) {
               shl->attr_cur = 0;
@@ -3624,11 +3643,11 @@ win_line (
       if (wp->w_p_cole > 0
           && (wp != curwin || lnum != wp->w_cursor.lnum
               || conceal_cursor_line(wp))
-          && ((syntax_flags & HL_CONCEAL) != 0 || has_match_conc)
+          && ((syntax_flags & HL_CONCEAL) != 0 || has_match_conc > 0)
           && !(lnum_in_visual_area
                && vim_strchr(wp->w_p_cocu, 'v') == NULL)) {
         char_attr = conceal_attr;
-        if (prev_syntax_id != syntax_seqnr
+        if ((prev_syntax_id != syntax_seqnr || has_match_conc > 1)
             && (syn_get_sub_char() != NUL || match_conc
                 || wp->w_p_cole == 1)
             && wp->w_p_cole != 3) {
@@ -4819,15 +4838,12 @@ void win_redr_status(win_T *wp)
 
   wp->w_redr_status = FALSE;
   if (wp->w_status_height == 0) {
-    /* no status line, can only be last window */
-    redraw_cmdline = TRUE;
-  } else if (!redrawing()
-             /* don't update status line when popup menu is visible and may be
-              * drawn over it */
-             || pum_visible()
-             ) {
-    /* Don't redraw right now, do it later. */
-    wp->w_redr_status = TRUE;
+    // no status line, can only be last window
+    redraw_cmdline = true;
+  } else if (!redrawing() || pum_drawn()) {
+    // Don't redraw right now, do it later. Don't update status line when
+    // popup menu is visible and may be drawn over it
+    wp->w_redr_status = true;
   } else if (*p_stl != NUL || *wp->w_p_stl != NUL) {
     /* redraw custom status line */
     redraw_custom_statusline(wp);
@@ -7073,9 +7089,9 @@ void showruler(int always)
 {
   if (!always && !redrawing())
     return;
-  if (pum_visible()) {
-    /* Don't redraw right now, do it later. */
-    curwin->w_redr_status = TRUE;
+  if (pum_drawn()) {
+    // Don't redraw right now, do it later.
+    curwin->w_redr_status = true;
     return;
   }
   if ((*p_stl != NUL || *curwin->w_p_stl != NUL) && curwin->w_status_height) {
@@ -7111,9 +7127,10 @@ static void win_redr_ruler(win_T *wp, int always)
   if (wp == lastwin && lastwin->w_status_height == 0)
     if (edit_submode != NULL)
       return;
-  /* Don't draw the ruler when the popup menu is visible, it may overlap. */
-  if (pum_visible())
+  // Don't draw the ruler when the popup menu is visible, it may overlap.
+  if (pum_drawn()) {
     return;
+  }
 
   if (*p_ruf) {
     int save_called_emsg = called_emsg;
@@ -7363,7 +7380,7 @@ void screen_resize(int width, int height)
         redrawcmdline();
       } else {
         update_topline();
-        if (pum_visible()) {
+        if (pum_drawn()) {
           redraw_later(NOT_VALID);
           ins_compl_show_pum();           /* This includes the redraw. */
         } else

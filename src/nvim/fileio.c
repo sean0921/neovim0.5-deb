@@ -32,7 +32,6 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/garray.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -44,6 +43,7 @@
 #include "nvim/screen.h"
 #include "nvim/search.h"
 #include "nvim/sha256.h"
+#include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/ui.h"
 #include "nvim/types.h"
@@ -3773,8 +3773,9 @@ static int set_rw_fname(char_u *fname, char_u *sfname)
 
   /* Do filetype detection now if 'filetype' is empty. */
   if (*curbuf->b_p_ft == NUL) {
-    if (au_has_group((char_u *)"filetypedetect"))
-      (void)do_doautocmd((char_u *)"filetypedetect BufRead", FALSE);
+    if (au_has_group((char_u *)"filetypedetect")) {
+      (void)do_doautocmd((char_u *)"filetypedetect BufRead", false, NULL);
+    }
     do_modelines(0);
   }
 
@@ -4446,11 +4447,95 @@ bool vim_fgets(char_u *buf, int size, FILE *fp) FUNC_ATTR_NONNULL_ALL
   return eof == NULL;
 }
 
-/*
- * os_rename() only works if both files are on the same file system, this
- * function will (attempts to?) copy the file across if rename fails -- webb
- * Return -1 for failure, 0 for success.
- */
+/// Read 2 bytes from "fd" and turn them into an int, MSB first.
+int get2c(FILE *fd)
+{
+  int n;
+
+  n = getc(fd);
+  n = (n << 8) + getc(fd);
+  return n;
+}
+
+/// Read 3 bytes from "fd" and turn them into an int, MSB first.
+int get3c(FILE *fd)
+{
+  int n;
+
+  n = getc(fd);
+  n = (n << 8) + getc(fd);
+  n = (n << 8) + getc(fd);
+  return n;
+}
+
+/// Read 4 bytes from "fd" and turn them into an int, MSB first.
+int get4c(FILE *fd)
+{
+  // Use unsigned rather than int otherwise result is undefined
+  // when left-shift sets the MSB.
+  unsigned n;
+
+  n = (unsigned)getc(fd);
+  n = (n << 8) + (unsigned)getc(fd);
+  n = (n << 8) + (unsigned)getc(fd);
+  n = (n << 8) + (unsigned)getc(fd);
+  return (int)n;
+}
+
+/// Read 8 bytes from `fd` and turn them into a time_t, MSB first.
+time_t get8ctime(FILE *fd)
+{
+  time_t n = 0;
+  int i;
+
+  for (i = 0; i < 8; i++) {
+    n = (n << 8) + getc(fd);
+  }
+  return n;
+}
+
+/// Reads a string of length "cnt" from "fd" into allocated memory.
+/// @return pointer to the string or NULL when unable to read that many bytes.
+char *read_string(FILE *fd, size_t cnt)
+{
+  char *str = xmallocz(cnt);
+  for (size_t i = 0; i < cnt; i++) {
+    int c = getc(fd);
+    if (c == EOF) {
+      xfree(str);
+      return NULL;
+    }
+    str[i] = (char)c;
+  }
+  return str;
+}
+
+/// Writes a number to file "fd", most significant bit first, in "len" bytes.
+/// @returns false in case of an error.
+bool put_bytes(FILE *fd, uintmax_t number, size_t len)
+{
+  assert(len > 0);
+  for (size_t i = len - 1; i < len; i--) {
+    if (putc((int)(number >> (i * 8)), fd) == EOF) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Writes time_t to file "fd" in 8 bytes.
+/// @returns FAIL when the write failed.
+int put_time(FILE *fd, time_t time_)
+{
+  uint8_t buf[8];
+  time_to_bytes(time_, buf);
+  return fwrite(buf, sizeof(uint8_t), ARRAY_SIZE(buf), fd) == 1 ? OK : FAIL;
+}
+
+/// os_rename() only works if both files are on the same file system, this
+/// function will (attempts to?) copy the file across if rename fails -- webb
+//
+/// @return -1 for failure, 0 for success
 int vim_rename(char_u *from, char_u *to)
 {
   int fd_in;
@@ -6058,12 +6143,17 @@ static int do_autocmd_event(event_T event, char_u *pat, int nested, char_u *cmd,
 int 
 do_doautocmd (
     char_u *arg,
-    int do_msg                 /* give message for no matching autocmds? */
+    int do_msg,  // give message for no matching autocmds?
+    bool *did_something
 )
 {
   char_u      *fname;
   int nothing_done = TRUE;
   int group;
+
+  if (did_something != NULL) {
+    *did_something = false;
+  }
 
   /*
    * Check for a legal group name.  If not, use AUGROUP_ALL.
@@ -6093,8 +6183,12 @@ do_doautocmd (
             fname, NULL, TRUE, group, curbuf, NULL))
       nothing_done = FALSE;
 
-  if (nothing_done && do_msg)
+  if (nothing_done && do_msg) {
     MSG(_("No matching autocommands"));
+  }
+  if (did_something != NULL) {
+    *did_something = !nothing_done;
+  }
 
   return aborting() ? FAIL : OK;
 }
@@ -6123,13 +6217,14 @@ void ex_doautoall(exarg_T *eap)
     /* find a window for this buffer and save some values */
     aucmd_prepbuf(&aco, buf);
 
-    /* execute the autocommands for this buffer */
-    retval = do_doautocmd(arg, FALSE);
+    bool did_aucmd;
+    // execute the autocommands for this buffer
+    retval = do_doautocmd(arg, false, &did_aucmd);
 
-    if (call_do_modelines) {
-      /* Execute the modeline settings, but don't set window-local
-       * options if we are using the current window for another
-       * buffer. */
+    if (call_do_modelines && did_aucmd) {
+      // Execute the modeline settings, but don't set window-local
+      // options if we are using the current window for another
+      // buffer.
       do_modelines(curwin == aucmd_win ? OPT_NOWIN : 0);
     }
 

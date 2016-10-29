@@ -4,6 +4,7 @@ local os = require('os')
 local clear, feed, insert = helpers.clear, helpers.feed, helpers.insert
 local execute, request, eq = helpers.execute, helpers.request, helpers.eq
 
+if helpers.pending_win32(pending) then return end
 
 describe('color scheme compatibility', function()
   before_each(function()
@@ -12,7 +13,7 @@ describe('color scheme compatibility', function()
 
   it('t_Co is set to 256 by default', function()
     eq('256', request('vim_eval', '&t_Co'))
-    request('vim_set_option', 't_Co', '88')
+    request('nvim_set_option', 't_Co', '88')
     eq('88', request('vim_eval', '&t_Co'))
   end)
 end)

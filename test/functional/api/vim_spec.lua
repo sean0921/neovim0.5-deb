@@ -1,4 +1,3 @@
--- Sanity checks for vim_* API calls via msgpack-rpc
 local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
 local NIL = helpers.NIL
@@ -7,13 +6,14 @@ local ok, nvim_async, feed = helpers.ok, helpers.nvim_async, helpers.feed
 local os_name = helpers.os_name
 local meths = helpers.meths
 local funcs = helpers.funcs
+local request = helpers.request
 
-describe('vim_* functions', function()
+describe('api', function()
   before_each(clear)
 
-  describe('command', function()
+  describe('nvim_command', function()
     it('works', function()
-      local fname = os.tmpname()
+      local fname = helpers.tmpname()
       nvim('command', 'new')
       nvim('command', 'edit '..fname)
       nvim('command', 'normal itesting\napi')
@@ -28,9 +28,18 @@ describe('vim_* functions', function()
       f:close()
       os.remove(fname)
     end)
+
+    it("VimL error: fails (VimL error), does NOT update v:errmsg", function()
+      -- Most API methods return generic errors (or no error) if a VimL
+      -- expression fails; nvim_command returns the VimL error details.
+      local status, rv = pcall(nvim, "command", "bogus_command")
+      eq(false, status)                       -- nvim_command() failed.
+      eq("E492:", string.match(rv, "E%d*:"))  -- VimL error was returned.
+      eq("", nvim("eval", "v:errmsg"))        -- v:errmsg was not updated.
+    end)
   end)
 
-  describe('eval', function()
+  describe('nvim_eval', function()
     it('works', function()
       nvim('command', 'let g:v1 = "a"')
       nvim('command', 'let g:v2 = [1, 2, {"v3": 3}]')
@@ -41,18 +50,45 @@ describe('vim_* functions', function()
       eq(1, nvim('eval',"matcharg(1) == ['', '']"))
       eq({'', ''}, nvim('eval','matcharg(1)'))
     end)
+
+    it('works under deprecated name', function()
+      eq(2, request("vim_eval", "1+1"))
+    end)
+
+    it("VimL error: fails (generic error), does NOT update v:errmsg", function()
+      local status, rv = pcall(nvim, "eval", "bogus expression")
+      eq(false, status)                 -- nvim_eval() failed.
+      ok(nil ~= string.find(rv, "Failed to evaluate expression"))
+      eq("", nvim("eval", "v:errmsg"))  -- v:errmsg was not updated.
+    end)
   end)
 
-  describe('call_function', function()
+  describe('nvim_call_function', function()
     it('works', function()
       nvim('call_function', 'setqflist', {{{ filename = 'something', lnum = 17}}, 'r'})
       eq(17, nvim('call_function', 'getqflist', {})[1].lnum)
       eq(17, nvim('call_function', 'eval', {17}))
       eq('foo', nvim('call_function', 'simplify', {'this/./is//redundant/../../../foo'}))
     end)
+
+    it("VimL error: fails (generic error), does NOT update v:errmsg", function()
+      local status, rv = pcall(nvim, "call_function", "bogus function", {"arg1"})
+      eq(false, status)                 -- nvim_call_function() failed.
+      ok(nil ~= string.find(rv, "Error calling function"))
+      eq("", nvim("eval", "v:errmsg"))  -- v:errmsg was not updated.
+    end)
   end)
 
-  describe('strwidth', function()
+  describe('nvim_input', function()
+    it("VimL error: does NOT fail, updates v:errmsg", function()
+      local status, _ = pcall(nvim, "input", ":call bogus_fn()<CR>")
+      local v_errnum = string.match(nvim("eval", "v:errmsg"), "E%d*:")
+      eq(true, status)        -- nvim_input() did not fail.
+      eq("E117:", v_errnum)   -- v:errmsg was updated.
+    end)
+  end)
+
+  describe('nvim_strwidth', function()
     it('works', function()
       eq(3, nvim('strwidth', 'abc'))
       -- 6 + (neovim)
@@ -65,7 +101,7 @@ describe('vim_* functions', function()
     end)
   end)
 
-  describe('{get,set}_current_line', function()
+  describe('nvim_get_current_line, nvim_set_current_line', function()
     it('works', function()
       eq('', nvim('get_current_line'))
       nvim('set_current_line', 'abc')
@@ -73,7 +109,7 @@ describe('vim_* functions', function()
     end)
   end)
 
-  describe('{get,set,del}_var', function()
+  describe('nvim_get_var, nvim_set_var, nvim_del_var', function()
     it('works', function()
       nvim('set_var', 'lua', {1, 2, {['3'] = 1}})
       eq({1, 2, {['3'] = 1}}, nvim('get_var', 'lua'))
@@ -83,19 +119,19 @@ describe('vim_* functions', function()
       eq(0, funcs.exists('g:lua'))
     end)
 
-    it('set_var returns the old value', function()
+    it('vim_set_var returns the old value', function()
       local val1 = {1, 2, {['3'] = 1}}
       local val2 = {4, 7}
-      eq(NIL, nvim('set_var', 'lua', val1))
-      eq(val1, nvim('set_var', 'lua', val2))
+      eq(NIL, request('vim_set_var', 'lua', val1))
+      eq(val1, request('vim_set_var', 'lua', val2))
     end)
 
-    it('del_var returns the old value', function()
+    it('vim_del_var returns the old value', function()
       local val1 = {1, 2, {['3'] = 1}}
       local val2 = {4, 7}
-      eq(NIL, meths.set_var('lua', val1))
-      eq(val1, meths.set_var('lua', val2))
-      eq(val2, meths.del_var('lua'))
+      eq(NIL,  request('vim_set_var', 'lua', val1))
+      eq(val1, request('vim_set_var', 'lua', val2))
+      eq(val2, request('vim_del_var', 'lua'))
     end)
 
     it('truncates values with NULs in them', function()
@@ -104,7 +140,7 @@ describe('vim_* functions', function()
     end)
   end)
 
-  describe('{get,set}_option', function()
+  describe('nvim_get_option, nvim_set_option', function()
     it('works', function()
       ok(nvim('get_option', 'equalalways'))
       nvim('set_option', 'equalalways', false)
@@ -112,51 +148,51 @@ describe('vim_* functions', function()
     end)
   end)
 
-  describe('{get,set}_current_buffer and get_buffers', function()
+  describe('nvim_{get,set}_current_buf, nvim_list_bufs', function()
     it('works', function()
-      eq(1, #nvim('get_buffers'))
-      eq(nvim('get_buffers')[1], nvim('get_current_buffer'))
+      eq(1, #nvim('list_bufs'))
+      eq(nvim('list_bufs')[1], nvim('get_current_buf'))
       nvim('command', 'new')
-      eq(2, #nvim('get_buffers'))
-      eq(nvim('get_buffers')[2], nvim('get_current_buffer'))
-      nvim('set_current_buffer', nvim('get_buffers')[1])
-      eq(nvim('get_buffers')[1], nvim('get_current_buffer'))
+      eq(2, #nvim('list_bufs'))
+      eq(nvim('list_bufs')[2], nvim('get_current_buf'))
+      nvim('set_current_buf', nvim('list_bufs')[1])
+      eq(nvim('list_bufs')[1], nvim('get_current_buf'))
     end)
   end)
 
-  describe('{get,set}_current_window and get_windows', function()
+  describe('nvim_{get,set}_current_win, nvim_list_wins', function()
     it('works', function()
-      eq(1, #nvim('get_windows'))
-      eq(nvim('get_windows')[1], nvim('get_current_window'))
+      eq(1, #nvim('list_wins'))
+      eq(nvim('list_wins')[1], nvim('get_current_win'))
       nvim('command', 'vsplit')
       nvim('command', 'split')
-      eq(3, #nvim('get_windows'))
-      eq(nvim('get_windows')[1], nvim('get_current_window'))
-      nvim('set_current_window', nvim('get_windows')[2])
-      eq(nvim('get_windows')[2], nvim('get_current_window'))
+      eq(3, #nvim('list_wins'))
+      eq(nvim('list_wins')[1], nvim('get_current_win'))
+      nvim('set_current_win', nvim('list_wins')[2])
+      eq(nvim('list_wins')[2], nvim('get_current_win'))
     end)
   end)
 
-  describe('{get,set}_current_tabpage and get_tabpages', function()
+  describe('nvim_{get,set}_current_tabpage, nvim_list_tabpages', function()
     it('works', function()
-      eq(1, #nvim('get_tabpages'))
-      eq(nvim('get_tabpages')[1], nvim('get_current_tabpage'))
+      eq(1, #nvim('list_tabpages'))
+      eq(nvim('list_tabpages')[1], nvim('get_current_tabpage'))
       nvim('command', 'tabnew')
-      eq(2, #nvim('get_tabpages'))
-      eq(2, #nvim('get_windows'))
-      eq(nvim('get_windows')[2], nvim('get_current_window'))
-      eq(nvim('get_tabpages')[2], nvim('get_current_tabpage'))
-      nvim('set_current_window', nvim('get_windows')[1])
+      eq(2, #nvim('list_tabpages'))
+      eq(2, #nvim('list_wins'))
+      eq(nvim('list_wins')[2], nvim('get_current_win'))
+      eq(nvim('list_tabpages')[2], nvim('get_current_tabpage'))
+      nvim('set_current_win', nvim('list_wins')[1])
       -- Switching window also switches tabpages if necessary
-      eq(nvim('get_tabpages')[1], nvim('get_current_tabpage'))
-      eq(nvim('get_windows')[1], nvim('get_current_window'))
-      nvim('set_current_tabpage', nvim('get_tabpages')[2])
-      eq(nvim('get_tabpages')[2], nvim('get_current_tabpage'))
-      eq(nvim('get_windows')[2], nvim('get_current_window'))
+      eq(nvim('list_tabpages')[1], nvim('get_current_tabpage'))
+      eq(nvim('list_wins')[1], nvim('get_current_win'))
+      nvim('set_current_tabpage', nvim('list_tabpages')[2])
+      eq(nvim('list_tabpages')[2], nvim('get_current_tabpage'))
+      eq(nvim('list_wins')[2], nvim('get_current_win'))
     end)
   end)
 
-  describe('replace_termcodes', function()
+  describe('nvim_replace_termcodes', function()
     it('escapes K_SPECIAL as K_SPECIAL KS_SPECIAL KE_FILLER', function()
       eq('\128\254X', helpers.nvim('replace_termcodes', '\128', true, true, true))
     end)
@@ -178,7 +214,7 @@ describe('vim_* functions', function()
     end)
   end)
 
-  describe('feedkeys', function()
+  describe('nvim_feedkeys', function()
     it('CSI escaping', function()
       local function on_setup()
         -- notice the special char(…) \xe2\80\xa6
@@ -205,7 +241,7 @@ describe('vim_* functions', function()
     end)
   end)
 
-  describe('err_write', function()
+  describe('nvim_err_write', function()
     local screen
 
     before_each(function()
@@ -293,9 +329,104 @@ describe('vim_* functions', function()
     end)
   end)
 
+  describe('nvim_call_atomic', function()
+    it('works', function()
+      meths.buf_set_lines(0, 0, -1, true, {'first'})
+      local req = {
+        {'nvim_get_current_line', {}},
+        {'nvim_set_current_line', {'second'}},
+      }
+      eq({{'first', NIL}, NIL}, meths.call_atomic(req))
+      eq({'second'}, meths.buf_get_lines(0, 0, -1, true))
+    end)
+
+    it('allows multiple return values', function()
+      local req = {
+        {'nvim_set_var', {'avar', true}},
+        {'nvim_set_var', {'bvar', 'string'}},
+        {'nvim_get_var', {'avar'}},
+        {'nvim_get_var', {'bvar'}},
+      }
+      eq({{NIL, NIL, true, 'string'}, NIL}, meths.call_atomic(req))
+    end)
+
+    it('is aborted by errors in call', function()
+      local error_types = meths.get_api_info()[2].error_types
+      local req = {
+        {'nvim_set_var', {'one', 1}},
+        {'nvim_buf_set_lines', {}},
+        {'nvim_set_var', {'two', 2}},
+      }
+      eq({{NIL}, {1, error_types.Exception.id,
+                  'Wrong number of arguments: expecting 5 but got 0'}},
+         meths.call_atomic(req))
+      eq(1, meths.get_var('one'))
+      eq(false, pcall(meths.get_var, 'two'))
+
+      -- still returns all previous successful calls
+      req = {
+        {'nvim_set_var', {'avar', 5}},
+        {'nvim_set_var', {'bvar', 'string'}},
+        {'nvim_get_var', {'avar'}},
+        {'nvim_buf_get_lines', {0, 10, 20, true}},
+        {'nvim_get_var', {'bvar'}},
+      }
+      eq({{NIL, NIL, 5}, {3, error_types.Validation.id, 'Index out of bounds'}},
+        meths.call_atomic(req))
+
+      req = {
+        {'i_am_not_a_method', {'xx'}},
+        {'nvim_set_var', {'avar', 10}},
+      }
+      eq({{}, {0, error_types.Exception.id, 'Invalid method name'}},
+         meths.call_atomic(req))
+      eq(5, meths.get_var('avar'))
+    end)
+
+    it('throws error on malformated arguments', function()
+      local req = {
+        {'nvim_set_var', {'avar', 1}},
+        {'nvim_set_var'},
+        {'nvim_set_var', {'avar', 2}},
+      }
+      local status, err = pcall(meths.call_atomic, req)
+      eq(false, status)
+      ok(err:match(' All items in calls array must be arrays of size 2') ~= nil)
+      -- call before was done, but not after
+      eq(1, meths.get_var('avar'))
+
+      req = {
+        {'nvim_set_var', {'bvar', {2,3}}},
+        12,
+      }
+      status, err = pcall(meths.call_atomic, req)
+      eq(false, status)
+      ok(err:match('All items in calls array must be arrays') ~= nil)
+      eq({2,3}, meths.get_var('bvar'))
+
+      req = {
+        {'nvim_set_current_line', 'little line'},
+        {'nvim_set_var', {'avar', 3}},
+      }
+      status, err = pcall(meths.call_atomic, req)
+      eq(false, status)
+      ok(err:match('args must be Array') ~= nil)
+      -- call before was done, but not after
+      eq(1, meths.get_var('avar'))
+      eq({''}, meths.buf_get_lines(0, 0, -1, true))
+    end)
+  end)
+
   it('can throw exceptions', function()
     local status, err = pcall(nvim, 'get_option', 'invalid-option')
     eq(false, status)
     ok(err:match('Invalid option name') ~= nil)
   end)
+
+  it("doesn't leak memory on incorrect argument types", function()
+    local status, err = pcall(nvim, 'set_current_dir',{'not', 'a', 'dir'})
+    eq(false, status)
+    ok(err:match(': Wrong type for argument 1, expecting String') ~= nil)
+  end)
+
 end)

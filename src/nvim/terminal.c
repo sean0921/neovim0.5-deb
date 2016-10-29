@@ -127,7 +127,7 @@ struct terminal {
   // we can't store a direct reference to the buffer because the
   // refresh_timer_cb may be called after the buffer was freed, and there's
   // no way to know if the memory was reused.
-  uint64_t buf_handle;
+  handle_T buf_handle;
   // program exited
   bool closed, destroy;
   // some vterm properties
@@ -166,7 +166,7 @@ void terminal_init(void)
   invalidated_terminals = pmap_new(ptr_t)();
   time_watcher_init(&main_loop, &refresh_timer, NULL);
   // refresh_timer_cb will redraw the screen which can call vimscript
-  refresh_timer.events = queue_new_child(main_loop.events);
+  refresh_timer.events = multiqueue_new_child(main_loop.events);
 
   // initialize a rgb->color index map for cterm attributes(VTermScreenCell
   // only has RGB information and we need color indexes for terminal UIs)
@@ -201,7 +201,7 @@ void terminal_init(void)
 void terminal_teardown(void)
 {
   time_watcher_stop(&refresh_timer);
-  queue_free(refresh_timer.events);
+  multiqueue_free(refresh_timer.events);
   time_watcher_close(&refresh_timer, NULL);
   pmap_free(ptr_t)(invalidated_terminals);
   map_free(int, int)(color_indexes);
@@ -366,10 +366,10 @@ void terminal_resize(Terminal *term, uint16_t width, uint16_t height)
 void terminal_enter(void)
 {
   buf_T *buf = curbuf;
+  assert(buf->terminal);  // Should only be called when curbuf has a terminal.
   TerminalState state, *s = &state;
   memset(s, 0, sizeof(TerminalState));
   s->term = buf->terminal;
-  assert(s->term && "should only be called when curbuf has a terminal");
 
   // Ensure the terminal is properly sized.
   terminal_resize(s->term, 0, 0);
@@ -445,7 +445,7 @@ static int terminal_execute(VimState *state, int key)
     case K_EVENT:
       // We cannot let an event free the terminal yet. It is still needed.
       s->term->refcount++;
-      queue_process_events(main_loop.events);
+      multiqueue_process_events(main_loop.events);
       s->term->refcount--;
       if (s->term->buf_handle == 0) {
         s->close = true;
@@ -623,11 +623,12 @@ static void buf_set_term_title(buf_T *buf, char *title)
     FUNC_ATTR_NONNULL_ALL
 {
   Error err;
-  api_free_object(dict_set_value(buf->b_vars,
-                                 cstr_as_string("term_title"),
-                                 STRING_OBJ(cstr_as_string(title)),
-                                 false,
-                                 &err));
+  dict_set_value(buf->b_vars,
+                 cstr_as_string("term_title"),
+                 STRING_OBJ(cstr_as_string(title)),
+                 false,
+                 false,
+                 &err);
 }
 
 static int term_settermprop(VTermProp prop, VTermValue *val, void *data)

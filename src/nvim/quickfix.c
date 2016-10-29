@@ -27,7 +27,6 @@
 #include "nvim/memline.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/memory.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -1732,15 +1731,29 @@ void qf_list(exarg_T *eap)
     EMSG(_(e_quickfix));
     return;
   }
+
+  bool plus = false;
+  if (*arg == '+') {
+    arg++;
+    plus = true;
+  }
   if (!get_list_range(&arg, &idx1, &idx2) || *arg != NUL) {
     EMSG(_(e_trailing));
     return;
   }
-  i = qi->qf_lists[qi->qf_curlist].qf_count;
-  if (idx1 < 0)
-    idx1 = (-idx1 > i) ? 0 : idx1 + i + 1;
-  if (idx2 < 0)
-    idx2 = (-idx2 > i) ? 0 : idx2 + i + 1;
+  if (plus) {
+    i = qi->qf_lists[qi->qf_curlist].qf_index;
+    idx2 = i + idx1;
+    idx1 = i;
+  } else {
+    i = qi->qf_lists[qi->qf_curlist].qf_count;
+    if (idx1 < 0) {
+      idx1 = (-idx1 > i) ? 0 : idx1 + i + 1;
+    }
+    if (idx2 < 0) {
+      idx2 = (-idx2 > i) ? 0 : idx2 + i + 1;
+    }
+  }
 
   if (qi->qf_lists[qi->qf_curlist].qf_nonevalid)
     all = TRUE;
@@ -1764,16 +1777,18 @@ void qf_list(exarg_T *eap)
         vim_snprintf((char *)IObuff, IOSIZE, "%2d %s",
             i, (char *)fname);
       msg_outtrans_attr(IObuff, i == qi->qf_lists[qi->qf_curlist].qf_index
-          ? hl_attr(HLF_L) : hl_attr(HLF_D));
-      if (qfp->qf_lnum == 0)
+                        ? hl_attr(HLF_QFL) : hl_attr(HLF_D));
+      if (qfp->qf_lnum == 0) {
         IObuff[0] = NUL;
-      else if (qfp->qf_col == 0)
-        sprintf((char *)IObuff, ":%" PRId64, (int64_t)qfp->qf_lnum);
-      else
-        sprintf((char *)IObuff, ":%" PRId64 " col %d",
-                (int64_t)qfp->qf_lnum, qfp->qf_col);
-      sprintf((char *)IObuff + STRLEN(IObuff), "%s:",
-          (char *)qf_types(qfp->qf_type, qfp->qf_nr));
+      } else if (qfp->qf_col == 0) {
+        vim_snprintf((char *)IObuff, IOSIZE, ":%" PRId64,
+                     (int64_t)qfp->qf_lnum);
+      } else {
+        vim_snprintf((char *)IObuff, IOSIZE, ":%" PRId64 " col %d",
+                     (int64_t)qfp->qf_lnum, qfp->qf_col);
+      }
+      vim_snprintf((char *)IObuff + STRLEN(IObuff), IOSIZE, "%s:",
+                   (char *)qf_types(qfp->qf_type, qfp->qf_nr));
       msg_puts_attr(IObuff, hl_attr(HLF_N));
       if (qfp->qf_pattern != NULL) {
         qf_fmt_text(qfp->qf_pattern, IObuff, IOSIZE);
@@ -3503,15 +3518,15 @@ int set_errorlist(win_T *wp, list_T *list, int action, char_u *title)
     if (d == NULL)
       continue;
 
-    char_u *filename = get_dict_string(d, (char_u *)"filename", true);
-    int bufnum = (int)get_dict_number(d, (char_u *)"bufnr");
-    long lnum = get_dict_number(d, (char_u *)"lnum");
-    int col = (int)get_dict_number(d, (char_u *)"col");
-    char_u vcol = (char_u)get_dict_number(d, (char_u *)"vcol");
-    int nr = (int)get_dict_number(d, (char_u *)"nr");
-    char_u *type = get_dict_string(d, (char_u *)"type", true);
-    char_u *pattern = get_dict_string(d, (char_u *)"pattern", true);
-    char_u *text = get_dict_string(d, (char_u *)"text", true);
+    char_u *filename = get_dict_string(d, "filename", true);
+    int bufnum = (int)get_dict_number(d, "bufnr");
+    long lnum = get_dict_number(d, "lnum");
+    int col = (int)get_dict_number(d, "col");
+    char_u vcol = (char_u)get_dict_number(d, "vcol");
+    int nr = (int)get_dict_number(d, "nr");
+    char_u *type = get_dict_string(d, "type", true);
+    char_u *pattern = get_dict_string(d, "pattern", true);
+    char_u *text = get_dict_string(d, "text", true);
     if (text == NULL) {
       text = vim_strsave((char_u *)"");
     }

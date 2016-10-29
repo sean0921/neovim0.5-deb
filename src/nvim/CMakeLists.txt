@@ -11,31 +11,37 @@ endif()
 endif()
 
 set(GENERATED_DIR ${PROJECT_BINARY_DIR}/src/nvim/auto)
-set(DISPATCH_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/msgpack-gen.lua)
+set(DISPATCH_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/gendispatch.lua)
 file(GLOB API_HEADERS api/*.h)
 file(GLOB MSGPACK_RPC_HEADERS msgpack_rpc/*.h)
-set(MSGPACK_DISPATCH ${GENERATED_DIR}/msgpack_dispatch.c)
+set(API_METADATA ${PROJECT_BINARY_DIR}/api_metadata.mpack)
+set(FUNCS_DATA ${PROJECT_BINARY_DIR}/funcs_data.mpack)
 set(HEADER_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/gendeclarations.lua)
 set(GENERATED_INCLUDES_DIR ${PROJECT_BINARY_DIR}/include)
+set(GENERATED_API_DISPATCH ${GENERATED_DIR}/api/private/dispatch_wrappers.generated.h)
+set(GENERATED_FUNCS_METADATA ${GENERATED_DIR}/api/private/funcs_metadata.generated.h)
 set(GENERATED_EX_CMDS_ENUM ${GENERATED_INCLUDES_DIR}/ex_cmds_enum.generated.h)
 set(GENERATED_EX_CMDS_DEFS ${GENERATED_DIR}/ex_cmds_defs.generated.h)
+set(GENERATED_FUNCS_HASH_INPUT ${GENERATED_DIR}/funcs.generated.h.gperf)
+set(GENERATED_FUNCS ${GENERATED_DIR}/funcs.generated.h)
 set(GENERATED_EVENTS_ENUM ${GENERATED_INCLUDES_DIR}/auevents_enum.generated.h)
 set(GENERATED_EVENTS_NAMES_MAP ${GENERATED_DIR}/auevents_name_map.generated.h)
 set(GENERATED_OPTIONS ${GENERATED_DIR}/options.generated.h)
 set(EX_CMDS_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/genex_cmds.lua)
+set(FUNCS_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/geneval.lua)
 set(EVENTS_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/gen_events.lua)
 set(OPTIONS_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/genoptions.lua)
 set(EVENTS_LIST_FILE ${PROJECT_SOURCE_DIR}/src/nvim/auevents.lua)
 set(EX_CMDS_DEFS_FILE ${PROJECT_SOURCE_DIR}/src/nvim/ex_cmds.lua)
+set(EVAL_DEFS_FILE ${PROJECT_SOURCE_DIR}/src/nvim/eval.lua)
 set(OPTIONS_LIST_FILE ${PROJECT_SOURCE_DIR}/src/nvim/options.lua)
 set(UNICODE_TABLES_GENERATOR ${PROJECT_SOURCE_DIR}/scripts/genunicodetables.lua)
 set(UNICODE_DIR ${PROJECT_SOURCE_DIR}/unicode)
-set(UNICODEDATA_FILE ${UNICODE_DIR}/UnicodeData.txt)
-set(CASEFOLDING_FILE ${UNICODE_DIR}/CaseFolding.txt)
-set(EASTASIANWIDTH_FILE ${UNICODE_DIR}/EastAsianWidth.txt)
+file(GLOB UNICODE_FILES ${UNICODE_DIR}/*.txt)
 set(GENERATED_UNICODE_TABLES ${GENERATED_DIR}/unicode_tables.generated.h)
 
 include_directories(${GENERATED_DIR})
+include_directories(${CACHED_GENERATED_DIR})
 include_directories(${GENERATED_INCLUDES_DIR})
 
 file(MAKE_DIRECTORY ${GENERATED_DIR})
@@ -82,7 +88,7 @@ endforeach()
 
 list(REMOVE_ITEM NEOVIM_SOURCES ${to_remove})
 
-# Handle legacy files that don't yet pass -Wconversion.
+# Legacy files that do not yet pass -Wconversion.
 set(CONV_SOURCES
   buffer.c
   diff.c
@@ -112,6 +118,15 @@ endforeach()
 if(NOT MSVC)
   set_source_files_properties(
     ${CONV_SOURCES} PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS} -Wno-conversion")
+  # gperf generates ANSI-C with incorrect linkage, ignore it.
+  check_c_compiler_flag(-Wno-static-in-inline HAS_WNO_STATIC_IN_INLINE_FLAG)
+  if(HAS_WNO_STATIC_IN_INLINE_FLAG)
+    set_source_files_properties(
+      eval.c PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS} -Wno-static-in-inline -Wno-conversion")
+  else()
+    set_source_files_properties(
+      eval.c PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS} -Wno-conversion")
+  endif()
 endif()
 
 if(DEFINED MIN_LOG_LEVEL)
@@ -138,9 +153,13 @@ separate_arguments(C_FLAGS_${build_type}_ARRAY UNIX_COMMAND ${CMAKE_C_FLAGS_${bu
 set(gen_cflags ${gen_cflags} ${C_FLAGS_${build_type}_ARRAY} ${C_FLAGS_ARRAY})
 
 foreach(sfile ${NEOVIM_SOURCES}
-              "${PROJECT_SOURCE_DIR}/src/nvim/regexp_nfa.c")
+              "${PROJECT_SOURCE_DIR}/src/nvim/regexp_nfa.c"
+              ${GENERATED_API_DISPATCH})
   get_filename_component(full_d ${sfile} PATH)
   file(RELATIVE_PATH d "${PROJECT_SOURCE_DIR}/src/nvim" "${full_d}")
+  if(${d} MATCHES "^([.][.]|auto/)")
+    file(RELATIVE_PATH d "${GENERATED_DIR}" "${full_d}")
+  endif()
   get_filename_component(f ${sfile} NAME)
   get_filename_component(r ${sfile} NAME_WE)
   if(NOT ${d} EQUAL ".")
@@ -172,28 +191,28 @@ endforeach()
 
 add_custom_command(OUTPUT ${GENERATED_UNICODE_TABLES}
   COMMAND ${LUA_PRG} ${UNICODE_TABLES_GENERATOR}
-                     ${UNICODEDATA_FILE}
-                     ${CASEFOLDING_FILE}
-                     ${EASTASIANWIDTH_FILE}
+                     ${UNICODE_DIR}
                      ${GENERATED_UNICODE_TABLES}
   DEPENDS
     ${UNICODE_TABLES_GENERATOR}
-    ${UNICODEDATA_FILE}
-    ${CASEFOLDING_FILE}
-    ${EASTASIANWIDTH_FILE}
+    ${UNICODE_FILES}
 )
 
-add_custom_command(OUTPUT ${MSGPACK_DISPATCH}
-  COMMAND ${LUA_PRG} ${DISPATCH_GENERATOR} ${API_HEADERS} ${MSGPACK_DISPATCH}
+add_custom_command(OUTPUT ${GENERATED_API_DISPATCH} ${GENERATED_FUNCS_METADATA}
+                          ${API_METADATA}
+  COMMAND ${LUA_PRG} ${DISPATCH_GENERATOR} ${CMAKE_CURRENT_LIST_DIR}
+                     ${API_HEADERS} ${GENERATED_API_DISPATCH}
+                     ${GENERATED_FUNCS_METADATA} ${API_METADATA}
   DEPENDS
     ${API_HEADERS}
     ${MSGPACK_RPC_HEADERS}
     ${DISPATCH_GENERATOR}
+    ${CMAKE_CURRENT_LIST_DIR}/api/dispatch_deprecated.lua
 )
 
 list(APPEND NEOVIM_GENERATED_SOURCES
   "${PROJECT_BINARY_DIR}/config/auto/pathdef.c"
-  "${MSGPACK_DISPATCH}"
+  "${GENERATED_API_DISPATCH}"
   "${GENERATED_EX_CMDS_ENUM}"
   "${GENERATED_EX_CMDS_DEFS}"
   "${GENERATED_EVENTS_ENUM}"
@@ -207,6 +226,19 @@ add_custom_command(OUTPUT ${GENERATED_EX_CMDS_ENUM} ${GENERATED_EX_CMDS_DEFS}
       ${PROJECT_SOURCE_DIR}/src/nvim ${GENERATED_INCLUDES_DIR} ${GENERATED_DIR}
   DEPENDS ${EX_CMDS_GENERATOR} ${EX_CMDS_DEFS_FILE}
 )
+
+if(NOT GPERF_PRG)
+  message(FATAL_ERROR "gperf was not found.")
+endif()
+add_custom_command(OUTPUT ${GENERATED_FUNCS} ${FUNCS_DATA}
+  COMMAND ${LUA_PRG} ${FUNCS_GENERATOR}
+  ${PROJECT_SOURCE_DIR}/src/nvim ${GENERATED_DIR} ${API_METADATA} ${FUNCS_DATA}
+  COMMAND ${GPERF_PRG}
+    ${GENERATED_FUNCS_HASH_INPUT} --output-file=${GENERATED_FUNCS}
+    DEPENDS ${FUNCS_GENERATOR} ${EVAL_DEFS_FILE} ${API_METADATA}
+)
+list(APPEND NEOVIM_GENERATED_SOURCES
+  "${GENERATED_FUNCS}")
 
 add_custom_command(OUTPUT ${GENERATED_EVENTS_ENUM} ${GENERATED_EVENTS_NAMES_MAP}
   COMMAND ${LUA_PRG} ${EVENTS_GENERATOR}

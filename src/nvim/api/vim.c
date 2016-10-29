@@ -14,6 +14,7 @@
 #include "nvim/msgpack_rpc/channel.h"
 #include "nvim/vim.h"
 #include "nvim/buffer.h"
+#include "nvim/file_search.h"
 #include "nvim/window.h"
 #include "nvim/types.h"
 #include "nvim/ex_docmd.h"
@@ -21,7 +22,7 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/eval.h"
-#include "nvim/misc2.h"
+#include "nvim/option.h"
 #include "nvim/syntax.h"
 #include "nvim/getchar.h"
 #include "nvim/os/input.h"
@@ -32,36 +33,34 @@
 # include "api/vim.c.generated.h"
 #endif
 
-/// Executes an ex-mode command str
+/// Executes an ex-command.
+/// On VimL error: Returns the VimL error; v:errmsg is not updated.
 ///
-/// @param str The command str
-/// @param[out] err Details of an error that may have occurred
-void vim_command(String str, Error *err)
+/// @param command  Ex-command string
+/// @param[out] err Error details (including actual VimL error), if any
+void nvim_command(String command, Error *err)
 {
   // Run the command
   try_start();
-  do_cmdline_cmd(str.data);
+  do_cmdline_cmd(command.data);
   update_screen(VALID);
   try_end(err);
 }
 
-/// Passes input keys to Neovim
+/// Passes input keys to Nvim.
+/// On VimL error: Does not fail, but updates v:errmsg.
 ///
-/// @param keys to be typed
-/// @param mode specifies the mapping options
-/// @param escape_csi the string needs escaping for K_SPECIAL/CSI bytes
+/// @param keys         to be typed
+/// @param mode         mapping options
+/// @param escape_csi   If true, escape K_SPECIAL/CSI bytes in `keys`
 /// @see feedkeys()
 /// @see vim_strsave_escape_csi
-void vim_feedkeys(String keys, String mode, Boolean escape_csi)
+void nvim_feedkeys(String keys, String mode, Boolean escape_csi)
 {
   bool remap = true;
   bool insert = false;
   bool typed = false;
   bool execute = false;
-
-  if (keys.size == 0) {
-    return;
-  }
 
   for (size_t i = 0; i < mode.size; ++i) {
     switch (mode.data[i]) {
@@ -71,6 +70,10 @@ void vim_feedkeys(String keys, String mode, Boolean escape_csi)
     case 'i': insert = true; break;
     case 'x': execute = true; break;
     }
+  }
+
+  if (keys.size == 0 && !execute) {
+    return;
   }
 
   char *keys_esc;
@@ -92,18 +95,25 @@ void vim_feedkeys(String keys, String mode, Boolean escape_csi)
     typebuf_was_filled = true;
   }
   if (execute) {
+    int save_msg_scroll = msg_scroll;
+
+    /* Avoid a 1 second delay when the keys start Insert mode. */
+    msg_scroll = false;
     exec_normal(true);
+    msg_scroll |= save_msg_scroll;
   }
 }
 
-/// Passes input keys to Neovim. Unlike `vim_feedkeys`, this will use a
-/// lower-level input buffer and the call is not deferred.
-/// This is the most reliable way to emulate real user input.
+/// Passes keys to Nvim as raw user-input.
+/// On VimL error: Does not fail, but updates v:errmsg.
+///
+/// Unlike `nvim_feedkeys`, this uses a lower-level input buffer and the call
+/// is not deferred. This is the most reliable way to emulate real user input.
 ///
 /// @param keys to be typed
-/// @return The number of bytes actually written, which can be lower than
-///         requested if the buffer becomes full.
-Integer vim_input(String keys)
+/// @return Number of bytes actually written (can be fewer than
+///         requested if the buffer becomes full).
+Integer nvim_input(String keys)
     FUNC_API_ASYNC
 {
   return (Integer)input_enqueue(keys);
@@ -113,7 +123,7 @@ Integer vim_input(String keys)
 ///
 /// @see replace_termcodes
 /// @see cpoptions
-String vim_replace_termcodes(String str, Boolean from_part, Boolean do_lt,
+String nvim_replace_termcodes(String str, Boolean from_part, Boolean do_lt,
                               Boolean special)
 {
   if (str.size == 0) {
@@ -133,10 +143,10 @@ String vim_replace_termcodes(String str, Boolean from_part, Boolean do_lt,
   return cstr_as_string(ptr);
 }
 
-String vim_command_output(String str, Error *err)
+String nvim_command_output(String str, Error *err)
 {
   do_cmdline_cmd("redir => v:command_output");
-  vim_command(str, err);
+  nvim_command(str, err);
   do_cmdline_cmd("redir END");
 
   if (err->set) {
@@ -146,19 +156,19 @@ String vim_command_output(String str, Error *err)
   return cstr_to_string((char *)get_vim_var_str(VV_COMMAND_OUTPUT));
 }
 
-/// Evaluates the expression str using the Vim internal expression
-/// evaluator (see |expression|).
-/// Dictionaries and lists are recursively expanded.
+/// Evaluates a VimL expression (:help expression).
+/// Dictionaries and Lists are recursively expanded.
+/// On VimL error: Returns a generic error; v:errmsg is not updated.
 ///
-/// @param str The expression str
-/// @param[out] err Details of an error that may have occurred
-/// @return The expanded object
-Object vim_eval(String str, Error *err)
+/// @param expr     VimL expression string
+/// @param[out] err Error details, if any
+/// @return         Evaluation result or expanded object
+Object nvim_eval(String expr, Error *err)
 {
   Object rv = OBJECT_INIT;
   // Evaluate the expression
   try_start();
-  typval_T *expr_result = eval_expr((char_u *) str.data, NULL);
+  typval_T *expr_result = eval_expr((char_u *)expr.data, NULL);
 
   if (!expr_result) {
     api_set_error(err, Exception, _("Failed to evaluate expression"));
@@ -174,13 +184,14 @@ Object vim_eval(String str, Error *err)
   return rv;
 }
 
-/// Call the given function with the given arguments stored in an array.
+/// Calls a VimL function with the given arguments.
+/// On VimL error: Returns a generic error; v:errmsg is not updated.
 ///
-/// @param fname Function to call
-/// @param args Functions arguments packed in an Array
-/// @param[out] err Details of an error that may have occurred
+/// @param fname    Function to call
+/// @param args     Function arguments packed in an Array
+/// @param[out] err Error details, if any
 /// @return Result of the function call
-Object vim_call_function(String fname, Array args, Error *err)
+Object nvim_call_function(String fname, Array args, Error *err)
 {
   Object rv = OBJECT_INIT;
   if (args.size > MAX_FUNC_ARGS) {
@@ -223,13 +234,13 @@ free_vim_args:
   return rv;
 }
 
-/// Calculates the number of display cells `str` occupies, tab is counted as
-/// one cell.
+/// Calculates the number of display cells occupied by `text`.
+/// <Tab> counts as one cell.
 ///
-/// @param str Some text
-/// @param[out] err Details of an error that may have occurred
-/// @return The number of cells
-Integer vim_strwidth(String str, Error *err)
+/// @param text       Some text
+/// @param[out] err   Error details, if any
+/// @return Number of cells
+Integer nvim_strwidth(String str, Error *err)
 {
   if (str.size > INT_MAX) {
     api_set_error(err, Validation, _("String length is too high"));
@@ -239,10 +250,10 @@ Integer vim_strwidth(String str, Error *err)
   return (Integer) mb_string2cells((char_u *) str.data);
 }
 
-/// Gets a list of paths contained in 'runtimepath'
+/// Gets the paths contained in 'runtimepath'.
 ///
-/// @return The list of paths
-ArrayOf(String) vim_list_runtime_paths(void)
+/// @return List of paths
+ArrayOf(String) nvim_list_runtime_paths(void)
 {
   Array rv = ARRAY_DICT_INIT;
   uint8_t *rtp = p_rtp;
@@ -279,11 +290,11 @@ ArrayOf(String) vim_list_runtime_paths(void)
   return rv;
 }
 
-/// Changes Vim working directory
+/// Changes the global working directory.
 ///
-/// @param dir The new working directory
-/// @param[out] err Details of an error that may have occurred
-void vim_change_directory(String dir, Error *err)
+/// @param dir      Directory path
+/// @param[out] err Error details, if any
+void nvim_set_current_dir(String dir, Error *err)
 {
   if (dir.size >= MAXPATHL) {
     api_set_error(err, Validation, _("Directory string is too long"));
@@ -309,127 +320,148 @@ void vim_change_directory(String dir, Error *err)
 
 /// Gets the current line
 ///
-/// @param[out] err Details of an error that may have occurred
-/// @return The current line string
-String vim_get_current_line(Error *err)
+/// @param[out] err Error details, if any
+/// @return Current line string
+String nvim_get_current_line(Error *err)
 {
   return buffer_get_line(curbuf->handle, curwin->w_cursor.lnum - 1, err);
 }
 
 /// Sets the current line
 ///
-/// @param line The line contents
-/// @param[out] err Details of an error that may have occurred
-void vim_set_current_line(String line, Error *err)
+/// @param line     Line contents
+/// @param[out] err Error details, if any
+void nvim_set_current_line(String line, Error *err)
 {
   buffer_set_line(curbuf->handle, curwin->w_cursor.lnum - 1, line, err);
 }
 
 /// Deletes the current line
 ///
-/// @param[out] err Details of an error that may have occurred
-void vim_del_current_line(Error *err)
+/// @param[out] err Error details, if any
+void nvim_del_current_line(Error *err)
 {
   buffer_del_line(curbuf->handle, curwin->w_cursor.lnum - 1, err);
 }
 
-/// Gets a global variable
+/// Gets a global (g:) variable
 ///
-/// @param name The variable name
-/// @param[out] err Details of an error that may have occurred
-/// @return The variable value
-Object vim_get_var(String name, Error *err)
+/// @param name     Variable name
+/// @param[out] err Error details, if any
+/// @return Variable value
+Object nvim_get_var(String name, Error *err)
 {
   return dict_get_value(&globvardict, name, err);
 }
 
+/// Sets a global (g:) variable
+///
+/// @param name     Variable name
+/// @param value    Variable value
+/// @param[out] err Error details, if any
+void nvim_set_var(String name, Object value, Error *err)
+{
+  dict_set_value(&globvardict, name, value, false, false, err);
+}
+
+/// Removes a global (g:) variable
+///
+/// @param name     Variable name
+/// @param[out] err Error details, if any
+void nvim_del_var(String name, Error *err)
+{
+  dict_set_value(&globvardict, name, NIL, true, false, err);
+}
+
 /// Sets a global variable
 ///
-/// @param name The variable name
-/// @param value The variable value
-/// @param[out] err Details of an error that may have occurred
-/// @return The old value or nil if there was no previous value.
+/// @deprecated
+///
+/// @param name     Variable name
+/// @param value    Variable value
+/// @param[out] err Error details, if any
+/// @return Old value or nil if there was no previous value.
 ///
 ///         @warning It may return nil if there was no previous value
 ///                  or if previous value was `v:null`.
 Object vim_set_var(String name, Object value, Error *err)
 {
-  return dict_set_value(&globvardict, name, value, false, err);
+  return dict_set_value(&globvardict, name, value, false, true, err);
 }
 
 /// Removes a global variable
 ///
-/// @param name The variable name
-/// @param[out] err Details of an error that may have occurred
-/// @return The old value or nil if there was no previous value.
+/// @deprecated
 ///
-///         @warning It may return nil if there was no previous value
-///                  or if previous value was `v:null`.
+/// @param name     Variable name
+/// @param[out] err Error details, if any
+/// @return Old value
 Object vim_del_var(String name, Error *err)
 {
-  return dict_set_value(&globvardict, name, NIL, true, err);
+  return dict_set_value(&globvardict, name, NIL, true, true, err);
 }
 
-/// Gets a vim variable
+/// Gets a v: variable
 ///
-/// @param name The variable name
-/// @param[out] err Details of an error that may have occurred
-/// @return The variable value
-Object vim_get_vvar(String name, Error *err)
+/// @param name     Variable name
+/// @param[out] err Error details, if any
+/// @return         Variable value
+Object nvim_get_vvar(String name, Error *err)
 {
   return dict_get_value(&vimvardict, name, err);
 }
 
 /// Gets an option value string
 ///
-/// @param name The option name
-/// @param[out] err Details of an error that may have occurred
-/// @return The option value
-Object vim_get_option(String name, Error *err)
+/// @param name     Option name
+/// @param[out] err Error details, if any
+/// @return         Option value
+Object nvim_get_option(String name, Error *err)
 {
   return get_option_from(NULL, SREQ_GLOBAL, name, err);
 }
 
 /// Sets an option value
 ///
-/// @param name The option name
-/// @param value The new option value
-/// @param[out] err Details of an error that may have occurred
-void vim_set_option(String name, Object value, Error *err)
+/// @param name     Option name
+/// @param value    New option value
+/// @param[out] err Error details, if any
+void nvim_set_option(String name, Object value, Error *err)
 {
   set_option_to(NULL, SREQ_GLOBAL, name, value, err);
 }
 
 /// Writes a message to vim output buffer
 ///
-/// @param str The message
-void vim_out_write(String str)
+/// @param str Message
+void nvim_out_write(String str)
 {
   write_msg(str, false);
 }
 
 /// Writes a message to vim error buffer
 ///
-/// @param str The message
-void vim_err_write(String str)
+/// @param str Message
+void nvim_err_write(String str)
 {
   write_msg(str, true);
 }
 
-/// Higher level error reporting function that ensures all str contents
-/// are written by sending a trailing linefeed to `vim_err_write`
+/// Writes a message to vim error buffer. Appends a linefeed to ensure all
+/// contents are written.
 ///
-/// @param str The message
-void vim_report_error(String str)
+/// @param str Message
+/// @see nvim_err_write()
+void nvim_err_writeln(String str)
 {
-  vim_err_write(str);
-  vim_err_write((String) {.data = "\n", .size = 1});
+  nvim_err_write(str);
+  nvim_err_write((String) { .data = "\n", .size = 1 });
 }
 
 /// Gets the current list of buffer handles
 ///
-/// @return The number of buffers
-ArrayOf(Buffer) vim_get_buffers(void)
+/// @return List of buffer handles
+ArrayOf(Buffer) nvim_list_bufs(void)
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -449,17 +481,17 @@ ArrayOf(Buffer) vim_get_buffers(void)
 
 /// Gets the current buffer
 ///
-/// @reqturn The buffer handle
-Buffer vim_get_current_buffer(void)
+/// @return Buffer handle
+Buffer nvim_get_current_buf(void)
 {
   return curbuf->handle;
 }
 
 /// Sets the current buffer
 ///
-/// @param id The buffer handle
-/// @param[out] err Details of an error that may have occurred
-void vim_set_current_buffer(Buffer buffer, Error *err)
+/// @param id       Buffer handle
+/// @param[out] err Error details, if any
+void nvim_set_current_buf(Buffer buffer, Error *err)
 {
   buf_T *buf = find_buffer_by_handle(buffer, err);
 
@@ -472,15 +504,15 @@ void vim_set_current_buffer(Buffer buffer, Error *err)
   if (!try_end(err) && result == FAIL) {
     api_set_error(err,
                   Exception,
-                  _("Failed to switch to buffer %" PRIu64),
+                  _("Failed to switch to buffer %d"),
                   buffer);
   }
 }
 
 /// Gets the current list of window handles
 ///
-/// @return The number of windows
-ArrayOf(Window) vim_get_windows(void)
+/// @return List of window handles
+ArrayOf(Window) nvim_list_wins(void)
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -500,16 +532,16 @@ ArrayOf(Window) vim_get_windows(void)
 
 /// Gets the current window
 ///
-/// @return The window handle
-Window vim_get_current_window(void)
+/// @return Window handle
+Window nvim_get_current_win(void)
 {
   return curwin->handle;
 }
 
 /// Sets the current window
 ///
-/// @param handle The window handle
-void vim_set_current_window(Window window, Error *err)
+/// @param handle Window handle
+void nvim_set_current_win(Window window, Error *err)
 {
   win_T *win = find_window_by_handle(window, err);
 
@@ -522,15 +554,15 @@ void vim_set_current_window(Window window, Error *err)
   if (!try_end(err) && win != curwin) {
     api_set_error(err,
                   Exception,
-                  _("Failed to switch to window %" PRIu64),
+                  _("Failed to switch to window %d"),
                   window);
   }
 }
 
 /// Gets the current list of tabpage handles
 ///
-/// @return The number of tab pages
-ArrayOf(Tabpage) vim_get_tabpages(void)
+/// @return List of tabpage handles
+ArrayOf(Tabpage) nvim_list_tabpages(void)
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -548,19 +580,19 @@ ArrayOf(Tabpage) vim_get_tabpages(void)
   return rv;
 }
 
-/// Gets the current tab page
+/// Gets the current tabpage
 ///
-/// @return The tab page handle
-Tabpage vim_get_current_tabpage(void)
+/// @return Tabpage handle
+Tabpage nvim_get_current_tabpage(void)
 {
   return curtab->handle;
 }
 
-/// Sets the current tab page
+/// Sets the current tabpage
 ///
-/// @param handle The tab page handle
-/// @param[out] err Details of an error that may have occurred
-void vim_set_current_tabpage(Tabpage tabpage, Error *err)
+/// @param handle   Tabpage handle
+/// @param[out] err Error details, if any
+void nvim_set_current_tabpage(Tabpage tabpage, Error *err)
 {
   tabpage_T *tp = find_tab_by_handle(tabpage, err);
 
@@ -573,16 +605,17 @@ void vim_set_current_tabpage(Tabpage tabpage, Error *err)
   if (!try_end(err) && tp != curtab) {
     api_set_error(err,
                   Exception,
-                  _("Failed to switch to tabpage %" PRIu64),
+                  _("Failed to switch to tabpage %d"),
                   tabpage);
   }
 }
 
 /// Subscribes to event broadcasts
 ///
-/// @param channel_id The channel id (passed automatically by the dispatcher)
-/// @param event The event type string
-void vim_subscribe(uint64_t channel_id, String event)
+/// @param channel_id Channel id (passed automatically by the dispatcher)
+/// @param event      Event type string
+void nvim_subscribe(uint64_t channel_id, String event)
+    FUNC_API_NOEVAL
 {
   size_t length = (event.size < METHOD_MAXLEN ? event.size : METHOD_MAXLEN);
   char e[METHOD_MAXLEN + 1];
@@ -593,9 +626,10 @@ void vim_subscribe(uint64_t channel_id, String event)
 
 /// Unsubscribes to event broadcasts
 ///
-/// @param channel_id The channel id (passed automatically by the dispatcher)
-/// @param event The event type string
-void vim_unsubscribe(uint64_t channel_id, String event)
+/// @param channel_id Channel id (passed automatically by the dispatcher)
+/// @param event      Event type string
+void nvim_unsubscribe(uint64_t channel_id, String event)
+    FUNC_API_NOEVAL
 {
   size_t length = (event.size < METHOD_MAXLEN ?
                    event.size :
@@ -606,12 +640,12 @@ void vim_unsubscribe(uint64_t channel_id, String event)
   channel_unsubscribe(channel_id, e);
 }
 
-Integer vim_name_to_color(String name)
+Integer nvim_get_color_by_name(String name)
 {
   return name_to_color((uint8_t *)name.data);
 }
 
-Dictionary vim_get_color_map(void)
+Dictionary nvim_get_color_map(void)
 {
   Dictionary colors = ARRAY_DICT_INIT;
 
@@ -623,8 +657,8 @@ Dictionary vim_get_color_map(void)
 }
 
 
-Array vim_get_api_info(uint64_t channel_id)
-    FUNC_API_ASYNC
+Array nvim_get_api_info(uint64_t channel_id)
+    FUNC_API_ASYNC FUNC_API_NOEVAL
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -635,13 +669,101 @@ Array vim_get_api_info(uint64_t channel_id)
   return rv;
 }
 
+/// Call many api methods atomically
+///
+/// This has two main usages: Firstly, to perform several requests from an
+/// async context atomically, i.e. without processing requests from other rpc
+/// clients or redrawing or allowing user interaction in between. Note that api
+/// methods that could fire autocommands or do event processing still might do
+/// so. For instance invoking the :sleep command might call timer callbacks.
+/// Secondly, it can be used to reduce rpc overhead (roundtrips) when doing
+/// many requests in sequence.
+///
+/// @param calls an array of calls, where each call is described by an array
+/// with two elements: the request name, and an array of arguments.
+/// @param[out] err Details of a validation error of the nvim_multi_request call
+/// itself, i e malformatted `calls` parameter. Errors from called methods will
+/// be indicated in the return value, see below.
+///
+/// @return an array with two elements. The first is an array of return
+/// values. The second is NIL if all calls succeeded. If a call resulted in
+/// an error, it is a three-element array with the zero-based index of the call
+/// which resulted in an error, the error type and the error message. If an
+/// error ocurred, the values from all preceding calls will still be returned.
+Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
+  FUNC_API_NOEVAL
+{
+  Array rv = ARRAY_DICT_INIT;
+  Array results = ARRAY_DICT_INIT;
+  Error nested_error = ERROR_INIT;
+
+  size_t i;  // also used for freeing the variables
+  for (i = 0; i < calls.size; i++) {
+    if (calls.items[i].type != kObjectTypeArray) {
+      api_set_error(err,
+                    Validation,
+                    _("All items in calls array must be arrays"));
+      goto validation_error;
+    }
+    Array call = calls.items[i].data.array;
+    if (call.size != 2) {
+      api_set_error(err,
+                    Validation,
+                    _("All items in calls array must be arrays of size 2"));
+      goto validation_error;
+    }
+
+    if (call.items[0].type != kObjectTypeString) {
+      api_set_error(err,
+                    Validation,
+                    _("name must be String"));
+      goto validation_error;
+    }
+    String name = call.items[0].data.string;
+
+    if (call.items[1].type != kObjectTypeArray) {
+      api_set_error(err,
+                    Validation,
+                    _("args must be Array"));
+      goto validation_error;
+    }
+    Array args = call.items[1].data.array;
+
+    MsgpackRpcRequestHandler handler = msgpack_rpc_get_handler_for(name.data,
+                                                                   name.size);
+    Object result = handler.fn(channel_id, args, &nested_error);
+    if (nested_error.set) {
+      // error handled after loop
+      break;
+    }
+
+    ADD(results, result);
+  }
+
+  ADD(rv, ARRAY_OBJ(results));
+  if (nested_error.set) {
+    Array errval = ARRAY_DICT_INIT;
+    ADD(errval, INTEGER_OBJ((Integer)i));
+    ADD(errval, INTEGER_OBJ(nested_error.type));
+    ADD(errval, STRING_OBJ(cstr_to_string(nested_error.msg)));
+    ADD(rv, ARRAY_OBJ(errval));
+  } else {
+    ADD(rv, NIL);
+  }
+  return rv;
+
+validation_error:
+  api_free_array(results);
+  return rv;
+}
+
+
 /// Writes a message to vim output or error buffer. The string is split
 /// and flushed after each newline. Incomplete lines are kept for writing
 /// later.
 ///
-/// @param message The message to write
-/// @param to_err true if it should be treated as an error message (use
-///        `emsg` instead of `msg` to print each line)
+/// @param message  Message to write
+/// @param to_err   true: message is an error (uses `emsg` instead of `msg`)
 static void write_msg(String message, bool to_err)
 {
   static size_t out_pos = 0, err_pos = 0;

@@ -2,6 +2,9 @@
 #include <stdbool.h>
 
 #include <uv.h>
+#ifndef WIN32
+# include <signal.h>  // for sigset_t
+#endif
 
 #include "nvim/ascii.h"
 #include "nvim/vim.h"
@@ -11,7 +14,6 @@
 #include "nvim/main.h"
 #include "nvim/memory.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/event/signal.h"
 #include "nvim/os/signal.h"
 #include "nvim/event/loop.h"
@@ -29,6 +31,16 @@ static bool rejecting_deadly;
 
 void signal_init(void)
 {
+#ifndef WIN32
+  // Ensure a clean slate by unblocking all signals. For example, if SIGCHLD is
+  // blocked, libuv may hang after spawning a subprocess on Linux. #5230
+  sigset_t mask;
+  sigemptyset(&mask);
+  if (pthread_sigmask(SIG_SETMASK, &mask, NULL) != 0) {
+    ELOG("Could not unblock signals, nvim might behave strangely.");
+  }
+#endif
+
   signal_watcher_init(&main_loop, &spipe, NULL);
   signal_watcher_init(&main_loop, &shup, NULL);
   signal_watcher_init(&main_loop, &squit, NULL);

@@ -1,6 +1,8 @@
 local session = require('test.functional.helpers')(after_each)
 local child_session = require('test.functional.terminal.helpers')
 
+if session.pending_win32(pending) then return end
+
 describe("shell command :!", function()
   local screen
   before_each(function()
@@ -28,12 +30,12 @@ describe("shell command :!", function()
     --       to avoid triggering a UI flush.
     child_session.feed_data(":!printf foo; sleep 200\n")
     screen:expect([[
-      {1: }                                                 |
-      {4:~                                                 }|
       {4:~                                                 }|
       {4:~                                                 }|
       {5:[No Name]                                         }|
+      :!printf foo; sleep 200                           |
                                                         |
+      foo                                               |
       {3:-- TERMINAL --}                                    |
     ]])
   end)

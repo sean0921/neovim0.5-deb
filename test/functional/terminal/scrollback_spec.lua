@@ -6,6 +6,8 @@ local feed, nvim_dir, execute = helpers.feed, helpers.nvim_dir, helpers.execute
 local wait = helpers.wait
 local feed_data = thelpers.feed_data
 
+if helpers.pending_win32(pending) then return end
+
 describe('terminal scrollback', function()
   local screen
 
@@ -331,7 +333,7 @@ describe('terminal prints more lines than the screen height and exits', function
   it('will push extra lines to scrollback', function()
     clear()
     local screen = Screen.new(50, 7)
-    screen:attach(false)
+    screen:attach({rgb=false})
     execute('call termopen(["'..nvim_dir..'/tty-test", "10"]) | startinsert')
     wait()
     screen:expect([[

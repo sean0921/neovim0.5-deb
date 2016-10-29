@@ -5,11 +5,11 @@ local write_file, merge_args = helpers.write_file, helpers.merge_args
 
 local mpack = require('mpack')
 
-local tmpname = os.tmpname()
+local tmpname = helpers.tmpname()
 local additional_cmd = ''
 
-local function nvim_argv()
-  local argv = {nvim_prog, '-u', 'NONE', '-i', tmpname, '-N',
+local function nvim_argv(shada_file)
+  local argv = {nvim_prog, '-u', 'NONE', '-i', shada_file or tmpname, '-N',
                 '--cmd', 'set shortmess+=I background=light noswapfile',
                 '--cmd', additional_cmd,
                 '--embed'}
@@ -20,8 +20,8 @@ local function nvim_argv()
   end
 end
 
-local reset = function()
-  set_session(spawn(nvim_argv()))
+local reset = function(shada_file)
+  set_session(spawn(nvim_argv(shada_file)))
   meths.set_var('tmpname', tmpname)
 end
 

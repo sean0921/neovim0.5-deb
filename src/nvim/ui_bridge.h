@@ -1,4 +1,5 @@
-// Bridge used for communication between a builtin UI thread and nvim core
+// Bridge for communication between a UI thread and nvim core.
+// Used by the built-in TUI and external libnvim-based UIs.
 #ifndef NVIM_UI_BRIDGE_H
 #define NVIM_UI_BRIDGE_H
 
@@ -11,7 +12,7 @@ typedef struct ui_bridge_data UIBridgeData;
 typedef void(*ui_main_fn)(UIBridgeData *bridge, UI *ui);
 struct ui_bridge_data {
   UI bridge;  // actual UI passed to ui_attach
-  UI *ui;     // UI pointer that will have it's callback called in
+  UI *ui;     // UI pointer that will have its callback called in
               // another thread
   event_scheduler scheduler;
   uv_thread_t ui_thread;

@@ -30,7 +30,6 @@
 #include "nvim/memline.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/garray.h"
 #include "nvim/log.h"
 #include "nvim/memory.h"
@@ -58,13 +57,13 @@
 #include "nvim/event/loop.h"
 #include "nvim/os/signal.h"
 #include "nvim/event/process.h"
-#include "nvim/msgpack_rpc/defs.h"
 #include "nvim/msgpack_rpc/helpers.h"
 #include "nvim/msgpack_rpc/server.h"
 #include "nvim/msgpack_rpc/channel.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
 #include "nvim/api/private/handle.h"
+#include "nvim/api/private/dispatch.h"
 
 /* Maximum number of commands from + or -c arguments. */
 #define MAX_ARG_CMDS 10
@@ -157,7 +156,7 @@ void event_teardown(void)
     return;
   }
 
-  queue_process_events(main_loop.events);
+  multiqueue_process_events(main_loop.events);
   input_stop();
   channel_teardown();
   process_teardown(&main_loop);
@@ -166,7 +165,7 @@ void event_teardown(void)
   signal_teardown();
   terminal_teardown();
 
-  loop_close(&main_loop);
+  loop_close(&main_loop, true);
 }
 
 /// Performs early initialization.
@@ -271,11 +270,6 @@ int main(int argc, char **argv)
 
   setbuf(stdout, NULL);
 
-  /* This message comes before term inits, but after setting "silent_mode"
-   * when the input is not a tty. */
-  if (GARGCOUNT > 1 && !silent_mode)
-    printf(_("%d files to edit\n"), GARGCOUNT);
-
   full_screen = true;
   check_tty(&params);
 
@@ -321,14 +315,18 @@ int main(int argc, char **argv)
 
   // open terminals when opening files that start with term://
 #define PROTO "term://"
+  do_cmdline_cmd("augroup nvim_terminal");
+  do_cmdline_cmd("autocmd!");
   do_cmdline_cmd("autocmd BufReadCmd " PROTO "* nested "
-                 ":call termopen( "
+                 ":if !exists('b:term_title')|call termopen( "
                  // Capture the command string
                  "matchstr(expand(\"<amatch>\"), "
                  "'\\c\\m" PROTO "\\%(.\\{-}//\\%(\\d\\+:\\)\\?\\)\\?\\zs.*'), "
                  // capture the working directory
                  "{'cwd': get(matchlist(expand(\"<amatch>\"), "
-                 "'\\c\\m" PROTO "\\(.\\{-}\\)//'), 1, '')})");
+                 "'\\c\\m" PROTO "\\(.\\{-}\\)//'), 1, '')})"
+                 "|endif");
+  do_cmdline_cmd("augroup END");
 #undef PROTO
 
   /* Execute --cmd arguments. */

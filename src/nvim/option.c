@@ -246,7 +246,7 @@ typedef struct vimoption {
   "A:DiffAdd,C:DiffChange,D:DiffDelete,T:DiffText,>:SignColumn,-:Conceal," \
   "B:SpellBad,P:SpellCap,R:SpellRare,L:SpellLocal,+:Pmenu,=:PmenuSel," \
   "x:PmenuSbar,X:PmenuThumb,*:TabLine,#:TabLineSel,_:TabLineFill," \
-  "!:CursorColumn,.:CursorLine,o:ColorColumn"
+  "!:CursorColumn,.:CursorLine,o:ColorColumn,q:QuickFixLine"
 
 /*
  * options[] is initialized here.
@@ -1030,6 +1030,15 @@ void set_init_3(void)
       }
     }
     xfree(p);
+  }
+
+  if (bufempty()) {
+    int idx_ffs = findoption((char_u *)"ffs");
+
+    // Apply the first entry of 'fileformats' to the initial buffer.
+    if (idx_ffs >= 0 && (options[idx_ffs].flags & P_WAS_SET)) {
+      set_fileformat(default_fileformat(), OPT_LOCAL);
+    }
   }
 
   set_title_defaults();
@@ -2518,15 +2527,15 @@ did_set_string_option (
   else if (varp == &p_sbo) {
     if (check_opt_strings(p_sbo, p_scbopt_values, TRUE) != OK)
       errmsg = e_invarg;
-  }
-  /* 'ambiwidth' */
-  else if (varp == &p_ambw) {
-    if (check_opt_strings(p_ambw, p_ambw_values, FALSE) != OK)
+  } else if (varp == &p_ambw || (bool *)varp == &p_emoji) {
+    // 'ambiwidth'
+    if (check_opt_strings(p_ambw, p_ambw_values, false) != OK) {
       errmsg = e_invarg;
-    else if (set_chars_option(&p_lcs) != NULL)
+    } else if (set_chars_option(&p_lcs) != NULL) {
       errmsg = (char_u *)_("E834: Conflicts with value of 'listchars'");
-    else if (set_chars_option(&p_fcs) != NULL)
+    } else if (set_chars_option(&p_fcs) != NULL) {
       errmsg = (char_u *)_("E835: Conflicts with value of 'fillchars'");
+    }
   }
   /* 'background' */
   else if (varp == &p_bg) {
@@ -3658,14 +3667,16 @@ set_bool_option (
   /* when 'insertmode' is set from an autocommand need to do work here */
   else if ((int *)varp == &p_im) {
     if (p_im) {
-      if ((State & INSERT) == 0)
-        need_start_insertmode = TRUE;
-      stop_insert_mode = FALSE;
-    } else {
-      need_start_insertmode = FALSE;
-      stop_insert_mode = TRUE;
-      if (restart_edit != 0 && mode_displayed)
-        clear_cmdline = TRUE;           /* remove "(insert)" */
+      if ((State & INSERT) == 0) {
+        need_start_insertmode = true;
+      }
+      stop_insert_mode = false;
+    } else if (old_value) {  // only reset if it was set previously
+      need_start_insertmode = false;
+      stop_insert_mode = true;
+      if (restart_edit != 0 && mode_displayed) {
+        clear_cmdline = true;  // remove "(insert)"
+      }
       restart_edit = 0;
     }
   }
@@ -6585,10 +6596,8 @@ int get_sw_value(buf_T *buf)
   return (int)result;
 }
 
-/*
- * Return the effective softtabstop value for the current buffer, using the
- * 'tabstop' value when 'softtabstop' is negative.
- */
+// Return the effective softtabstop value for the current buffer,
+// using the effective shiftwidth  value when 'softtabstop' is negative.
 int get_sts_value(void)
 {
   long result = curbuf->b_p_sts < 0 ? get_sw_value(curbuf) : curbuf->b_p_sts;
@@ -6714,3 +6723,148 @@ unsigned int get_bkc_value(buf_T *buf)
 {
   return buf->b_bkc_flags ? buf->b_bkc_flags : bkc_flags;
 }
+
+/// Return the current end-of-line type: EOL_DOS, EOL_UNIX or EOL_MAC.
+int get_fileformat(buf_T *buf)
+{
+  int c = *buf->b_p_ff;
+
+  if (buf->b_p_bin || c == 'u') {
+    return EOL_UNIX;
+  }
+  if (c == 'm') {
+    return EOL_MAC;
+  }
+  return EOL_DOS;
+}
+
+/// Like get_fileformat(), but override 'fileformat' with "p" for "++opt=val"
+/// argument.
+///
+/// @param eap  can be NULL!
+int get_fileformat_force(buf_T *buf, exarg_T *eap)
+{
+  int c;
+
+  if (eap != NULL && eap->force_ff != 0) {
+    c = eap->cmd[eap->force_ff];
+  } else {
+    if ((eap != NULL && eap->force_bin != 0)
+        ? (eap->force_bin == FORCE_BIN) : buf->b_p_bin) {
+      return EOL_UNIX;
+    }
+    c = *buf->b_p_ff;
+  }
+  if (c == 'u') {
+    return EOL_UNIX;
+  }
+  if (c == 'm') {
+    return EOL_MAC;
+  }
+  return EOL_DOS;
+}
+
+/// Return the default fileformat from 'fileformats'.
+int default_fileformat(void)
+{
+  switch (*p_ffs) {
+  case 'm':   return EOL_MAC;
+  case 'd':   return EOL_DOS;
+  }
+  return EOL_UNIX;
+}
+
+/// Set the current end-of-line type to EOL_UNIX, EOL_MAC, or EOL_DOS.
+///
+/// Sets 'fileformat'.
+///
+/// @param eol_style End-of-line style.
+/// @param opt_flags OPT_LOCAL and/or OPT_GLOBAL
+void set_fileformat(int eol_style, int opt_flags)
+{
+  char *p = NULL;
+
+  switch (eol_style) {
+      case EOL_UNIX:
+          p = FF_UNIX;
+          break;
+      case EOL_MAC:
+          p = FF_MAC;
+          break;
+      case EOL_DOS:
+          p = FF_DOS;
+          break;
+  }
+
+  // p is NULL if "eol_style" is EOL_UNKNOWN.
+  if (p != NULL) {
+    set_string_option_direct((char_u *)"ff",
+                             -1,
+                             (char_u *)p,
+                             OPT_FREE | opt_flags,
+                             0);
+  }
+
+  // This may cause the buffer to become (un)modified.
+  check_status(curbuf);
+  redraw_tabline = true;
+  need_maketitle = true;  // Set window title later.
+}
+
+/// Skip to next part of an option argument: Skip space and comma.
+char_u *skip_to_option_part(char_u *p)
+{
+  if (*p == ',') {
+    p++;
+  }
+  while (*p == ' ') {
+    p++;
+  }
+  return p;
+}
+
+/// Isolate one part of a string option separated by `sep_chars`.
+///
+/// @param[in,out]  option    advanced to the next part
+/// @param[in,out]  buf       copy of the isolated part
+/// @param[in]      maxlen    length of `buf`
+/// @param[in]      sep_chars chars that separate the option parts
+///
+/// @return length of `*option`
+size_t copy_option_part(char_u **option, char_u *buf, size_t maxlen,
+                        char *sep_chars)
+{
+  size_t len = 0;
+  char_u  *p = *option;
+
+  // skip '.' at start of option part, for 'suffixes'
+  if (*p == '.') {
+    buf[len++] = *p++;
+  }
+  while (*p != NUL && vim_strchr((char_u *)sep_chars, *p) == NULL) {
+    // Skip backslash before a separator character and space.
+    if (p[0] == '\\' && vim_strchr((char_u *)sep_chars, p[1]) != NULL) {
+      p++;
+    }
+    if (len < maxlen - 1) {
+      buf[len++] = *p;
+    }
+    p++;
+  }
+  buf[len] = NUL;
+
+  if (*p != NUL && *p != ',') {  // skip non-standard separator
+    p++;
+  }
+  p = skip_to_option_part(p);    // p points to next file name
+
+  *option = p;
+  return len;
+}
+
+/// Return TRUE when 'shell' has "csh" in the tail.
+int csh_like_shell(void)
+{
+  return strstr((char *)path_tail(p_sh), "csh") != NULL;
+}
+

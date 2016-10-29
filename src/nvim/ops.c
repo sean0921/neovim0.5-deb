@@ -30,13 +30,13 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
 #include "nvim/option.h"
 #include "nvim/path.h"
 #include "nvim/screen.h"
 #include "nvim/search.h"
+#include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/terminal.h"
 #include "nvim/ui.h"
@@ -51,10 +51,10 @@ static yankreg_T *y_previous = NULL; /* ptr to last written yankreg */
 
 static bool clipboard_didwarn_unnamed = false;
 
-// for behavior between start_global_changes() and end_global_changes())
+// for behavior between start_batch_changes() and end_batch_changes())
 static bool clipboard_delay_update = false;  // delay clipboard update
-static int global_change_count = 0;          // if set, inside global changes
-static bool clipboard_needs_update = false;  // the clipboard was updated
+static int batch_change_count = 0;           // inside a script
+static bool clipboard_needs_update = false;  // clipboard was updated
 
 /*
  * structure used by block_prep, op_delete and op_yank for blockwise operators
@@ -3110,8 +3110,13 @@ error:
         if (dir == FORWARD)
           curbuf->b_op_start.lnum++;
       }
-      mark_adjust(curbuf->b_op_start.lnum + (y_type == kMTCharWise),
-                  (linenr_T)MAXLNUM, nr_lines, 0L);
+      // Skip mark_adjust when adding lines after the last one, there
+      // can't be marks there.
+      if (curbuf->b_op_start.lnum + (y_type == kMTCharWise) - 1 + nr_lines
+          < curbuf->b_ml.ml_line_count) {
+        mark_adjust(curbuf->b_op_start.lnum + (y_type == kMTCharWise),
+                    (linenr_T)MAXLNUM, nr_lines, 0L);
+      }
 
       // note changed text for displaying and folding
       if (y_type == kMTCharWise) {
@@ -5630,20 +5635,20 @@ static void set_clipboard(int name, yankreg_T *reg)
   (void)eval_call_provider("clipboard", "set", args);
 }
 
-/// Avoid clipboard (slow) during batch operations (:global).
-void start_global_changes(void)
+/// Avoid clipboard (slow) during batch operations (i.e., a script).
+void start_batch_changes(void)
 {
-  if (++global_change_count > 1) {
+  if (++batch_change_count > 1) {
     return;
   }
   clipboard_delay_update = true;
   clipboard_needs_update = false;
 }
 
-/// Update the clipboard after :global changes finished.
-void end_global_changes(void)
+/// Update the clipboard after batch changes finished.
+void end_batch_changes(void)
 {
-  if (--global_change_count > 0) {
+  if (--batch_change_count > 0) {
     // recursive
     return;
   }

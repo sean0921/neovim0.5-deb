@@ -8,6 +8,7 @@ local nvim_prog, command, funcs = helpers.nvim_prog, helpers.command, helpers.fu
 local source, next_message = helpers.source, helpers.next_message
 local meths = helpers.meths
 
+if helpers.pending_win32(pending) then return end
 
 describe('server -> client', function()
   local cid
@@ -140,8 +141,8 @@ describe('server -> client', function()
 
   describe('when the client is a recursive vim instance', function()
     if os.getenv("TRAVIS") and helpers.os_name() == "osx" then
-      -- XXX: Hangs Travis OSX since e9061117a5b8f195c3f26a5cb94e18ddd7752d86.
-      pending("[Hangs on Travis OSX. #5002]", function() end)
+      -- XXX: Hangs Travis macOS since e9061117a5b8f195c3f26a5cb94e18ddd7752d86.
+      pending("[Hangs on Travis macOS. #5002]", function() end)
       return
     end
 
@@ -162,11 +163,12 @@ describe('server -> client', function()
     end)
 
     it('can communicate buffers, tabpages, and windows', function()
-      eq({3}, eval("rpcrequest(vim, 'vim_get_tabpages')"))
-      eq({1}, eval("rpcrequest(vim, 'vim_get_windows')"))
+      eq({1}, eval("rpcrequest(vim, 'nvim_list_tabpages')"))
+      -- Window IDs start at 1000 (LOWEST_WIN_ID in vim.h)
+      eq({1000}, eval("rpcrequest(vim, 'nvim_list_wins')"))
 
-      local buf = eval("rpcrequest(vim, 'vim_get_buffers')")[1]
-      eq(2, buf)
+      local buf = eval("rpcrequest(vim, 'nvim_list_bufs')")[1]
+      eq(1, buf)
 
       eval("rpcnotify(vim, 'buffer_set_line', "..buf..", 0, 'SOME TEXT')")
       nvim('command', "call rpcrequest(vim, 'vim_eval', '0')")  -- wait

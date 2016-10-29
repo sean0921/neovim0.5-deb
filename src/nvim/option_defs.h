@@ -370,17 +370,17 @@ static char *(p_cb_values[]) = {"unnamed", "unnamedplus", NULL};
 # define CB_UNNAMED             0x001
 # define CB_UNNAMEDPLUS         0x002
 # define CB_UNNAMEDMASK         (CB_UNNAMED | CB_UNNAMEDPLUS)
-EXTERN long p_cwh;              /* 'cmdwinheight' */
-EXTERN long p_ch;               /* 'cmdheight' */
-EXTERN int p_confirm;           /* 'confirm' */
-EXTERN int p_cp;                /* 'compatible' */
-EXTERN char_u   *p_cot;         /* 'completeopt' */
-EXTERN long p_ph;               /* 'pumheight' */
-EXTERN char_u   *p_cpo;         /* 'cpoptions' */
-EXTERN char_u   *p_csprg;       /* 'cscopeprg' */
-EXTERN int p_csre;              /* 'cscoperelative' */
-EXTERN char_u   *p_csqf;        /* 'cscopequickfix' */
-#  define       CSQF_CMDS   "sgdctefi"
+EXTERN long p_cwh;              // 'cmdwinheight'
+EXTERN long p_ch;               // 'cmdheight'
+EXTERN int p_confirm;           // 'confirm'
+EXTERN int p_cp;                // 'compatible'
+EXTERN char_u   *p_cot;         // 'completeopt'
+EXTERN long p_ph;               // 'pumheight'
+EXTERN char_u   *p_cpo;         // 'cpoptions'
+EXTERN char_u   *p_csprg;       // 'cscopeprg'
+EXTERN int p_csre;              // 'cscoperelative'
+EXTERN char_u   *p_csqf;        // 'cscopequickfix'
+#  define       CSQF_CMDS   "sgdctefia"
 #  define       CSQF_FLAGS  "+-0"
 EXTERN int p_cst;               /* 'cscopetag' */
 EXTERN long p_csto;             /* 'cscopetagorder' */
@@ -397,28 +397,30 @@ EXTERN char_u   *p_dir;         /* 'directory' */
 EXTERN char_u   *p_dy;          /* 'display' */
 EXTERN unsigned dy_flags;
 #ifdef IN_OPTION_C
-static char *(p_dy_values[]) = {"lastline", "uhex", NULL};
+static char *(p_dy_values[]) = { "lastline", "truncate", "uhex", NULL };
 #endif
 #define DY_LASTLINE             0x001
-#define DY_UHEX                 0x002
-EXTERN int p_ed;                /* 'edcompatible' */
-EXTERN char_u   *p_ead;         /* 'eadirection' */
-EXTERN bool p_ea;               /* 'equalalways' */
-EXTERN char_u   *p_ep;          /* 'equalprg' */
-EXTERN int p_eb;                /* 'errorbells' */
-EXTERN char_u   *p_ef;          /* 'errorfile' */
-EXTERN char_u   *p_efm;         /* 'errorformat' */
-EXTERN char_u   *p_gefm;        /* 'grepformat' */
-EXTERN char_u   *p_gp;          /* 'grepprg' */
-EXTERN char_u   *p_ei;          /* 'eventignore' */
-EXTERN int p_ek;                /* 'esckeys' */
-EXTERN int p_exrc;              /* 'exrc' */
-EXTERN char_u   *p_fencs;       /* 'fileencodings' */
-EXTERN char_u   *p_ffs;         /* 'fileformats' */
-EXTERN bool p_fic;              ///< 'fileignorecase'
-EXTERN char_u   *p_fcl;         /* 'foldclose' */
-EXTERN long p_fdls;             /* 'foldlevelstart' */
-EXTERN char_u   *p_fdo;         /* 'foldopen' */
+#define DY_TRUNCATE             0x002
+#define DY_UHEX                 0x004
+EXTERN int p_ed;                // 'edcompatible'
+EXTERN bool p_emoji;            // 'emoji'
+EXTERN char_u   *p_ead;         // 'eadirection'
+EXTERN bool p_ea;               // 'equalalways'
+EXTERN char_u   *p_ep;          // 'equalprg'
+EXTERN int p_eb;                // 'errorbells'
+EXTERN char_u   *p_ef;          // 'errorfile'
+EXTERN char_u   *p_efm;         // 'errorformat'
+EXTERN char_u   *p_gefm;        // 'grepformat'
+EXTERN char_u   *p_gp;          // 'grepprg'
+EXTERN char_u   *p_ei;          // 'eventignore'
+EXTERN int p_ek;                // 'esckeys'
+EXTERN int p_exrc;              // 'exrc'
+EXTERN char_u   *p_fencs;       // 'fileencodings'
+EXTERN char_u   *p_ffs;         // 'fileformats'
+EXTERN bool p_fic;              // 'fileignorecase'
+EXTERN char_u   *p_fcl;         // 'foldclose'
+EXTERN long p_fdls;             // 'foldlevelstart'
+EXTERN char_u   *p_fdo;         // 'foldopen'
 EXTERN unsigned fdo_flags;
 # ifdef IN_OPTION_C
 static char *(p_fdo_values[]) = {"all", "block", "hor", "mark", "percent",

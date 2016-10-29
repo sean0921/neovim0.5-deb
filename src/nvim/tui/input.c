@@ -5,7 +5,6 @@
 #include "nvim/api/private/helpers.h"
 #include "nvim/ascii.h"
 #include "nvim/main.h"
-#include "nvim/misc2.h"
 #include "nvim/os/os.h"
 #include "nvim/os/input.h"
 #include "nvim/event/rstream.h"
@@ -216,8 +215,8 @@ static int get_key_code_timeout(void)
   // Check 'ttimeout' to determine if we should send ESC after 'ttimeoutlen'.
   // See :help 'ttimeout' for more information
   Error err = ERROR_INIT;
-  if (vim_get_option(cstr_as_string("ttimeout"), &err).data.boolean) {
-    ms = vim_get_option(cstr_as_string("ttimeoutlen"), &err).data.integer;
+  if (nvim_get_option(cstr_as_string("ttimeout"), &err).data.boolean) {
+    ms = nvim_get_option(cstr_as_string("ttimeoutlen"), &err).data.integer;
   }
 
   return (int)ms;
@@ -341,7 +340,7 @@ static void read_cb(Stream *stream, RBuffer *buf, size_t c, void *data,
       // ls *.md | xargs nvim
       input->in_fd = 2;
       stream_close(&input->read_stream, NULL, NULL);
-      queue_put(input->loop->fast_events, restart_reading, 1, input);
+      multiqueue_put(input->loop->fast_events, restart_reading, 1, input);
     } else {
       loop_schedule(&main_loop, event_create(1, input_done_event, 0));
     }

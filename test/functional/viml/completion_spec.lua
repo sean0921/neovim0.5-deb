@@ -4,6 +4,8 @@ local clear, feed = helpers.clear, helpers.feed
 local eval, eq, neq = helpers.eval, helpers.eq, helpers.neq
 local execute, source, expect = helpers.execute, helpers.source, helpers.expect
 
+if helpers.pending_win32(pending) then return end
+
 describe('completion', function()
   local screen
 
@@ -313,6 +315,62 @@ describe('completion', function()
       feed('i<C-r>=TestComplete()<CR><ESC>')
       eq(0, eval('&l:modified'))
     end)
+  end)
+
+  describe('completeopt+=noinsert does not add blank undo items', function()
+    before_each(function()
+      source([[
+      function! TestComplete() abort
+        call complete(1, ['foo', 'bar'])
+        return ''
+      endfunction
+      ]])
+      execute('set completeopt+=noselect,noinsert')
+      execute('inoremap <right> <c-r>=TestComplete()<cr>')
+    end)
+
+    local tests = {
+      ['<up>, <down>, <cr>'] = {'<down><cr>', '<up><cr>'},
+      ['<c-n>, <c-p>, <c-y>'] = {'<c-n><c-y>', '<c-p><c-y>'},
+    }
+
+    for name, seq in pairs(tests) do
+      it('using ' .. name, function()
+        feed('iaaa<esc>')
+        feed('A<right>' .. seq[1] .. '<esc>')
+        feed('A<right><esc>A<right><esc>')
+        feed('A<cr>bbb<esc>')
+        feed('A<right>' .. seq[2] .. '<esc>')
+        feed('A<right><esc>A<right><esc>')
+        feed('A<cr>ccc<esc>')
+        feed('A<right>' .. seq[1] .. '<esc>')
+        feed('A<right><esc>A<right><esc>')
+
+        local expected = {
+          {'foo', 'bar', 'foo'},
+          {'foo', 'bar', 'ccc'},
+          {'foo', 'bar'},
+          {'foo', 'bbb'},
+          {'foo'},
+          {'aaa'},
+          {''},
+        }
+
+        for i = 1, #expected do
+          if i > 1 then
+            feed('u')
+          end
+          eq(expected[i], eval('getline(1, "$")'))
+        end
+
+        for i = #expected, 1, -1 do
+          if i < #expected then
+            feed('<c-r>')
+          end
+          eq(expected[i], eval('getline(1, "$")'))
+        end
+      end)
+    end
   end)
 
   describe("refresh:always", function()
@@ -753,6 +811,108 @@ describe('completion', function()
         {9:[Command Line]                                              }|
         :foo faa fee foo^                                            |
       ]])
+    end)
+  end)
+
+end)
+
+describe('External completion popupmenu', function()
+  local screen
+  local items, selected, anchor
+  before_each(function()
+    clear()
+    screen = Screen.new(60, 8)
+    screen:attach({rgb=true, popupmenu_external=true})
+    screen:set_default_attr_ids({
+      [1] = {bold=true, foreground=Screen.colors.Blue},
+      [2] = {bold = true},
+    })
+    screen:set_on_event_handler(function(name, data)
+      if name == "popupmenu_show" then
+        local row, col
+        items, selected, row, col = unpack(data)
+        anchor = {row, col}
+      elseif name == "popupmenu_select" then
+        selected = data[1]
+      elseif name == "popupmenu_hide" then
+        items = nil
+      end
+    end)
+  end)
+
+  it('works', function()
+    source([[
+      function! TestComplete() abort
+        call complete(1, ['foo', 'bar', 'spam'])
+        return ''
+      endfunction
+    ]])
+    local expected = {
+      {'foo', '', '', ''},
+      {'bar', '', '', ''},
+      {'spam', '', '', ''},
+    }
+    feed('o<C-r>=TestComplete()<CR>')
+    screen:expect([[
+                                                                  |
+      foo^                                                         |
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {2:-- INSERT --}                                                |
+    ]], nil, nil, function() 
+      eq(expected, items)
+      eq(0, selected)
+      eq({1,0}, anchor)
+    end)
+
+    feed('<c-p>')
+    screen:expect([[
+                                                                  |
+      ^                                                            |
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {2:-- INSERT --}                                                |
+    ]], nil, nil, function() 
+      eq(expected, items)
+      eq(-1, selected)
+      eq({1,0}, anchor)
+    end)
+
+    -- down moves the selection in the menu, but does not insert anything
+    feed('<down><down>')
+    screen:expect([[
+                                                                  |
+      ^                                                            |
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {2:-- INSERT --}                                                |
+    ]], nil, nil, function()
+      eq(expected, items)
+      eq(1, selected)
+      eq({1,0}, anchor)
+    end)
+
+    feed('<cr>')
+    screen:expect([[
+                                                                  |
+      bar^                                                         |
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {1:~                                                           }|
+      {2:-- INSERT --}                                                |
+    ]], nil, nil, function()
+      eq(nil, items) -- popupmenu was hidden
     end)
   end)
 end)

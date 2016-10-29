@@ -22,7 +22,6 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/garray.h"
 #include "nvim/move.h"
 #include "nvim/option.h"
@@ -762,16 +761,12 @@ void clearFolding(win_T *win)
  */
 void foldUpdate(win_T *wp, linenr_T top, linenr_T bot)
 {
-  if (compl_busy) {
-    return;
-  }
-
-  fold_T      *fp;
-  if (wp->w_buffer->terminal) {
+  if (compl_busy || State & INSERT) {
     return;
   }
 
   // Mark all folds from top to bot as maybe-small.
+  fold_T *fp;
   (void)foldFind(&wp->w_folds, top, &fp);
   while (fp < (fold_T *)wp->w_folds.ga_data + wp->w_folds.ga_len
          && fp->fd_top < bot) {
@@ -791,6 +786,19 @@ void foldUpdate(win_T *wp, linenr_T top, linenr_T bot)
     foldUpdateIEMS(wp, top, bot);
     got_int |= save_got_int;
   }
+}
+
+/// Updates folds when leaving insert-mode.
+void foldUpdateAfterInsert(void)
+{
+  if (foldmethodIsManual(curwin)  // foldmethod=manual: No need to update.
+      // These foldmethods are too slow, do not auto-update on insert-leave.
+      || foldmethodIsSyntax(curwin) || foldmethodIsExpr(curwin)) {
+    return;
+  }
+
+  foldUpdateAll(curwin);
+  foldOpenCursor();
 }
 
 /* foldUpdateAll() {{{2 */

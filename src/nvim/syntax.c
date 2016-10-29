@@ -25,7 +25,6 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/keymap.h"
 #include "nvim/garray.h"
 #include "nvim/option.h"
@@ -5538,7 +5537,7 @@ void ex_ownsyntax(exarg_T *eap)
   }
 }
 
-int syntax_present(win_T *win)
+bool syntax_present(win_T *win)
 {
   return win->w_s->b_syn_patterns.ga_len != 0
          || win->w_s->b_syn_clusters.ga_len != 0
@@ -5902,6 +5901,7 @@ static char *highlight_init_both[] =
   "VertSplit    cterm=reverse gui=reverse",
   "WildMenu     ctermbg=Yellow ctermfg=Black guibg=Yellow guifg=Black",
   "default link EndOfBuffer NonText",
+  "default link QuickFixLine Search",
   NULL
 };
 
@@ -6597,6 +6597,9 @@ do_highlight (
   else {
     if (is_normal_group) {
       HL_TABLE()[idx].sg_attr = 0;
+      // Need to update all groups, because they might be using "bg" and/or
+      // "fg", which have been changed now.
+      highlight_attr_set_all();
       // If the normal group has changed, it is simpler to refresh every UI
       ui_refresh();
     } else
@@ -6998,11 +7001,15 @@ highlight_color (
   if (font || sp)
     return NULL;
   if (modec == 'c') {
-    if (fg)
+    if (fg) {
       n = HL_TABLE()[id - 1].sg_cterm_fg - 1;
-    else
+    } else {
       n = HL_TABLE()[id - 1].sg_cterm_bg - 1;
-    sprintf((char *)name, "%d", n);
+    }
+    if (n < 0) {
+      return NULL;
+    }
+    snprintf((char *)name, sizeof(name), "%d", n);
     return name;
   }
   /* term doesn't have color */
@@ -7261,6 +7268,23 @@ int syn_get_final_id(int hl_id)
   return hl_id;
 }
 
+/// Refresh the color attributes of all highlight groups.
+static void highlight_attr_set_all(void)
+{
+  for (int idx = 0; idx < highlight_ga.ga_len; idx++) {
+    struct hl_group *sgp = &HL_TABLE()[idx];
+    if (sgp->sg_rgb_bg_name != NULL) {
+      sgp->sg_rgb_bg = name_to_color(sgp->sg_rgb_bg_name);
+    }
+    if (sgp->sg_rgb_fg_name != NULL) {
+      sgp->sg_rgb_fg = name_to_color(sgp->sg_rgb_fg_name);
+    }
+    if (sgp->sg_rgb_sp_name != NULL) {
+      sgp->sg_rgb_sp = name_to_color(sgp->sg_rgb_sp_name);
+    }
+    set_hl_attr(idx);
+  }
+}
 
 /*
  * Translate the 'highlight' option into attributes in highlight_attr[] and
@@ -7702,6 +7726,10 @@ RgbValue name_to_color(uint8_t *name)
       && isxdigit(name[6]) && name[7] == NUL) {
     // rgb hex string
     return strtol((char *)(name + 1), NULL, 16);
+  } else if (!STRICMP(name, "bg") || !STRICMP(name, "background")) {
+    return normal_bg;
+  } else if (!STRICMP(name, "fg") || !STRICMP(name, "foreground")) {
+    return normal_fg;
   }
 
   for (int i = 0; color_name_table[i].name != NULL; i++) {

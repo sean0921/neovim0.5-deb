@@ -2,10 +2,12 @@
 
 #include "nvim/lib/kvec.h"
 
+#include "nvim/ascii.h"
 #include "nvim/state.h"
 #include "nvim/vim.h"
 #include "nvim/main.h"
 #include "nvim/getchar.h"
+#include "nvim/option_defs.h"
 #include "nvim/ui.h"
 #include "nvim/os/input.h"
 
@@ -33,8 +35,8 @@ getkey:
       // processing. Characters can come from mappings, scripts and other
       // sources, so this scenario is very common.
       key = safe_vgetc();
-    } else if (!queue_empty(main_loop.events)) {
-      // Event was made available after the last queue_process_events call
+    } else if (!multiqueue_empty(main_loop.events)) {
+      // Event was made available after the last multiqueue_process_events call
       key = K_EVENT;
     } else {
       input_enable_events();
@@ -46,7 +48,7 @@ getkey:
       // directly.
       (void)os_inchar(NULL, 0, -1, 0);
       input_disable_events();
-      key = !queue_empty(main_loop.events) ? K_EVENT : safe_vgetc();
+      key = !multiqueue_empty(main_loop.events) ? K_EVENT : safe_vgetc();
     }
 
     if (key == K_EVENT) {
@@ -61,3 +63,35 @@ getkey:
     }
   }
 }
+
+/// Return TRUE if in the current mode we need to use virtual.
+int virtual_active(void)
+{
+  // While an operator is being executed we return "virtual_op", because
+  // VIsual_active has already been reset, thus we can't check for "block"
+  // being used.
+  if (virtual_op != MAYBE) {
+    return virtual_op;
+  }
+  return ve_flags == VE_ALL
+         || ((ve_flags & VE_BLOCK) && VIsual_active && VIsual_mode == Ctrl_V)
+         || ((ve_flags & VE_INSERT) && (State & INSERT));
+}
+
+/// VISUAL, SELECTMODE and OP_PENDING State are never set, they are equal to
+/// NORMAL State with a condition.  This function returns the real State.
+int get_real_state(void)
+{
+  if (State & NORMAL) {
+    if (VIsual_active) {
+      if (VIsual_select) {
+        return SELECTMODE;
+      }
+      return VISUAL;
+    } else if (finish_op) {
+      return OP_PENDING;
+    }
+  }
+  return State;
+}
+

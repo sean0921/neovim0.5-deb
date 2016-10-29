@@ -20,7 +20,6 @@
 #include "nvim/eval.h"
 #include "nvim/fileio.h"
 #include "nvim/message.h"
-#include "nvim/misc2.h"
 #include "nvim/memory.h"
 #include "nvim/os/time.h"
 #include "nvim/path.h"
@@ -52,7 +51,7 @@ static cscmd_T cs_cmds[] =
   { "add",    cs_add,
     N_("Add a new database"),     "add file|dir [pre-path] [flags]", 0 },
   { "find",   cs_find,
-    N_("Query for a pattern"),    "find c|d|e|f|g|i|s|t name", 1 },
+    N_("Query for a pattern"),    "find a|c|d|e|f|g|i|s|t name", 1 },
   { "help",   cs_help,
     N_("Show this message"),      "help", 0 },
   { "kill",   cs_kill,
@@ -105,13 +104,13 @@ char_u *get_cscope_name(expand_T *xp, int idx)
   {
     const char *query_type[] =
     {
-      "c", "d", "e", "f", "g", "i", "s", "t", NULL
+      "a", "c", "d", "e", "f", "g", "i", "s", "t", NULL
     };
 
-    /* Complete with query type of ":cscope find {query_type}".
-     * {query_type} can be letters (c, d, ... t) or numbers (0, 1,
-     * ..., 8) but only complete with letters, since numbers are
-     * redundant. */
+    // Complete with query type of ":cscope find {query_type}".
+    // {query_type} can be letters (c, d, ... a) or numbers (0, 1,
+    // ..., 9) but only complete with letters, since numbers are
+    // redundant.
     return (char_u *)query_type[idx];
   }
   case EXP_CSCOPE_KILL:
@@ -674,6 +673,9 @@ static char *cs_create_cmd(char *csoption, char *pattern)
   case '8': case 'i':
     search = 8;
     break;
+  case '9': case 'a':
+    search = 9;
+    break;
   default:
     (void)EMSG(_("E561: unknown cscope search type"));
     cs_usage_msg(Find);
@@ -970,6 +972,9 @@ static int cs_find_common(char *opt, char *pat, int forceit, int verbose,
   case '8':
     cmdletter = 'i';
     break;
+  case '9':
+    cmdletter = 'a';
+    break;
   default:
     cmdletter = opt[0];
   }
@@ -1126,14 +1131,15 @@ static int cs_help(exarg_T *eap)
         cmdp->usage);
     if (strcmp(cmdp->name, "find") == 0)
       MSG_PUTS(_("\n"
-              "       c: Find functions calling this function\n"
-              "       d: Find functions called by this function\n"
-              "       e: Find this egrep pattern\n"
-              "       f: Find this file\n"
-              "       g: Find this definition\n"
-              "       i: Find files #including this file\n"
-              "       s: Find this C symbol\n"
-              "       t: Find this text string\n"));
+                 "       a: Find assignments to this symbol\n"
+                 "       c: Find functions calling this function\n"
+                 "       d: Find functions called by this function\n"
+                 "       e: Find this egrep pattern\n"
+                 "       f: Find this file\n"
+                 "       g: Find this definition\n"
+                 "       i: Find files #including this file\n"
+                 "       s: Find this C symbol\n"
+                 "       t: Find this text string\n"));
 
     cmdp++;
   }
@@ -1755,8 +1761,8 @@ static void cs_print_tags_priv(char **matches, char **cntxts,
  */
 static int cs_read_prompt(size_t i)
 {
-  char ch;
-  char        *buf = NULL;   /* buffer for possible error message from cscope */
+  int ch;
+  char        *buf = NULL;   // buffer for possible error message from cscope
   size_t bufpos = 0;
   char   *cs_emsg = _("E609: Cscope error: %s");
   size_t cs_emsg_len = strlen(cs_emsg);
@@ -1768,35 +1774,34 @@ static int cs_read_prompt(size_t i)
   size_t maxlen = IOSIZE - cs_emsg_len;
 
   for (;; ) {
-    while ((ch = (char)getc(csinfo[i].fr_fp)) != EOF && ch != CSCOPE_PROMPT[0])
-      /* if there is room and char is printable */
+    while ((ch = getc(csinfo[i].fr_fp)) != EOF && ch != CSCOPE_PROMPT[0]) {
+      // if there is room and char is printable
       if (bufpos < maxlen - 1 && vim_isprintc(ch)) {
         // lazy buffer allocation
         if (buf == NULL) {
           buf = xmalloc(maxlen);
         }
-        {
-          /* append character to the message */
-          buf[bufpos++] = ch;
+        // append character to the message
+        buf[bufpos++] = (char)ch;
+        buf[bufpos] = NUL;
+        if (bufpos >= epromptlen
+            && strcmp(&buf[bufpos - epromptlen], eprompt) == 0) {
+          // remove eprompt from buf
+          buf[bufpos - epromptlen] = NUL;
+
+          // print message to user
+          (void)EMSG2(cs_emsg, buf);
+
+          // send RETURN to cscope
+          (void)putc('\n', csinfo[i].to_fp);
+          (void)fflush(csinfo[i].to_fp);
+
+          // clear buf
+          bufpos = 0;
           buf[bufpos] = NUL;
-          if (bufpos >= epromptlen
-              && strcmp(&buf[bufpos - epromptlen], eprompt) == 0) {
-            /* remove eprompt from buf */
-            buf[bufpos - epromptlen] = NUL;
-
-            /* print message to user */
-            (void)EMSG2(cs_emsg, buf);
-
-            /* send RETURN to cscope */
-            (void)putc('\n', csinfo[i].to_fp);
-            (void)fflush(csinfo[i].to_fp);
-
-            /* clear buf */
-            bufpos = 0;
-            buf[bufpos] = NUL;
-          }
         }
       }
+    }
 
     for (size_t n = 0; n < strlen(CSCOPE_PROMPT); ++n) {
       if (n > 0)

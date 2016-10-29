@@ -21,7 +21,6 @@
 #include "nvim/memline.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/memory.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -907,8 +906,7 @@ void ex_diffpatch(exarg_T *eap)
     eval_patch((char *) tmp_orig, (char *) eap->arg, (char *) tmp_new);
 #endif  // ifdef UNIX
   } else {
-    // Build the patch command and execute it. Ignore errors. Switch to
-    // cooked mode to allow the user to respond to prompts.
+    // Build the patch command and execute it. Ignore errors.
 #ifdef UNIX
     vim_snprintf((char *)buf, buflen, "patch -o %s %s < \"%s\"",
                  tmp_new, tmp_orig, fullname != NULL ? fullname : eap->arg);
@@ -916,8 +914,7 @@ void ex_diffpatch(exarg_T *eap)
     vim_snprintf((char *)buf, buflen, "patch -o %s %s < \"%s\"",
                  tmp_new, tmp_orig, eap->arg);
 #endif  // ifdef UNIX
-    // Avoid ShellCmdPost stuff
-    block_autocmds();
+    block_autocmds();  // Avoid ShellCmdPost stuff
     (void)call_shell(buf, kShellOptFilter, NULL);
     unblock_autocmds();
   }

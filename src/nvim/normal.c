@@ -36,7 +36,6 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/keymap.h"
 #include "nvim/move.h"
 #include "nvim/mouse.h"
@@ -460,7 +459,7 @@ void normal_enter(bool cmdwin, bool noexmode)
   normal_state_init(&state);
   state.cmdwin = cmdwin;
   state.noexmode = noexmode;
-  state.toplevel = !cmdwin && !noexmode;
+  state.toplevel = (!cmdwin || cmdwin_result == 0) && !noexmode;
   state_enter(&state.state);
 }
 
@@ -1361,7 +1360,7 @@ static int normal_check(VimState *state)
   // Dict internally somewhere.
   // "may_garbage_collect" is reset in vgetc() which is invoked through
   // do_exmode() and normal_cmd().
-  may_garbage_collect = s->toplevel;
+  may_garbage_collect = !s->cmdwin && !s->noexmode;
 
   // Update w_curswant if w_set_curswant has been set.
   // Postponed until here to avoid computing w_virtcol too often.
@@ -2110,6 +2109,20 @@ static void op_function(oparg_T *oap)
   }
 }
 
+// Move the current tab to tab in same column as mouse or to end of the
+// tabline if there is no tab there.
+static void move_tab_to_mouse(void)
+{
+  int tabnr = tab_page_click_defs[mouse_col].tabnr;
+  if (tabnr <= 0) {
+      tabpage_move(9999);
+  } else if (tabnr < tabpage_index(curtab)) {
+      tabpage_move(tabnr - 1);
+  } else {
+      tabpage_move(tabnr);
+  }
+}
+
 /*
  * Do the appropriate action for the current mouse click in the current mode.
  * Not used for Command-line mode.
@@ -2346,12 +2359,7 @@ do_mouse (
   if (mouse_row == 0 && firstwin->w_winrow > 0) {
     if (is_drag) {
       if (in_tab_line) {
-        if (tab_page_click_defs[mouse_col].type == kStlClickTabClose) {
-          tabpage_move(9999);
-        } else {
-          int tabnr = tab_page_click_defs[mouse_col].tabnr;
-          tabpage_move(tabnr < tabpage_index(curtab) ? tabnr - 1 : tabnr);
-        }
+        move_tab_to_mouse();
       }
       return false;
     }
@@ -2466,10 +2474,7 @@ do_mouse (
     }
     return true;
   } else if (is_drag && in_tab_line) {
-    tabpage_move(tab_page_click_defs[mouse_col].type == kStlClickTabClose
-                 ? 9999
-                 : tab_page_click_defs[mouse_col].tabnr - 1);
-    in_tab_line = false;
+    move_tab_to_mouse();
     return false;
   }
 
@@ -5919,6 +5924,8 @@ static void nv_replace(cmdarg_T *cap)
     curwin->w_set_curswant = true;
     set_last_insert(cap->nchar);
   }
+
+  foldUpdateAfterInsert();
 }
 
 /*
@@ -7872,15 +7879,15 @@ static void nv_event(cmdarg_T *cap)
 {
   // Garbage collection should have been executed before blocking for events in
   // the `os_inchar` in `state_enter`, but we also disable it here in case the
-  // `os_inchar` branch was not executed(!queue_empty(loop.events), which could
-  // have `may_garbage_collect` set to true in `normal_check`).
+  // `os_inchar` branch was not executed (!multiqueue_empty(loop.events), which
+  // could have `may_garbage_collect` set to true in `normal_check`).
   //
   // That is because here we may run code that calls `os_inchar`
   // later(`f_confirm` or `get_keystroke` for example), but in these cases it is
   // not safe to perform garbage collection because there could be unreferenced
   // lists or dicts being used.
   may_garbage_collect = false;
-  queue_process_events(main_loop.events);
+  multiqueue_process_events(main_loop.events);
   cap->retval |= CA_COMMAND_BUSY;       // don't call edit() now
 }
 

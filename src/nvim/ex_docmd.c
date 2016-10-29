@@ -36,7 +36,6 @@
 #include "nvim/menu.h"
 #include "nvim/message.h"
 #include "nvim/misc1.h"
-#include "nvim/misc2.h"
 #include "nvim/keymap.h"
 #include "nvim/file_search.h"
 #include "nvim/garray.h"
@@ -345,7 +344,8 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline,
     msg_list = saved_msg_list;
     return FAIL;
   }
-  ++call_depth;
+  call_depth++;
+  start_batch_changes();
 
   cstack.cs_idx = -1;
   cstack.cs_looplevel = 0;
@@ -952,7 +952,8 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline,
 
   did_endif = FALSE;    /* in case do_cmdline used recursively */
 
-  --call_depth;
+  call_depth--;
+  end_batch_changes();
   return retval;
 }
 
@@ -1301,8 +1302,7 @@ static char_u * do_one_cmd(char_u **cmdlinep,
      * 2. Handle command modifiers.
      */
     p = ea.cmd;
-    if (ascii_isdigit(*ea.cmd))
-      p = skipwhite(skipdigits(ea.cmd));
+    p = skip_range(ea.cmd, NULL);
     switch (*p) {
     /* When adding an entry, also modify cmd_exists(). */
     case 'a':   if (!checkforcmd(&ea.cmd, "aboveleft", 3))
@@ -1325,24 +1325,24 @@ static char_u * do_one_cmd(char_u **cmdlinep,
 
     case 'c':   if (!checkforcmd(&ea.cmd, "confirm", 4))
         break;
-      cmdmod.confirm = TRUE;
+      cmdmod.confirm = true;
       continue;
 
     case 'k':   if (checkforcmd(&ea.cmd, "keepmarks", 3)) {
-        cmdmod.keepmarks = TRUE;
+        cmdmod.keepmarks = true;
         continue;
     }
       if (checkforcmd(&ea.cmd, "keepalt", 5)) {
-        cmdmod.keepalt = TRUE;
+        cmdmod.keepalt = true;
         continue;
       }
       if (checkforcmd(&ea.cmd, "keeppatterns", 5)) {
-        cmdmod.keeppatterns = TRUE;
+        cmdmod.keeppatterns = true;
         continue;
       }
       if (!checkforcmd(&ea.cmd, "keepjumps", 5))
         break;
-      cmdmod.keepjumps = TRUE;
+      cmdmod.keepjumps = true;
       continue;
 
     /* ":hide" and ":hide | cmd" are not modifiers */
@@ -1350,11 +1350,11 @@ static char_u * do_one_cmd(char_u **cmdlinep,
                     || *p == NUL || ends_excmd(*p))
         break;
       ea.cmd = p;
-      cmdmod.hide = TRUE;
+      cmdmod.hide = true;
       continue;
 
     case 'l':   if (checkforcmd(&ea.cmd, "lockmarks", 3)) {
-        cmdmod.lockmarks = TRUE;
+        cmdmod.lockmarks = true;
         continue;
     }
 
@@ -1405,12 +1405,18 @@ static char_u * do_one_cmd(char_u **cmdlinep,
       continue;
 
     case 't':   if (checkforcmd(&p, "tab", 3)) {
-        if (ascii_isdigit(*ea.cmd))
-          cmdmod.tab = atoi((char *)ea.cmd) + 1;
-        else
-          cmdmod.tab = tabpage_index(curtab) + 1;
-        ea.cmd = p;
-        continue;
+      long tabnr = get_address(&ea, &ea.cmd, ADDR_TABS, ea.skip, false);
+      if (tabnr == MAXLNUM) {
+        cmdmod.tab = tabpage_index(curtab) + 1;
+      } else {
+        if (tabnr < 0 || tabnr > LAST_TAB_NR) {
+          errormsg = (char_u *)_(e_invrange);
+          goto doend;
+        }
+        cmdmod.tab = tabnr + 1;
+      }
+      ea.cmd = p;
+      continue;
     }
       if (!checkforcmd(&ea.cmd, "topleft", 2))
         break;
@@ -1765,11 +1771,8 @@ static char_u * do_one_cmd(char_u **cmdlinep,
 
     if (text_locked() && !(ea.argt & CMDWIN)
         && !IS_USER_CMDIDX(ea.cmdidx)) {
-      /* Command not allowed when editing the command line. */
-      if (cmdwin_type != 0)
-        errormsg = (char_u *)_(e_cmdwin);
-      else
-        errormsg = (char_u *)_(e_secure);
+      // Command not allowed when editing the command line.
+      errormsg = get_text_locked_msg();
       goto doend;
     }
     /* Disallow editing another buffer when "curbuf_lock" is set.
@@ -4362,12 +4365,15 @@ static void ex_autocmd(exarg_T *eap)
  */
 static void ex_doautocmd(exarg_T *eap)
 {
-  char_u      *arg = eap->arg;
+  char_u *arg = eap->arg;
   int call_do_modelines = check_nomodeline(&arg);
+  bool did_aucmd;
 
-  (void)do_doautocmd(arg, TRUE);
-  if (call_do_modelines)    /* Only when there is no <nomodeline>. */
+  (void)do_doautocmd(arg, true, &did_aucmd);
+  // Only when there is no <nomodeline>.
+  if (call_do_modelines && did_aucmd) {
     do_modelines(0);
+  }
 }
 
 /*
@@ -5154,6 +5160,24 @@ static char_u *uc_split_args(char_u *arg, size_t *lenp)
   return buf;
 }
 
+static size_t add_cmd_modifier(char_u *buf, char *mod_str, bool *multi_mods)
+{
+  size_t result = STRLEN(mod_str);
+  if (*multi_mods) {
+    result++;
+  }
+
+  if (buf != NULL) {
+    if (*multi_mods) {
+      STRCAT(buf, " ");
+    }
+    STRCAT(buf, mod_str);
+  }
+
+  *multi_mods = true;
+  return result;
+}
+
 /*
  * Check for a <> code in a user command.
  * "code" points to the '<'.  "len" the length of the <> (inclusive).
@@ -5178,8 +5202,8 @@ uc_check_code (
   char_u      *p = code + 1;
   size_t l = len - 2;
   int quote = 0;
-  enum { ct_ARGS, ct_BANG, ct_COUNT, ct_LINE1, ct_LINE2, ct_REGISTER,
-         ct_LT, ct_NONE } type = ct_NONE;
+  enum { ct_ARGS, ct_BANG, ct_COUNT, ct_LINE1, ct_LINE2, ct_MODS,
+  ct_REGISTER, ct_LT, ct_NONE } type = ct_NONE;
 
   if ((vim_strchr((char_u *)"qQfF", *p) != NULL) && p[1] == '-') {
     quote = (*p == 'q' || *p == 'Q') ? 1 : 2;
@@ -5187,23 +5211,26 @@ uc_check_code (
     l -= 2;
   }
 
-  ++l;
-  if (l <= 1)
+  l++;
+  if (l <= 1) {
     type = ct_NONE;
-  else if (STRNICMP(p, "args>", l) == 0)
+  } else if (STRNICMP(p, "args>", l) == 0) {
     type = ct_ARGS;
-  else if (STRNICMP(p, "bang>", l) == 0)
+  } else if (STRNICMP(p, "bang>", l) == 0) {
     type = ct_BANG;
-  else if (STRNICMP(p, "count>", l) == 0)
+  } else if (STRNICMP(p, "count>", l) == 0) {
     type = ct_COUNT;
-  else if (STRNICMP(p, "line1>", l) == 0)
+  } else if (STRNICMP(p, "line1>", l) == 0) {
     type = ct_LINE1;
-  else if (STRNICMP(p, "line2>", l) == 0)
+  } else if (STRNICMP(p, "line2>", l) == 0) {
     type = ct_LINE2;
-  else if (STRNICMP(p, "lt>", l) == 0)
+  } else if (STRNICMP(p, "lt>", l) == 0) {
     type = ct_LT;
-  else if (STRNICMP(p, "reg>", l) == 0 || STRNICMP(p, "register>", l) == 0)
+  } else if (STRNICMP(p, "reg>", l) == 0 || STRNICMP(p, "register>", l) == 0) {
     type = ct_REGISTER;
+  } else if (STRNICMP(p, "mods>", l) == 0) {
+    type = ct_MODS;
+  }
 
   switch (type) {
   case ct_ARGS:
@@ -5308,6 +5335,87 @@ uc_check_code (
         *buf = '"';
     }
 
+    break;
+  }
+
+  case ct_MODS:
+  {
+    result = quote ? 2 : 0;
+    if (buf != NULL) {
+      if (quote) {
+        *buf++ = '"';
+      }
+      *buf = '\0';
+    }
+
+    bool multi_mods = false;
+
+    // :aboveleft and :leftabove
+    if (cmdmod.split & WSP_ABOVE) {
+      result += add_cmd_modifier(buf, "aboveleft", &multi_mods);
+    }
+    // :belowright and :rightbelow
+    if (cmdmod.split & WSP_BELOW) {
+      result += add_cmd_modifier(buf, "belowright", &multi_mods);
+    }
+    // :botright
+    if (cmdmod.split & WSP_BOT) {
+      result += add_cmd_modifier(buf, "botright", &multi_mods);
+    }
+
+    typedef struct {
+      bool *set;
+      char *name;
+    } mod_entry_T;
+    static mod_entry_T mod_entries[] = {
+      { &cmdmod.browse, "browse" },
+      { &cmdmod.confirm, "confirm" },
+      { &cmdmod.hide, "hide" },
+      { &cmdmod.keepalt, "keepalt" },
+      { &cmdmod.keepjumps, "keepjumps" },
+      { &cmdmod.keepmarks, "keepmarks" },
+      { &cmdmod.keeppatterns, "keeppatterns" },
+      { &cmdmod.lockmarks, "lockmarks" },
+      { &cmdmod.noswapfile, "noswapfile" }
+    };
+    // the modifiers that are simple flags
+    for (size_t i = 0; i < ARRAY_SIZE(mod_entries); i++) {
+      if (*mod_entries[i].set) {
+        result += add_cmd_modifier(buf, mod_entries[i].name, &multi_mods);
+      }
+    }
+
+    // TODO(vim): How to support :noautocmd?
+    // TODO(vim): How to support :sandbox?
+
+    // :silent
+    if (msg_silent > 0) {
+      result += add_cmd_modifier(buf, emsg_silent > 0 ? "silent!" : "silent",
+                                 &multi_mods);
+    }
+    // :tab
+    if (cmdmod.tab > 0) {
+      result += add_cmd_modifier(buf, "tab", &multi_mods);
+    }
+    // :topleft
+    if (cmdmod.split & WSP_TOP) {
+      result += add_cmd_modifier(buf, "topleft", &multi_mods);
+    }
+
+    // TODO(vim): How to support :unsilent?
+
+    // :verbose
+    if (p_verbose > 0) {
+      result += add_cmd_modifier(buf, "verbose", &multi_mods);
+    }
+    // :vertical
+    if (cmdmod.split & WSP_VERT) {
+      result += add_cmd_modifier(buf, "vertical", &multi_mods);
+    }
+    if (quote && buf != NULL) {
+      buf += result - 2;
+      *buf = '"';
+    }
     break;
   }
 
@@ -6620,11 +6728,6 @@ do_exedit (
         old_curwin == NULL ? curwin : NULL);
   } else if ((eap->cmdidx != CMD_split && eap->cmdidx != CMD_vsplit)
              || *eap->arg != NUL) {
-    // ":edit <blank>" is a no-op in terminal buffers. #2822
-    if (curbuf->terminal != NULL && eap->cmdidx == CMD_edit && *eap->arg == NUL) {
-      return;
-    }
-
     /* Can't edit another file when "curbuf_lock" is set.  Only ":edit"
      * can bring us here, others are stopped earlier. */
     if (*eap->arg != NUL && curbuf_locked())
@@ -7815,9 +7918,8 @@ static void ex_normal(exarg_T *eap)
   if (force_restart_edit) {
     force_restart_edit = false;
   } else {
-    // some function called was aware of ex_normal and decided to override the
-    // value of restart_edit anyway. So far only used in terminal mode(see
-    // terminal_enter() in edit.c)
+    // Some function (terminal_enter()) was aware of ex_normal and decided to
+    // override the value of restart_edit anyway.
     restart_edit = save_restart_edit;
   }
   p_im = save_insertmode;
@@ -9360,7 +9462,7 @@ static void ex_filetype(exarg_T *eap)
       }
     }
     if (*arg == 'd') {
-      (void)do_doautocmd((char_u *)"filetypedetect BufRead", TRUE);
+      (void)do_doautocmd((char_u *)"filetypedetect BufRead", true, NULL);
       do_modelines(0);
     }
   } else if (STRCMP(arg, "off") == 0) {
@@ -9511,20 +9613,15 @@ static void ex_foldopen(exarg_T *eap)
 
 static void ex_folddo(exarg_T *eap)
 {
-  linenr_T lnum;
-
-  start_global_changes();
-
-  /* First set the marks for all lines closed/open. */
-  for (lnum = eap->line1; lnum <= eap->line2; ++lnum)
-    if (hasFolding(lnum, NULL, NULL) == (eap->cmdidx == CMD_folddoclosed))
+  // First set the marks for all lines closed/open.
+  for (linenr_T lnum = eap->line1; lnum <= eap->line2; ++lnum) {
+    if (hasFolding(lnum, NULL, NULL) == (eap->cmdidx == CMD_folddoclosed)) {
       ml_setmarked(lnum);
+    }
+  }
 
-  /* Execute the command on the marked lines. */
-  global_exe(eap->arg);
-  ml_clearmarked();        /* clear rest of the marks */
-
-  end_global_changes();
+  global_exe(eap->arg);  // Execute the command on the marked lines.
+  ml_clearmarked();      // clear rest of the marks
 }
 
 static void ex_terminal(exarg_T *eap)

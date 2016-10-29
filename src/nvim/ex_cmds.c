@@ -1154,15 +1154,11 @@ static void do_filter(
   }
   read_linecount = curbuf->b_ml.ml_line_count;
 
-  /*
-   * When call_shell() fails wait_return() is called to give the user a
-   * chance to read the error messages. Otherwise errors are ignored, so you
-   * can see the error messages from the command that appear on stdout; use
-   * 'u' to fix the text
-   * Switch to cooked mode when not redirecting stdin, avoids that something
-   * like ":r !cat" hangs.
-   * Pass on the kShellDoOut flag when the output is being redirected.
-   */
+  // When call_shell() fails wait_return() is called to give the user a chance
+  // to read the error messages. Otherwise errors are ignored, so you can see
+  // the error messages from the command that appear on stdout; use 'u' to fix
+  // the text.
+  // Pass on the kShellDoOut flag when the output is being redirected.
   if (call_shell(
         cmd_buf,
         kShellOptFilter | shell_flags,
@@ -1711,11 +1707,11 @@ int do_write(exarg_T *eap)
         goto theend;
       }
 
-      /* If 'filetype' was empty try detecting it now. */
+      // If 'filetype' was empty try detecting it now.
       if (*curbuf->b_p_ft == NUL) {
-        if (au_has_group((char_u *)"filetypedetect"))
-          (void)do_doautocmd((char_u *)"filetypedetect BufRead",
-              TRUE);
+        if (au_has_group((char_u *)"filetypedetect")) {
+          (void)do_doautocmd((char_u *)"filetypedetect BufRead", true, NULL);
+        }
         do_modelines(0);
       }
 
@@ -2082,6 +2078,7 @@ do_ecmd (
   char_u      *command = NULL;
   int did_get_winopts = FALSE;
   int readfile_flags = 0;
+  bool did_inc_redrawing_disabled = false;
 
   if (eap != NULL)
     command = eap->do_ecmd_cmd;
@@ -2117,6 +2114,14 @@ do_ecmd (
         ffname = free_fname;
       other_file = otherfile(ffname);
     }
+  }
+
+  // Re-editing a terminal buffer: skip most buffer re-initialization.
+  if (!other_file && curbuf->terminal) {
+    check_arg_idx(curwin);  // Needed when called from do_argfile().
+    maketitle();            // Title may show the arg index, e.g. "(2 of 5)".
+    retval = OK;
+    goto theend;
   }
 
   /*
@@ -2245,28 +2250,28 @@ do_ecmd (
         xfree(new_name);
         goto theend;
       }
-      if (buf == curbuf)                /* already in new buffer */
-        auto_buf = TRUE;
-      else {
-        if (curbuf == old_curbuf)
+      if (buf == curbuf) {  // already in new buffer
+        auto_buf = true;
+      } else {
+        win_T *the_curwin = curwin;
+
+        // Set the w_closing flag to avoid that autocommands close the window.
+        the_curwin->w_closing = true;
+        if (curbuf == old_curbuf) {
           buf_copy_options(buf, BCO_ENTER);
-
-        /* close the link to the current buffer */
-        u_sync(FALSE);
-        close_buffer(oldwin, curbuf,
-            (flags & ECMD_HIDE) || curbuf->terminal ? 0 : DOBUF_UNLOAD, FALSE);
-
-        /* Autocommands may open a new window and leave oldwin open
-         * which leads to crashes since the above call sets
-         * oldwin->w_buffer to NULL. */
-        if (curwin != oldwin && oldwin != aucmd_win && win_valid(oldwin)) {
-          assert(oldwin);
-          if (oldwin->w_buffer == NULL) {
-            win_close(oldwin, FALSE);
-          }
         }
 
-        if (aborting()) {           /* autocmds may abort script processing */
+        // Close the link to the current buffer. This will set
+        // curwin->w_buffer to NULL.
+        u_sync(false);
+        close_buffer(oldwin, curbuf,
+                     (flags & ECMD_HIDE) || curbuf->terminal ? 0 : DOBUF_UNLOAD,
+                     false);
+
+        the_curwin->w_closing = false;
+
+        // autocmds may abort script processing
+        if (aborting() && curwin->w_buffer != NULL) {
           xfree(new_name);
           goto theend;
         }
@@ -2318,6 +2323,11 @@ do_ecmd (
     oldbuf = (flags & ECMD_OLDBUF);
   }
 
+  // Don't redraw until the cursor is in the right line, otherwise
+  // autocommands may cause ml_get errors.
+  RedrawingDisabled++;
+  did_inc_redrawing_disabled = true;
+
   buf = curbuf;
   if ((flags & ECMD_SET_HELP) || keep_help_flag) {
     prepare_help_buffer();
@@ -2360,10 +2370,12 @@ do_ecmd (
     if (p_ur < 0 || curbuf->b_ml.ml_line_count <= p_ur) {
       /* Save all the text, so that the reload can be undone.
        * Sync first so that this is a separate undo-able action. */
-      u_sync(FALSE);
-      if (u_savecommon(0, curbuf->b_ml.ml_line_count + 1, 0, TRUE)
-          == FAIL)
+      u_sync(false);
+      if (u_savecommon(0, curbuf->b_ml.ml_line_count + 1, 0, true)
+          == FAIL) {
+        xfree(new_name);
         goto theend;
+      }
       u_unchanged(curbuf);
       buf_freeall(curbuf, BFA_KEEP_UNDO);
 
@@ -2394,8 +2406,6 @@ do_ecmd (
   /*
    * If we get here we are sure to start editing
    */
-  /* don't redraw until the cursor is in the right line */
-  ++RedrawingDisabled;
 
   /* Assume success now */
   retval = OK;
@@ -2547,7 +2557,8 @@ do_ecmd (
   if (curbuf->b_kmap_state & KEYMAP_INIT)
     (void)keymap_init();
 
-  --RedrawingDisabled;
+  RedrawingDisabled--;
+  did_inc_redrawing_disabled = false;
   if (!skip_redraw) {
     n = p_so;
     if (topline == 0 && command == NULL)
@@ -2566,8 +2577,12 @@ do_ecmd (
 
 
 theend:
-  if (did_set_swapcommand)
+  if (did_inc_redrawing_disabled) {
+    RedrawingDisabled--;
+  }
+  if (did_set_swapcommand) {
     set_vim_var_string(VV_SWAPCOMMAND, NULL, -1);
+  }
   xfree(free_fname);
   return retval;
 }
@@ -4053,9 +4068,7 @@ void ex_global(exarg_T *eap)
       smsg(_("Pattern not found: %s"), pat);
     }
   } else {
-    start_global_changes();
     global_exe(cmd);
-    end_global_changes();
   }
   ml_clearmarked();        /* clear rest of the marks */
   vim_regfree(regmatch.regprog);
@@ -4565,12 +4578,15 @@ int find_help_tags(char_u *arg, int *num_matches, char_u ***matches, int keep_la
           break;
         }
 
-        /*
-         * If tag starts with ', toss everything after a second '. Fixes
-         * CTRL-] on 'option'. (would include the trailing '.').
-         */
-        if (*s == '\'' && s > arg && *arg == '\'')
+        // If tag starts with ', toss everything after a second '. Fixes
+        // CTRL-] on 'option'. (would include the trailing '.').
+        if (*s == '\'' && s > arg && *arg == '\'') {
           break;
+        }
+        // Also '{' and '}'. Fixes CTRL-] on '{address}'.
+        if (*s == '}' && s > arg && *arg == '{') {
+          break;
+        }
       }
       *d = NUL;
 

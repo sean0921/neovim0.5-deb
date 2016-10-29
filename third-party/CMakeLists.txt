@@ -32,6 +32,12 @@ option(USE_BUNDLED_LUV "Use the bundled version of luv." ${USE_BUNDLED})
 # build it unless explicitly requested
 option(USE_BUNDLED_LUA "Use the bundled version of lua." OFF)
 
+if(USE_BUNDLED  AND (NOT WIN32))
+  option(USE_BUNDLED_GPERF "Use the bundled version of gperf." ON)
+else()
+  option(USE_BUNDLED_GPERF "Use the bundled version of gperf." OFF)
+endif()
+
 option(USE_EXISTING_SRC_DIR "Skip download of deps sources in case of existing source directory." OFF)
 
 if(UNIX)
@@ -81,8 +87,8 @@ endif()
 
 include(ExternalProject)
 
-set(LIBUV_URL https://github.com/libuv/libuv/archive/v1.8.0.tar.gz)
-set(LIBUV_SHA256 906e1a5c673c95cb261adeacdb7308a65b4a8f7c9c50d85f3021364951fa9cde)
+set(LIBUV_URL https://github.com/libuv/libuv/archive/v1.9.1.tar.gz)
+set(LIBUV_SHA256 a6ca9f0648973d1463f46b495ce546ddcbe7cce2f04b32e802a15539e46c57ad)
 
 set(MSGPACK_URL https://github.com/msgpack/msgpack-c/archive/cpp-1.0.0.tar.gz)
 set(MSGPACK_SHA256 afda64ca445203bb7092372b822bae8b2539fdcebbfc3f753f393628c2bcfe7d)
@@ -108,8 +114,11 @@ set(LIBVTERM_SHA256 1a4272be91d9614dc183a503786df83b6584e4afaab7feaaa5409f841afb
 set(JEMALLOC_URL https://github.com/jemalloc/jemalloc/releases/download/4.2.1/jemalloc-4.2.1.tar.bz2)
 set(JEMALLOC_SHA256 5630650d5c1caab95d2f0898de4fe5ab8519dc680b04963b38bb425ef6a42d57)
 
-set(LUV_URL https://github.com/luvit/luv/archive/146f1ce4c08c3b67f604c9ee1e124b1cf5c15cf3.tar.gz)
-set(LUV_SHA256 3d537f8eb9fa5adb146a083eae22af886aee324ec268e2aa0fa75f2f1c52ca7a)
+set(LUV_URL https://github.com/luvit/luv/archive/1.9.1-0.tar.gz)
+set(LUV_SHA256 86a199403856018cd8e5529c8527450c83664a3d36f52d5253cbe909ea6c5a06)
+
+set(GPERF_URL http://ftp.gnu.org/pub/gnu/gperf/gperf-3.0.4.tar.gz)
+set(GPERF_SHA256 767112a204407e62dbc3106647cf839ed544f3cf5d0f0523aaa2508623aad63e)
 
 if(USE_BUNDLED_UNIBILIUM)
   include(BuildUnibilium)
@@ -149,6 +158,10 @@ endif()
 
 if(USE_BUNDLED_LUV)
   include(BuildLuv)
+endif()
+
+if(USE_BUNDLED_GPERF)
+  include(BuildGperf)
 endif()
 
 add_custom_target(clean-shared-libraries

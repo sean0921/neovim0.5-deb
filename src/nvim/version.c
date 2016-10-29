@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <limits.h>
 
+#include "nvim/api/private/helpers.h"
 #include "nvim/vim.h"
 #include "nvim/ascii.h"
 #include "nvim/iconv.h"
@@ -15,7 +16,6 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc2.h"
 #include "nvim/screen.h"
 #include "nvim/strings.h"
 
@@ -75,32 +75,198 @@ static char *features[] = {
 
 // clang-format off
 static int included_patches[] = {
+  // 2367,
+  // 2366 NA
+  // 2365 NA
+  // 2364,
+  // 2363 NA
+  // 2362,
+  // 2361 NA
+  // 2360,
+  // 2359 NA
+  // 2358 NA
+  // 2357,
+  // 2356,
+  // 2355,
+  // 2354,
+  // 2353,
+  // 2352 NA
+  // 2351 NA
+  // 2350,
+  // 2349,
+  // 2348,
+  // 2347,
+  // 2346,
+  // 2345 NA
+  // 2344 NA
+  // 2343,
+  // 2342 NA
+  // 2341,
+  // 2340 NA
+  // 2339,
+  // 2338 NA
+  // 2337,
+  // 2336,
+  // 2335,
+  // 2334,
+  // 2333,
+  // 2332 NA
+  // 2331,
+  // 2330,
+  // 2329,
+  // 2328,
+  // 2327 NA
+  // 2326,
+  // 2325 NA
+  // 2324,
+  // 2323,
+  // 2322,
+  // 2321,
+  // 2320,
+  // 2319 NA
+  // 2318,
+  // 2317,
+  // 2316 NA
+  // 2315,
+  // 2314,
+  // 2313,
+  2312,
+  // 2311,
+  // 2310 NA
+  2309,
+  // 2308 NA
+  // 2307,
+  // 2306,
+  // 2305,
+  // 2304 NA
+  // 2303,
+  // 2302 NA
+  // 2301 NA
+  // 2300,
+  // 2299,
+  // 2298 NA
+  // 2297 NA
+  // 2296,
+  // 2295,
+  // 2294,
+  // 2293,
+  // 2292,
+  // 2291,
+  // 2290 NA
+  // 2289 NA
+  // 2288 NA
+  // 2287 NA
+  // 2286 NA
+  // 2285 NA
+  2284,
+  // 2283,
+  // 2282 NA
+  // 2281 NA
+  // 2280,
+  // 2279,
+  // 2278 NA
+  // 2277,
+  // 2276,
+  // 2275,
+  2274,
+  // 2273,
+  // 2272,
+  // 2271 NA
+  // 2270 NA
+  // 2269,
+  // 2268,
+  // 2267 NA
+  // 2266,
+  // 2265,
+  // 2264,
+  // 2263,
+  // 2262 NA
+  // 2261 NA
+  // 2260 NA
+  // 2259,
+  // 2258 NA
+  // 2257 NA
+  // 2256,
+  // 2255,
+  // 2254 NA
+  // 2253 NA
+  // 2252 NA
+  // 2251,
+  // 2250,
+  // 2249,
+  // 2248,
+  // 2247 NA
+  // 2246,
+  // 2245,
+  // 2244,
+  // 2243 NA
+  // 2242,
+  // 2241,
+  // 2240,
+  // 2239,
+  // 2238 NA
+  2237,
+  // 2236,
+  // 2235,
+  // 2234 NA
+  // 2233,
+  // 2232 NA
+  // 2231,
+  // 2230,
+  // 2229,
+  // 2228,
+  2227,
+  // 2226,
+  // 2225,
+  // 2224,
+  // 2223,
+  // 2222,
+  // 2221,
+  // 2220,
   2219,
+  // 2218 NA
+  // 2217,
+  // 2216 NA
+  // 2215,
+  // 2214 NA
+  2213,
+  2212,
+  // 2211 NA
+  // 2210 NA
+  // 2209,
+  // 2208,
+  // 2207 NA
+  // 2206 NA
+  2205,
+  // 2204,
+  // 2203 NA
+  // 2202 NA
+  // 2201,
   // 2200,
-  // 2199,
+  // 2199 NA
   // 2198,
   // 2197,
   // 2196,
-  // 2195,
+  // 2195 NA
   // 2194,
-  // 2193,
-  // 2192,
-  // 2191,
+  // 2193 NA
+  // 2192 NA
+  // 2191 NA
   // 2190,
   // 2189,
   // 2188,
   // 2187,
-  // 2186,
+  // 2186 NA
   // 2185,
   // 2184,
   // 2183,
-  // 2182,
+  // 2182 NA
   // 2181,
   // 2180,
   // 2179,
   // 2178,
   // 2177,
-  // 2176,
+  // 2176 NA
   // 2175,
   // 2174,
   // 2173,
@@ -108,67 +274,67 @@ static int included_patches[] = {
   // 2171,
   // 2170,
   // 2169,
-  // 2168,
-  // 2167,
-  // 2166,
+  // 2168 NA
+  // 2167 NA
+  // 2166 NA
   // 2165,
   // 2164,
   // 2163,
-  // 2162,
+  2162,
   // 2161,
   // 2160,
   // 2159,
-  // 2158,
-  // 2157,
-  // 2156,
-  // 2155,
-  // 2154,
-  // 2153,
+  2158,
+  // 2157 NA
+  // 2156 NA
+  // 2155 NA
+  // 2154 NA
+  // 2153 NA
   // 2152,
   // 2151,
-  // 2150,
+  // 2150 NA
   // 2149,
   // 2148,
   // 2147,
   // 2146,
-  // 2145,
+  // 2145 NA
   // 2144,
   // 2143,
   // 2142,
   // 2141,
-  // 2140,
+  // 2140 NA
   // 2139,
-  // 2138,
+  // 2138 NA
   // 2137,
   // 2136,
   // 2135,
   // 2134,
-  // 2133,
+  // 2133 NA
   // 2132,
-  // 2131,
-  // 2130,
-  // 2129,
-  // 2128,
+  // 2131 NA
+  // 2130 NA
+  // 2129 NA
+  2128,
   // 2127,
   // 2126,
   // 2125,
   // 2124,
   // 2123,
-  // 2122,
+  // 2122 NA
   // 2121,
   // 2120,
   // 2119,
-  // 2118,
+  // 2118 NA
   // 2117,
-  // 2116,
-  // 2115,
-  // 2114,
+  // 2116 NA
+  // 2115 NA
+  // 2114 NA
   // 2113,
   2112,
   // 2111,
   // 2110,
-  // 2109,
-  // 2108,
+  2109,
+  // 2108 NA
   // 2107,
   // 2106,
   // 2105 NA
@@ -243,7 +409,7 @@ static int included_patches[] = {
   // 2036,
   // 2035 NA
   // 2034 NA
-  // 2033,
+  2033,
   // 2032 NA
   // 2031,
   // 2030 NA
@@ -286,7 +452,7 @@ static int included_patches[] = {
   // 1993,
   // 1992,
   // 1991,
-  // 1990,
+  1990,
   // 1989,
   // 1988 NA
   // 1987 NA
@@ -305,7 +471,7 @@ static int included_patches[] = {
   // 1974 NA
   1973,
   // 1972,
-  // 1971,
+  1971,
   // 1970,
   // 1969 NA
   // 1968,
@@ -315,7 +481,7 @@ static int included_patches[] = {
   // 1964,
   // 1963 NA
   // 1962,
-  // 1961,
+  1961,
   1960,
   // 1959 NA
   // 1958 NA
@@ -324,14 +490,14 @@ static int included_patches[] = {
   // 1955,
   // 1954,
   // 1953,
-  // 1952,
+  1952,
   // 1951 NA
   // 1950,
   // 1949,
   // 1948,
   // 1947 NA
   // 1946 NA
-  // 1945,
+  // 1945 NA
   // 1944 NA
   // 1943 NA
   // 1942 NA
@@ -363,7 +529,7 @@ static int included_patches[] = {
   // 1916 NA
   // 1915 NA
   // 1914,
-  // 1913,
+  1913,
   // 1912,
   // 1911,
   // 1910,
@@ -376,14 +542,14 @@ static int included_patches[] = {
   // 1903,
   // 1902 NA
   // 1901 NA
-  // 1900,
+  1900,
   // 1899 NA
-  // 1898,
+  1898,
   // 1897,
-  // 1896,
-  // 1895,
+  1896,
+  1895,
   // 1894 NA
-  // 1893,
+  1893,
   // 1892 NA
   // 1891 NA
   // 1890 NA
@@ -443,7 +609,7 @@ static int included_patches[] = {
   // 1836,
   // 1835,
   // 1834,
-  // 1833,
+  1833,
   1832,
   1831,
   // 1830 NA
@@ -455,24 +621,24 @@ static int included_patches[] = {
   // 1824 NA
   // 1823,
   // 1822 NA
-  // 1821,
-  // 1820,
+  1821,
+  1820,
   // 1819 NA
-  // 1818,
+  1818,
   // 1817 NA
   // 1816,
   // 1815,
   // 1814 NA
   // 1813,
   // 1812,
-  // 1811,
+  // 1811 NA
   // 1810 NA
   1809,
   1808,
   // 1807 NA
   1806,
-  // 1805,
-  // 1804,
+  // 1805 NA
+  // 1804 NA
   // 1803 NA
   // 1802,
   // 1801 NA
@@ -482,7 +648,7 @@ static int included_patches[] = {
   // 1797 NA
   // 1796 NA
   // 1795 NA
-  // 1794,
+  // 1794 NA
   // 1793,
   // 1792 NA
   // 1791 NA
@@ -507,14 +673,14 @@ static int included_patches[] = {
   // 1773 NA
   // 1772 NA
   // 1771 NA
-  // 1770,
+  // 1770 NA
   // 1769,
   // 1768,
   // 1767 NA
   // 1766 NA
-  // 1765,
+  1765,
   // 1764 NA
-  // 1763,
+  1763,
   // 1762,
   // 1761,
   // 1760 NA
@@ -528,7 +694,7 @@ static int included_patches[] = {
   // 1753,
   // 1752,
   // 1751,
-  // 1750,
+  // 1750 NA
   // 1749 NA
   // 1748,
   // 1747 NA
@@ -538,7 +704,7 @@ static int included_patches[] = {
   // 1743 NA
   // 1742,
   // 1741,
-  // 1740,
+  1740,
   // 1739,
   // 1738,
   // 1737 NA
@@ -564,7 +730,7 @@ static int included_patches[] = {
   // 1717 NA
   1716,
   // 1715,
-  // 1714,
+  1714,
   // 1713 NA
   1712,
   // 1711,
@@ -574,7 +740,7 @@ static int included_patches[] = {
   // 1707,
   // 1706 NA
   // 1705 NA
-  // 1704,
+  1704,
   1703,
   // 1702,
   // 1701,
@@ -597,9 +763,9 @@ static int included_patches[] = {
   // 1684 NA
   // 1683 NA
   1682,
-  // 1681,
+  1681,
   // 1680 NA
-  // 1679,
+  1679,
   // 1678 NA
   // 1677 NA
   1676,
@@ -607,8 +773,8 @@ static int included_patches[] = {
   // 1674 NA
   1673,
   // 1672 NA
-  // 1671,
-  // 1670,
+  1671,
+  1670,
   // 1669 NA
   // 1668 NA
   // 1667 NA
@@ -625,18 +791,18 @@ static int included_patches[] = {
   // 1656,
   // 1655 NA
   1654,
-  // 1653,
+  // 1653 NA
   1652,
   // 1651 NA
   // 1650,
   1649,
-  // 1648,
+  1648,
   // 1647,
   // 1646 NA
   // 1645,
   // 1644,
   1643,
-  // 1642,
+  1642,
   1641,
   // 1640,
   // 1639,
@@ -648,8 +814,8 @@ static int included_patches[] = {
   // 1633 NA
   // 1632 NA
   // 1631 NA
-  // 1630,
-  // 1629,
+  1630,
+  1629,
   // 1628 NA
   // 1627 NA
   // 1626 NA
@@ -658,8 +824,8 @@ static int included_patches[] = {
   // 1623 NA
   // 1622 NA
   // 1621 NA
-  // 1620,
-  // 1619,
+  1620,
+  1619,
   // 1618 NA
   // 1617 NA
   // 1616 NA
@@ -674,7 +840,7 @@ static int included_patches[] = {
   // 1607,
   // 1606,
   // 1605,
-  // 1604,
+  1604,
   1603,
   // 1602 NA
   // 1601 NA
@@ -690,7 +856,7 @@ static int included_patches[] = {
   // 1591,
   // 1590,
   // 1589,
-  // 1588,
+  1588,
   // 1587 NA
   // 1586,
   // 1585,
@@ -713,14 +879,14 @@ static int included_patches[] = {
   1568,
   1567,
   // 1566 NA
-  // 1565,
+  1565,
   // 1564,
   // 1563,
   // 1562 NA
   // 1561 NA
   // 1560 NA
   // 1559,
-  // 1558,
+  1558,
   1557,
   // 1556 NA
   // 1555 NA
@@ -729,9 +895,9 @@ static int included_patches[] = {
   1552,
   1551,
   1550,
-  // 1549,
+  1549,
   1548,
-  // 1547,
+  1547,
   1546,
   // 1545 NA
   // 1544 NA
@@ -743,9 +909,9 @@ static int included_patches[] = {
   // 1538 NA
   // 1537 NA
   // 1536 NA
-  // 1535,
+  1535,
   // 1534 NA
-  // 1533,
+  1533,
   // 1532 NA
   // 1531 NA
   // 1530 NA
@@ -784,7 +950,7 @@ static int included_patches[] = {
   // 1497 NA
   // 1496 NA
   // 1495 NA
-  // 1494,
+  1494,
   // 1493 NA
   1492,
   1491,
@@ -801,7 +967,7 @@ static int included_patches[] = {
   1480,
   1479,
   1478,
-  // 1477,
+  1477,
   // 1476 NA
   // 1475 NA
   // 1474 NA
@@ -1012,7 +1178,7 @@ static int included_patches[] = {
   1269,
   // 1268 NA
   1267,
-  // 1266
+  1266,
   // 1265 NA
   // 1264 NA
   // 1263 NA
@@ -2292,20 +2458,72 @@ static char *(extra_patches[]) = {
   NULL
 };
 
-/// Checks whether patch `n` has been included.
+/// Compares a version string to the current Nvim version.
 ///
-/// @param n The patch number.
+/// @param version Version string like "1.3.42"
 ///
-/// @return TRUE if patch "n" has been included.
-int has_patch(int n)
+/// @return true if Nvim is at or above the version.
+bool has_nvim_version(char *version_str)
+  FUNC_ATTR_NONNULL_ALL
 {
-  int i;
-  for (i = 0; included_patches[i] != 0; ++i) {
-    if (included_patches[i] == n) {
-      return TRUE;
+  char *p   = version_str;
+  int major = 0;
+  int minor = 0;
+  int patch = 0;
+
+  if (!ascii_isdigit(*p)) {
+    return false;
+  }
+  major = atoi(p);
+  p     = strchr(p, '.');  // Find the next dot.
+
+  if (p) {
+    p++;  // Advance past the dot.
+    if (!ascii_isdigit(*p)) {
+      return false;
+    }
+    minor = atoi(p);
+    p     = strchr(p, '.');
+    if (p) {
+      p++;
+      if (!ascii_isdigit(*p)) {
+        return false;
+      }
+      patch = atoi(p);
     }
   }
-  return FALSE;
+
+  return (major < NVIM_VERSION_MAJOR
+          || (major == NVIM_VERSION_MAJOR
+              && (minor < NVIM_VERSION_MINOR
+                  || (minor == NVIM_VERSION_MINOR
+                      && patch <= NVIM_VERSION_PATCH))));
+}
+
+/// Checks whether a Vim patch has been included.
+///
+/// @param n Patch number.
+///
+/// @return true if patch `n` has been included.
+bool has_vim_patch(int n)
+{
+  for (int i = 0; included_patches[i] != 0; i++) {
+    if (included_patches[i] == n) {
+      return true;
+    }
+  }
+  return false;
+}
+
+Dictionary version_dict(void) {
+  Dictionary d = ARRAY_DICT_INIT;
+  PUT(d, "major", INTEGER_OBJ(NVIM_VERSION_MAJOR));
+  PUT(d, "minor", INTEGER_OBJ(NVIM_VERSION_MINOR));
+  PUT(d, "patch", INTEGER_OBJ(NVIM_VERSION_PATCH));
+  PUT(d, "api_level", INTEGER_OBJ(NVIM_API_LEVEL));
+  PUT(d, "api_compatible", INTEGER_OBJ(NVIM_API_LEVEL_COMPAT));
+  PUT(d, "api_prerelease", BOOLEAN_OBJ(NVIM_API_PRERELEASE));
+  return d;
 }
 
 void ex_version(exarg_T *eap)
@@ -2364,7 +2582,11 @@ static void list_features(void)
         }
       } else {
         while (msg_col % width) {
+          int old_msg_col = msg_col;
           msg_putchar(' ');
+          if (old_msg_col == msg_col) {
+            break;  // XXX: Avoid infinite loop.
+          }
         }
       }
     } else {
@@ -2487,14 +2709,13 @@ void intro_message(int colon)
     N_(NVIM_VERSION_LONG),
     "",
     N_("by Bram Moolenaar et al."),
-    N_("Vim is open source and freely distributable"),
+    N_("Nvim is open source and freely distributable"),
+    N_("https://neovim.io/community"),
     "",
-    N_("Type \":Tutor\" or \":help nvim\" to get started!"),
-    "",
-    N_("Still have questions? https://neovim.io/community"),
-    "",
+    N_("type  :help nvim<Enter>       if you are new! "),
+    N_("type  :CheckHealth<Enter>     to optimize Nvim"),
     N_("type  :q<Enter>               to exit         "),
-    N_("type  :help<Enter>  or  <F1>  for on-line help"),
+    N_("type  :help<Enter>            for help        "),
     "",
     N_("Help poor children in Uganda!"),
     N_("type  :help iccf<Enter>       for information "),

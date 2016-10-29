@@ -198,7 +198,8 @@ argument.
 -Z		Restricted mode.  All commands that make use of an external
 		shell are disabled.  This includes suspending with CTRL-Z,
 		":sh", filtering, the system() function, backtick expansion,
-		delete(), rename(), mkdir(), writefile(), libcall(), etc.
+		delete(), rename(), mkdir(), writefile(), libcall(),
+		jobstart(), etc.
 
 							*-e*
 -e		Start Vim in Ex mode |Q|.
@@ -1178,9 +1179,6 @@ running) you have additional options:
 			already set (registers, marks, |v:oldfiles|, etc.)
 			will be overwritten.
 
-						   *:rv* *:rviminfo*
-:rv[iminfo][!] [file]	Deprecated alias to |:rshada| command.
-
 						    *:wsh* *:wshada* *E137*
 :wsh[ada][!] [file]	Write to ShaDa file [file] (default: see above).
 			The information in the file is first read in to make
@@ -1195,9 +1193,6 @@ running) you have additional options:
 			~/.local/share/nvim/shada/main.shada.tmp*).
 
 			Note: Executing :wshada will reset all |'quote| marks.
-
-						   *:wv* *:wviminfo*
-:wv[iminfo][!] [file]	Deprecated alias to |:wshada| command.
 
 						*:o* *:ol* *:oldfiles*
 :o[ldfiles]		List the files that have marks stored in the ShaDa

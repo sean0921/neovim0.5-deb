@@ -27,7 +27,6 @@
 #include "nvim/api/private/helpers.h"
 #include "nvim/buffer.h"
 #include "nvim/buffer_defs.h"
-#include "nvim/misc2.h"
 #include "nvim/ex_getln.h"
 #include "nvim/search.h"
 #include "nvim/regexp.h"
@@ -2976,7 +2975,7 @@ shada_write_file_nomerge: {}
   if (sd_writer.cookie == NULL) {
     xfree(fname);
     xfree(tempname);
-    if (sd_reader.close != NULL) {
+    if (sd_reader.cookie != NULL) {
       sd_reader.close(&sd_reader);
     }
     return FAIL;

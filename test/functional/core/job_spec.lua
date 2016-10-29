@@ -8,6 +8,7 @@ local clear, eq, eval, execute, feed, insert, neq, next_msg, nvim,
 local command = helpers.command
 local Screen = require('test.functional.ui.screen')
 
+if helpers.pending_win32(pending) then return end
 
 describe('jobs', function()
   local channel
@@ -90,7 +91,7 @@ describe('jobs', function()
 
   it('preserves NULs', function()
     -- Make a file with NULs in it.
-    local filename = os.tmpname()
+    local filename = helpers.tmpname()
     write_file(filename, "abc\0def\n")
 
     nvim('command', "let j = jobstart(['cat', '"..filename.."'], g:job_opts)")
@@ -108,8 +109,8 @@ describe('jobs', function()
   it("will not buffer data if it doesn't end in newlines", function()
     if os.getenv("TRAVIS") and os.getenv("CC") == "gcc-4.9"
       and helpers.os_name() == "osx" then
-      -- XXX: Hangs Travis OSX since e9061117a5b8f195c3f26a5cb94e18ddd7752d86.
-      pending("[Hangs on Travis OSX. #5002]", function() end)
+      -- XXX: Hangs Travis macOS since e9061117a5b8f195c3f26a5cb94e18ddd7752d86.
+      pending("[Hangs on Travis macOS. #5002]", function() end)
       return
     end
 
@@ -120,14 +121,14 @@ describe('jobs', function()
     eq({'notification', 'exit', {0, 0}}, next_msg())
   end)
 
-  it('can preserve newlines', function()
+  it('preserves newlines', function()
     nvim('command', "let j = jobstart(['cat', '-'], g:job_opts)")
     nvim('command', 'call jobsend(j, "a\\n\\nc\\n\\n\\n\\nb\\n\\n")')
     eq({'notification', 'stdout',
       {0, {'a', '', 'c', '', '', '', 'b', '', ''}}}, next_msg())
   end)
 
-  it('can preserve NULs', function()
+  it('preserves NULs', function()
     nvim('command', "let j = jobstart(['cat', '-'], g:job_opts)")
     nvim('command', 'call jobsend(j, ["\n123\n", "abc\\nxyz\n", ""])')
     eq({'notification', 'stdout', {0, {'\n123\n', 'abc\nxyz\n', ''}}},
@@ -136,7 +137,7 @@ describe('jobs', function()
     eq({'notification', 'exit', {0, 0}}, next_msg())
   end)
 
-  it('can avoid sending final newline', function()
+  it('avoids sending final newline', function()
     nvim('command', "let j = jobstart(['cat', '-'], g:job_opts)")
     nvim('command', 'call jobsend(j, ["some data", "without\nfinal nl"])')
     eq({'notification', 'stdout', {0, {'some data', 'without\nfinal nl'}}},
@@ -145,7 +146,7 @@ describe('jobs', function()
     eq({'notification', 'exit', {0, 0}}, next_msg())
   end)
 
-  it('can close the job streams with jobclose', function()
+  it('closes the job streams with jobclose', function()
     nvim('command', "let j = jobstart(['cat', '-'], g:job_opts)")
     nvim('command', 'call jobclose(j, "stdin")')
     eq({'notification', 'exit', {0, 0}}, next_msg())

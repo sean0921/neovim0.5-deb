@@ -9,6 +9,8 @@ local clear = helpers.clear
 local execute = helpers.execute
 local exc_exec = helpers.exc_exec
 
+if helpers.pending_win32(pending) then return end
+
 -- These directories will be created for testing
 local directories = {
   tab = 'Xtest-functional-ex_cmds-cd_spec.tab', -- Tab
@@ -138,6 +140,27 @@ for _, cmd in ipairs {'cd', 'chdir'} do
       end)
     end)
 
+    describe('Local directory gets inherited', function()
+      it('by tabs', function()
+        local globalDir = directories.start
+
+        -- Create a new tab and change directory
+        execute('tabnew')
+        execute('silent t' .. cmd .. ' ' .. directories.tab)
+        eq(globalDir .. '/' .. directories.tab, tcwd())
+
+        -- Create a new tab and verify it has inherited the directory
+        execute('tabnew')
+        eq(globalDir .. '/' .. directories.tab, tcwd())
+
+        -- Change tab and change back, verify that directories are correct
+        execute('tabnext')
+        eq(globalDir, tcwd())
+        execute('tabprevious')
+        eq(globalDir .. '/' .. directories.tab, tcwd())
+      end)
+    end)
+
     it('works', function()
       local globalDir = directories.start
       -- Create a new tab first and verify that is has the same working dir
@@ -245,4 +268,22 @@ for _, cmd in ipairs {'getcwd', 'haslocaldir'} do
     end)
   end)
 end
+
+describe("getcwd()", function ()
+  before_each(function()
+    clear()
+    lfs.mkdir(directories.global)
+  end)
+
+  after_each(function()
+    helpers.rmdir(directories.global)
+  end)
+
+  it("returns empty string if working directory does not exist", function()
+    execute("cd "..directories.global)
+    execute("call delete('../"..directories.global.."', 'd')")
+    eq("", helpers.eval("getcwd()"))
+  end)
+end)
+
 
