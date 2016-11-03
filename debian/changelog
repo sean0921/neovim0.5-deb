@@ -1,3 +1,13 @@
+neovim (0.1.6-2) unstable; urgency=medium
+
+  * Cherry-pick patches from upstream
+    + [36c0ec6d]: tui/suspend_event(): set STDIN to "blocking", fixing an
+      issue with the terminal IO when nvim is suspended.  (Closes: #840306)
+    + [87ff2682, 37e64d79, 9b545dd3]: Various fixes for issues on big-endian
+      platforms.
+
+ -- James McCoy <jamessan@debian.org>  Wed, 02 Nov 2016 20:28:40 -0400
+
 neovim (0.1.6-1) unstable; urgency=medium
 
   * New upstream release.
