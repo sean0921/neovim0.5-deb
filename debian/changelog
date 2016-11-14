@@ -1,3 +1,10 @@
+neovim (0.1.6-3) unstable; urgency=medium
+
+  * Cherry-pick 5e1dc26f from upstream to remove a flaky test, which was
+    frequently failing on the buildds.
+
+ -- James McCoy <jamessan@debian.org>  Sun, 13 Nov 2016 20:45:51 -0500
+
 neovim (0.1.6-2) unstable; urgency=medium
 
   * Cherry-pick patches from upstream
