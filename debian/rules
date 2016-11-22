@@ -2,6 +2,7 @@
 
 DEB_BUILD_MAINT_OPTIONS = hardening=+all
 include /usr/share/dpkg/buildflags.mk
+include /usr/share/dpkg/architecture.mk
 
 # cmake doesn't honor CPPFLAGS
 CFLAGS += $(CPPFLAGS) -DDISABLE_LOG
@@ -11,12 +12,16 @@ export CFLAGS CXXFLAGS LDFLAGS
 
 FUNCTIONALTEST =
 UNITTEST =
-ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim)))
-  FUNCTIONALTEST = functionaltest
+ifneq (mipsel,$(DEB_HOST_ARCH))
+  ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim)))
+    FUNCTIONALTEST = functionaltest
+  endif
 endif
 
-ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit)))
-  UNITTEST = unittest
+ifneq (mipsel,$(DEB_HOST_ARCH))
+  ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit)))
+    UNITTEST = unittest
+  endif
 endif
 
 export USERNAME = pkg-vim-maintainers
