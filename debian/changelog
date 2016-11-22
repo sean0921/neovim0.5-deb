@@ -1,10 +1,10 @@
-neovim (0.1.6-4) UNRELEASED; urgency=medium
+neovim (0.1.6-4) unstable; urgency=high
 
   * Cherry-pick 4fad66fb and c685879e from upstream to fix an issue where
     malicious modelines could execute arbitrary shell commands.
     (CVE-2016-1248)
 
- -- James McCoy <jamessan@debian.org>  Mon, 21 Nov 2016 21:52:13 -0500
+ -- James McCoy <jamessan@debian.org>  Tue, 22 Nov 2016 03:15:38 -0500
 
 neovim (0.1.6-3) unstable; urgency=medium
 
