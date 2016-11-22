@@ -1,8 +1,8 @@
-neovim (0.1.6-5) UNRELEASED; urgency=medium
+neovim (0.1.6-5) unstable; urgency=medium
 
   * Disable lua testing on mipsel, since lua(jit) bugs are breaking the tests.
 
- -- James McCoy <jamessan@debian.org>  Tue, 22 Nov 2016 13:43:51 -0500
+ -- James McCoy <jamessan@debian.org>  Tue, 22 Nov 2016 13:58:00 -0500
 
 neovim (0.1.6-4) unstable; urgency=high
 
