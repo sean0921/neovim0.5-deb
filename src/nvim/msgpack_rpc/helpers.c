@@ -21,7 +21,8 @@ static msgpack_zone zone;
 static msgpack_sbuffer sbuffer;
 
 #define HANDLE_TYPE_CONVERSION_IMPL(t, lt) \
-  bool msgpack_rpc_to_##lt(const msgpack_object *const obj, Integer *const arg) \
+  bool msgpack_rpc_to_##lt(const msgpack_object *const obj, \
+                           Integer *const arg) \
     FUNC_ATTR_NONNULL_ALL \
   { \
     if (obj->type != MSGPACK_OBJECT_EXT \
@@ -325,7 +326,9 @@ void msgpack_rpc_from_string(String result, msgpack_packer *res)
   FUNC_ATTR_NONNULL_ARG(2)
 {
   msgpack_pack_str(res, result.size);
-  msgpack_pack_str_body(res, result.data, result.size);
+  if (result.size > 0) {
+    msgpack_pack_str_body(res, result.data, result.size);
+  }
 }
 
 typedef struct {

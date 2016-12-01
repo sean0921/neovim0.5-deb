@@ -288,6 +288,7 @@ static char *(p_fdm_values[]) =       { "manual", "expr", "marker", "indent",
 static char *(p_fcl_values[]) =       { "all", NULL };
 static char *(p_cot_values[]) =       { "menu", "menuone", "longest", "preview",
                                         "noinsert", "noselect", NULL };
+static char *(p_icm_values[]) =       { "nosplit", "split", NULL };
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "option.c.generated.h"
@@ -780,14 +781,11 @@ void set_init_1(void)
   }
   fenc_default = p;
 
-  // Initialize multibyte (utf-8) handling
-  mb_init();
-
-  // Don't change &encoding when resetting to defaults with ":set all&".
-  opt_idx = findoption((char_u *)"encoding");
-  if (opt_idx >= 0) {
-    options[opt_idx].flags |= P_NODEFAULT;
-  }
+#ifdef HAVE_WORKING_LIBINTL
+  // GNU gettext 0.10.37 supports this feature: set the codeset used for
+  // translated messages independently from the current locale.
+  (void)bind_textdomain_codeset(PROJECT_NAME, (char *)p_enc);
+#endif
 
   /* Set the default for 'helplang'. */
   set_helplang_default(get_mess_lang());
@@ -1729,13 +1727,25 @@ do_set (
               }
 
               if (flags & P_FLAGLIST) {
-                /* Remove flags that appear twice. */
-                for (s = newval; *s; ++s)
-                  if ((!(flags & P_COMMA) || *s != ',')
-                      && vim_strchr(s + 1, *s) != NULL) {
-                    STRMOVE(s, s + 1);
-                    --s;
+                // Remove flags that appear twice.
+                for (s = newval; *s; s++) {
+                  // if options have P_FLAGLIST and P_ONECOMMA such as
+                  // 'whichwrap'
+                  if (flags & P_ONECOMMA) {
+                    if (*s != ',' && *(s + 1) == ','
+                        && vim_strchr(s + 2, *s) != NULL) {
+                      // Remove the duplicated value and the next comma.
+                      STRMOVE(s, s + 2);
+                      s -= 2;
+                    }
+                  } else {
+                    if ((!(flags & P_COMMA) || *s != ',')
+                        && vim_strchr(s + 1, *s) != NULL) {
+                      STRMOVE(s, s + 1);
+                      s--;
+                    }
                   }
+                }
               }
 
               if (save_arg != NULL)                 /* number for 'whichwrap' */
@@ -2592,19 +2602,17 @@ did_set_string_option (
       errmsg = e_invarg;
   /* 'encoding' and 'fileencoding' */
   } else if (varp == &p_enc || gvarp == &p_fenc) {
-    if (varp == &p_enc && did_source_startup_scripts) {
-       errmsg = e_afterinit;
-    } else if (gvarp == &p_fenc) {
-      if (!MODIFIABLE(curbuf) && opt_flags != OPT_GLOBAL)
+    if (gvarp == &p_fenc) {
+      if (!MODIFIABLE(curbuf) && opt_flags != OPT_GLOBAL) {
         errmsg = e_modifiable;
-      else if (vim_strchr(*varp, ',') != NULL)
-        /* No comma allowed in 'fileencoding'; catches confusing it
-         * with 'fileencodings'. */
+      } else if (vim_strchr(*varp, ',') != NULL) {
+        // No comma allowed in 'fileencoding'; catches confusing it
+        // with 'fileencodings'.
         errmsg = e_invarg;
-      else {
-        /* May show a "+" in the title now. */
+      } else {
+        // May show a "+" in the title now.
         redraw_titles();
-        /* Add 'fileencoding' to the swap file. */
+        // Add 'fileencoding' to the swap file.
         ml_setflags(curbuf);
       }
     }
@@ -2615,16 +2623,11 @@ did_set_string_option (
       xfree(*varp);
       *varp = p;
       if (varp == &p_enc) {
-        errmsg = mb_init();
-        redraw_titles();
+        // only encoding=utf-8 allowed
+        if (STRCMP(p_enc, "utf-8") != 0) {
+          errmsg = e_invarg;
+        }
       }
-    }
-
-    if (errmsg == NULL) {
-      /* When 'keymap' is used and 'encoding' changes, reload the keymap
-       * (with another encoding). */
-      if (varp == &p_enc && *curbuf->b_p_keymap != NUL)
-        (void)keymap_init();
     }
   } else if (varp == &p_penc) {
     /* Canonize printencoding if VIM standard one */
@@ -3126,6 +3129,11 @@ did_set_string_option (
   else if (gvarp == &p_cino) {
     /* TODO: recognize errors */
     parse_cino(curbuf);
+  // inccommand
+  } else if (varp == &p_icm) {
+      if (check_opt_strings(p_icm, p_icm_values, false) != OK) {
+        errmsg = e_invarg;
+      }
   } else if (gvarp == &p_ft) {
     if (!valid_filetype(*varp)) {
       errmsg = e_invarg;
@@ -3729,23 +3737,19 @@ set_bool_option (
         }
       }
     }
-  }
-
-  /*
-   * When 'lisp' option changes include/exclude '-' in
-   * keyword characters.
-   */
-  else if (varp == (char_u *)&(curbuf->b_p_lisp)) {
-    (void)buf_init_chartab(curbuf, FALSE);          /* ignore errors */
-  }
-  /* when 'title' changed, may need to change the title; same for 'icon' */
-  else if ((int *)varp == &p_title) {
-    did_set_title(FALSE);
+  } else if (varp == (char_u *)&(curbuf->b_p_lisp)) {
+    // When 'lisp' option changes include/exclude '-' in
+    // keyword characters.
+    (void)buf_init_chartab(curbuf, false);          // ignore errors
+  } else if ((int *)varp == &p_title) {
+    // when 'title' changed, may need to change the title; same for 'icon'
+    did_set_title(false);
   } else if ((int *)varp == &p_icon) {
-    did_set_title(TRUE);
+    did_set_title(true);
   } else if ((int *)varp == &curbuf->b_changed) {
-    if (!value)
-      save_file_ff(curbuf);             /* Buffer is unchanged */
+    if (!value) {
+      save_file_ff(curbuf);             // Buffer is unchanged
+    }
     redraw_titles();
     modified_was_set = value;
   }
@@ -3774,10 +3778,11 @@ set_bool_option (
     if (curwin->w_p_wrap)
       curwin->w_leftcol = 0;
   } else if ((int *)varp == &p_ea) {
-    if (p_ea && !old_value)
+    if (p_ea && !old_value) {
       win_equal(curwin, false, 0);
+    }
   } else if ((int *)varp == &p_acd) {
-    /* Change directories when the 'acd' option is set now. */
+    // Change directories when the 'acd' option is set now.
     do_autochdir();
   }
   /* 'diff' */
@@ -4536,10 +4541,11 @@ get_option_value (
   else {
     /* Special case: 'modified' is b_changed, but we also want to consider
      * it set when 'ff' or 'fenc' changed. */
-    if ((int *)varp == &curbuf->b_changed)
+    if ((int *)varp == &curbuf->b_changed) {
       *numval = curbufIsChanged();
-    else
+    } else {
       *numval = *(int *)varp;
+    }
   }
   return 1;
 }
@@ -4907,14 +4913,15 @@ showoneopt (
 
   varp = get_varp_scope(p, opt_flags);
 
-  /* for 'modified' we also need to check if 'ff' or 'fenc' changed. */
+  // for 'modified' we also need to check if 'ff' or 'fenc' changed.
   if ((p->flags & P_BOOL) && ((int *)varp == &curbuf->b_changed
-                              ? !curbufIsChanged() : !*(int *)varp))
+                              ? !curbufIsChanged() : !*(int *)varp)) {
     MSG_PUTS("no");
-  else if ((p->flags & P_BOOL) && *(int *)varp < 0)
+  } else if ((p->flags & P_BOOL) && *(int *)varp < 0) {
     MSG_PUTS("--");
-  else
+  } else {
     MSG_PUTS("  ");
+  }
   MSG_PUTS(p->fullname);
   if (!(p->flags & P_BOOL)) {
     msg_putchar('=');

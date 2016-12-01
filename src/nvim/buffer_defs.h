@@ -488,9 +488,9 @@ struct file_buffer {
   bool file_id_valid;
   FileID file_id;
 
-  int b_changed;                /* 'modified': Set to true if something in the
-                                   file has been changed and not written out. */
-  int b_changedtick;            /* incremented for each change, also for undo */
+  int b_changed;                // 'modified': Set to true if something in the
+                                // file has been changed and not written out.
+  int b_changedtick;            // incremented for each change, also for undo
 
   bool b_saving;                /* Set to true if we are in the middle of
                                    saving the buffer. */
@@ -771,7 +771,7 @@ struct file_buffer {
 /*
  * Stuff for diff mode.
  */
-# define DB_COUNT 4     /* up to four buffers can be diff'ed */
+# define DB_COUNT 8     // up to four buffers can be diff'ed
 
 /*
  * Each diffblock defines where a block of lines starts in each of the buffers
