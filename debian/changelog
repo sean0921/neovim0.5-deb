@@ -1,3 +1,13 @@
+neovim (0.1.7-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+    + Incrementally show the results of a :substitute command by setting the
+      'inccommand' option.
+    + The 'encoding' option can no longer be set to anything other than
+      "utf-8".
+
+ -- James McCoy <jamessan@debian.org>  Wed, 30 Nov 2016 20:56:55 -0500
+
 neovim (0.1.6-5) unstable; urgency=medium
 
   * Disable lua testing on mipsel, since lua(jit) bugs are breaking the tests.
