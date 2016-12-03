@@ -1,4 +1,4 @@
-neovim (0.1.7-1) UNRELEASED; urgency=medium
+neovim (0.1.7-1) unstable; urgency=medium
 
   * New upstream release
     + Incrementally show the results of a :substitute command by setting the
@@ -6,7 +6,7 @@ neovim (0.1.7-1) UNRELEASED; urgency=medium
     + The 'encoding' option can no longer be set to anything other than
       "utf-8".
 
- -- James McCoy <jamessan@debian.org>  Wed, 30 Nov 2016 20:56:55 -0500
+ -- James McCoy <jamessan@debian.org>  Fri, 02 Dec 2016 21:42:39 -0500
 
 neovim (0.1.6-5) unstable; urgency=medium
 
