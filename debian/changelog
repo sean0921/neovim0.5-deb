@@ -4,6 +4,9 @@ neovim (0.1.7-2) UNRELEASED; urgency=medium
     creating a man:// buffer if "runtime ftplugin/man.vim" is in init.vim.
     (Closes: #846788)
   * Cherry-pick 933c873c to fix tty-test test failures.
+  * Cherry-pick upstream commits [043f8521, 97204e1c, cb589990, ea154dfd,
+    4abe9afb] to fix responsiveness of TUI with external commands and fix test
+    failures due to excessive memory usage.
 
  -- James McCoy <jamessan@debian.org>  Sun, 04 Dec 2016 11:15:50 -0500
 
