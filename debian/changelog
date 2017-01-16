@@ -1,10 +1,10 @@
-neovim (0.1.7-3) UNRELEASED; urgency=medium
+neovim (0.1.7-3) unstable; urgency=medium
 
   * Disable global_spec.lua since it's rather flaky.
   * Re-enable functional tests on mips* but disable unit tests (which require
     luajit) until #849769 is fixed.
 
- -- James McCoy <jamessan@debian.org>  Sun, 15 Jan 2017 13:51:28 -0500
+ -- James McCoy <jamessan@debian.org>  Mon, 16 Jan 2017 07:18:35 -0500
 
 neovim (0.1.7-2) unstable; urgency=medium
 
