@@ -12,16 +12,12 @@ export CFLAGS CXXFLAGS LDFLAGS
 
 FUNCTIONALTEST =
 UNITTEST =
-ifneq (mipsel,$(DEB_HOST_ARCH))
-  ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim)))
-    FUNCTIONALTEST = functionaltest
-  endif
+ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim)))
+  FUNCTIONALTEST = functionaltest
 endif
 
-ifneq (mipsel,$(DEB_HOST_ARCH))
-  ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit)))
-    UNITTEST = unittest
-  endif
+ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit)))
+  UNITTEST = unittest
 endif
 
 export USERNAME = pkg-vim-maintainers

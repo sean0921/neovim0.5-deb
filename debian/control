@@ -10,7 +10,7 @@ Build-Depends:
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
  libkvm-dev [kfreebsd-any],
- libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc powerpcspe],
+ libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 powerpc powerpcspe],
  libmsgpack-dev (>= 1.0.0),
  libnss-wrapper <!nocheck>,
  libtermkey-dev,
@@ -22,7 +22,7 @@ Build-Depends:
  lua-lpeg,
  lua-mpack,
  lua-nvim [alpha amd64 armel armhf hppa i386 mips mips64el mipsel powerpc ppc64el sparc64 x32] <!nocheck>,
- luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 mips mipsel powerpc powerpcspe] | lua5.1,
+ luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 powerpc powerpcspe] | lua5.1,
  ninja-build,
  pkg-config
 Standards-Version: 3.9.8
