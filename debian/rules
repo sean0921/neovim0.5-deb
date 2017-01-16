@@ -39,6 +39,10 @@ override_dh_auto_build:
 override_dh_auto_install:
 	dh_auto_install --parallel -- VERBOSE=1 USE_BUNDLED_DEPS=OFF
 
+override_dh_auto_clean:
+	-[ -f debian/global_spec.lua ] && mv debian/global_spec.lua test/functional/ex_cmds/
+	dh_auto_clean
+
 override_dh_install:
 	dh_install --fail-missing
 
@@ -52,4 +56,5 @@ debian/fakehome:
 override_dh_auto_test-indep:
 
 override_dh_auto_test-arch: debian/passwd debian/fakehome
+	mv -f test/functional/ex_cmds/global_spec.lua debian/
 	env "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" make $(UNITTEST) $(FUNCTIONALTEST) oldtest VERBOSE=1 USE_BUNDLED_DEPS=OFF

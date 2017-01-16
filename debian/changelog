@@ -1,3 +1,9 @@
+neovim (0.1.7-3) UNRELEASED; urgency=medium
+
+  * Disable global_spec.lua since it's rather flaky.
+
+ -- James McCoy <jamessan@debian.org>  Sun, 15 Jan 2017 13:51:28 -0500
+
 neovim (0.1.7-2) unstable; urgency=medium
 
   * Cherry-pick 9337e98b from upstream to prevent the man ftplugin from always
