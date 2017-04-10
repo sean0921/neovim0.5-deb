@@ -1,11 +1,11 @@
-neovim (0.1.7-4) UNRELEASED; urgency=high
+neovim (0.1.7-4) unstable; urgency=high
 
   * Cherry-pick b338bb9d & 4af6c608 from upstream to fix buffer overflow if a
     spellfile has an invalid length in it.  (CVE-2017-5953)
   * Cherry-pick fb66a7c6 & ad66826a from upstream to fix buffer overflows when
     reading corrupted undo files.  (CVE-2017-6349 & CVE-2017-6350)
 
- -- James McCoy <jamessan@debian.org>  Mon, 10 Apr 2017 08:05:08 -0400
+ -- James McCoy <jamessan@debian.org>  Mon, 10 Apr 2017 08:15:38 -0400
 
 neovim (0.1.7-3) unstable; urgency=medium
 
