@@ -11,7 +11,7 @@ Copyright: 2016 James McCoy <jamessan@debian.org>
 License: Apache
 
 Files: runtime/*
-       src/*
+       src/nvim/*
        test/functional/legacy/*
 Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
            2006 Benji Fisher <benji@member.ams.org>
@@ -63,6 +63,9 @@ Files: src/nvim/api/*
        runtime/doc/provider.txt
        runtime/doc/remote_plugin.txt
        runtime/doc/vim_diff.txt
+       runtime/nvim.desktop
+       runtime/nvim.png
+       runtime/plugin/gui_shim.vim
        runtime/plugin/health.vim
        runtime/plugin/man.vim
 Copyright: Neovim contributors
