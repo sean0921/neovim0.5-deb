@@ -7,6 +7,7 @@ neovim (0.2.0-1) UNRELEASED; urgency=medium
     + 'mouse=a' is no longer set by default.
     + debcontrol.vim: Add "rust" and "javascript" as known sections.  (Closes:
       #847541)
+  * Skip known flaky tests by setting $TEST_SKIP_FRAGILE.
 
  -- James McCoy <jamessan@debian.org>  Mon, 01 May 2017 22:50:45 -0400
 
