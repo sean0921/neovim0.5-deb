@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /*
  * mark.c: functions for setting marks and jumping to them
  */
@@ -62,7 +65,7 @@ int setmark(int c)
 /// Free fmark_T item
 void free_fmark(fmark_T fm)
 {
-  dict_unref(fm.additional_data);
+  tv_dict_unref(fm.additional_data);
 }
 
 /// Free xfmark_T item
@@ -130,17 +133,23 @@ int setmark_pos(int c, pos_T *pos, int fnum)
     return OK;
   }
 
-  if (c > 'z')              /* some islower() and isupper() cannot handle
-                                characters above 127 */
+  buf_T *buf = buflist_findnr(fnum);
+  // Can't set a mark in a non-existant buffer.
+  if (buf == NULL) {
     return FAIL;
-  if (islower(c)) {
+  }
+
+  if (ASCII_ISLOWER(c)) {
     i = c - 'a';
-    RESET_FMARK(curbuf->b_namedm + i, *pos, curbuf->b_fnum);
+    RESET_FMARK(buf->b_namedm + i, *pos, fnum);
     return OK;
   }
-  if (isupper(c)) {
-    assert(c >= 'A' && c <= 'Z');
-    i = c - 'A';
+  if (ASCII_ISUPPER(c) || ascii_isdigit(c)) {
+    if (ascii_isdigit(c)) {
+      i = c - '0' + NMARKS;
+    } else {
+      i = c - 'A';
+    }
     RESET_XFMARK(namedfm + i, *pos, fnum, NULL);
     return OK;
   }
@@ -798,6 +807,13 @@ void ex_jumps(exarg_T *eap)
     MSG_PUTS("\n>");
 }
 
+void ex_clearjumps(exarg_T *eap)
+{
+  free_jumplist(curwin);
+  curwin->w_jumplistlen = 0;
+  curwin->w_jumplistidx = 0;
+}
+
 /*
  * print the changelist
  */
@@ -873,6 +889,23 @@ void ex_changes(exarg_T *eap)
  *				   or: mark_adjust(56, 55, MAXLNUM, 2);
  */
 void mark_adjust(linenr_T line1, linenr_T line2, long amount, long amount_after)
+{
+  mark_adjust_internal(line1, line2, amount, amount_after, true);
+}
+
+// mark_adjust_nofold() does the same as mark_adjust() but without adjusting
+// folds in any way. Folds must be adjusted manually by the caller.
+// This is only useful when folds need to be moved in a way different to
+// calling foldMarkAdjust() with arguments line1, line2, amount, amount_after,
+// for an example of why this may be necessary, see do_move().
+void mark_adjust_nofold(linenr_T line1, linenr_T line2, long amount,
+                        long amount_after)
+{
+  mark_adjust_internal(line1, line2, amount, amount_after, false);
+}
+
+static void mark_adjust_internal(linenr_T line1, linenr_T line2, long amount,
+                                 long amount_after, bool adjust_folds)
 {
   int i;
   int fnum = curbuf->b_fnum;
@@ -998,8 +1031,9 @@ void mark_adjust(linenr_T line1, linenr_T line2, long amount, long amount_after)
         }
       }
 
-      /* adjust folds */
-      foldMarkAdjust(win, line1, line2, amount, amount_after);
+      if (adjust_folds) {
+        foldMarkAdjust(win, line1, line2, amount, amount_after);
+      }
     }
   }
 
@@ -1400,3 +1434,26 @@ void free_all_marks(void)
   memset(&namedfm[0], 0, sizeof(namedfm));
 }
 #endif
+
+/// Adjust position to point to the first byte of a multi-byte character
+///
+/// If it points to a tail byte it is move backwards to the head byte.
+///
+/// @param[in]  buf  Buffer to adjust position in.
+/// @param[out]  lp  Position to adjust.
+void mark_mb_adjustpos(buf_T *buf, pos_T *lp)
+  FUNC_ATTR_NONNULL_ALL
+{
+  if (lp->col > 0 || lp->coladd > 1) {
+    const char_u *const p = ml_get_buf(buf, lp->lnum, false);
+    lp->col -= (*mb_head_off)(p, p + lp->col);
+    // Reset "coladd" when the cursor would be on the right half of a
+    // double-wide character.
+    if (lp->coladd == 1
+        && p[lp->col] != TAB
+        && vim_isprintc((*mb_ptr2char)(p + lp->col))
+        && ptr2cells(p + lp->col) > 1) {
+      lp->coladd = 0;
+    }
+  }
+}

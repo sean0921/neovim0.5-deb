@@ -2,8 +2,14 @@ local helpers = require('test.functional.helpers')(after_each)
 local clear, nvim, buffer = helpers.clear, helpers.nvim, helpers.buffer
 local curbuf, curwin, eq = helpers.curbuf, helpers.curwin, helpers.eq
 local curbufmeths, ok = helpers.curbufmeths, helpers.ok
-local funcs, request = helpers.funcs, helpers.request
+local funcs = helpers.funcs
+local request = helpers.request
+local exc_exec = helpers.exc_exec
+local feed_command = helpers.feed_command
+local insert = helpers.insert
 local NIL = helpers.NIL
+local meth_pcall = helpers.meth_pcall
+local command = helpers.command
 
 describe('api/buf', function()
   before_each(clear)
@@ -239,6 +245,22 @@ describe('api/buf', function()
       eq({'e', 'a', 'b', 'c', 'd'}, get_lines(0, -1, true))
     end)
 
+    it("set_line on alternate buffer does not access invalid line (E315)", function()
+      feed_command('set hidden')
+      insert('Initial file')
+      command('enew')
+      insert([[
+      More
+      Lines
+      Than
+      In
+      The
+      Other
+      Buffer]])
+      feed_command('$')
+      local retval = exc_exec("call nvim_buf_set_lines(1, 0, 1, v:false, ['test'])")
+      eq(0, retval)
+    end)
   end)
 
   describe('{get,set,del}_var', function()
@@ -249,6 +271,24 @@ describe('api/buf', function()
       eq(1, funcs.exists('b:lua'))
       curbufmeths.del_var('lua')
       eq(0, funcs.exists('b:lua'))
+      eq({false, 'Key does not exist: lua'}, meth_pcall(curbufmeths.del_var, 'lua'))
+      curbufmeths.set_var('lua', 1)
+      command('lockvar b:lua')
+      eq({false, 'Key is locked: lua'}, meth_pcall(curbufmeths.del_var, 'lua'))
+      eq({false, 'Key is locked: lua'}, meth_pcall(curbufmeths.set_var, 'lua', 1))
+      eq({false, 'Key is read-only: changedtick'},
+         meth_pcall(curbufmeths.del_var, 'changedtick'))
+      eq({false, 'Key is read-only: changedtick'},
+         meth_pcall(curbufmeths.set_var, 'changedtick', 1))
+    end)
+  end)
+
+  describe('get_changedtick', function()
+    it('works', function()
+      eq(2, curbufmeths.get_changedtick())
+      curbufmeths.set_lines(0, 1, false, {'abc\0', '\0def', 'ghi'})
+      eq(3, curbufmeths.get_changedtick())
+      eq(3, curbufmeths.get_var('changedtick'))
     end)
 
     it('buffer_set_var returns the old value', function()

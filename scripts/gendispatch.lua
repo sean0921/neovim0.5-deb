@@ -9,7 +9,8 @@ C, Ct, Cc, Cg = lpeg.C, lpeg.Ct, lpeg.Cc, lpeg.Cg
 
 any = P(1) -- (consume one character)
 letter = R('az', 'AZ') + S('_$')
-alpha = letter + R('09')
+num = R('09')
+alpha = letter + num
 nl = P('\r\n') + P('\n')
 not_nl = any - nl
 ws = S(' \t') + nl
@@ -35,6 +36,9 @@ c_proto = Ct(
   Cg(c_type, 'return_type') * Cg(c_id, 'name') *
   fill * P('(') * fill * Cg(c_params, 'parameters') * fill * P(')') *
   Cg(Cc(false), 'async') *
+  (fill * Cg((P('FUNC_API_SINCE(') * C(num ^ 1)) * P(')'), 'since') ^ -1) *
+  (fill * Cg((P('FUNC_API_DEPRECATED_SINCE(') * C(num ^ 1)) * P(')'),
+              'deprecated_since') ^ -1) *
   (fill * Cg((P('FUNC_API_ASYNC') * Cc(true)), 'async') ^ -1) *
   (fill * Cg((P('FUNC_API_NOEXPORT') * Cc(true)), 'noexport') ^ -1) *
   (fill * Cg((P('FUNC_API_NOEVAL') * Cc(true)), 'noeval') ^ -1) *
@@ -52,6 +56,7 @@ package.path = nvimsrcdir .. '/?.lua;' .. package.path
 -- names of all headers relative to the source root (for inclusion in the
 -- generated file)
 headers = {}
+
 -- output h file with generated dispatch functions
 dispatch_outputf = arg[#arg-2]
 -- output h file with packed metadata
@@ -114,9 +119,15 @@ local deprecated_aliases = require("api.dispatch_deprecated")
 for i,f in ipairs(shallowcopy(functions)) do
   local ismethod = false
   if startswith(f.name, "nvim_") then
-    -- TODO(bfredl) after 0.1.6 allow method definitions
-    -- to specify the since and deprecated_since field
-    f.since = 1
+    if f.since == nil then
+      print("Function "..f.name.." lacks since field.\n")
+      os.exit(1)
+    end
+    f.since = tonumber(f.since)
+    if f.deprecated_since ~= nil then
+      f.deprecated_since = tonumber(f.deprecated_since)
+    end
+
     if startswith(f.name, "nvim_buf_") then
       ismethod = true
     elseif startswith(f.name, "nvim_win_") then
@@ -220,8 +231,7 @@ for i = 1, #functions do
     end
     output:write('\n')
     output:write('\n  if (args.size != '..#fn.parameters..') {')
-    output:write('\n    snprintf(error->msg, sizeof(error->msg), "Wrong number of arguments: expecting '..#fn.parameters..' but got %zu", args.size);')
-    output:write('\n    error->set = true;')
+    output:write('\n    api_set_error(error, kErrorTypeException, "Wrong number of arguments: expecting '..#fn.parameters..' but got %zu", args.size);')
     output:write('\n    goto cleanup;')
     output:write('\n  }\n')
 
@@ -246,8 +256,7 @@ for i = 1, #functions do
           output:write('\n    '..converted..' = (handle_T)args.items['..(j - 1)..'].data.integer;')
         end
         output:write('\n  } else {')
-        output:write('\n    snprintf(error->msg, sizeof(error->msg), "Wrong type for argument '..j..', expecting '..param[1]..'");')
-        output:write('\n    error->set = true;')
+        output:write('\n    api_set_error(error, kErrorTypeException, "Wrong type for argument '..j..', expecting '..param[1]..'");')
         output:write('\n    goto cleanup;')
         output:write('\n  }\n')
       else
@@ -287,7 +296,7 @@ for i = 1, #functions do
         output:write('error);\n')
       end
       -- and check for the error
-      output:write('\n  if (error->set) {')
+      output:write('\n  if (ERROR_SET(error)) {')
       output:write('\n    goto cleanup;')
       output:write('\n  }\n')
     else

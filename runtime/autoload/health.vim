@@ -1,28 +1,25 @@
 function! s:enhance_syntax() abort
+  syntax case match
+
   syntax keyword healthError ERROR
+        \ containedin=markdownCodeBlock,mkdListItemLine
   highlight link healthError Error
 
   syntax keyword healthWarning WARNING
+        \ containedin=markdownCodeBlock,mkdListItemLine
   highlight link healthWarning WarningMsg
 
-  syntax keyword healthInfo INFO
-  highlight link healthInfo ModeMsg
-
   syntax keyword healthSuccess SUCCESS
-  highlight link healthSuccess ModeMsg
-
-  syntax keyword healthSuggestion SUGGESTIONS
-  highlight link healthSuggestion String
+        \ containedin=markdownCodeBlock,mkdListItemLine
+  highlight healthSuccess guibg=#5fff00 guifg=#080808 ctermbg=82 ctermfg=232
 
   syntax match healthHelp "|.\{-}|" contains=healthBar
+        \ containedin=markdownCodeBlock,mkdListItemLine
   syntax match healthBar  "|" contained conceal
   highlight link healthHelp Identifier
 
   " We do not care about markdown syntax errors in :CheckHealth output.
   highlight! link markdownError Normal
-
-  " We don't need code blocks.
-  silent! syntax clear markdownCodeBlock
 endfunction
 
 " Runs the specified healthchecks.
@@ -34,9 +31,9 @@ function! health#check(plugin_names) abort
 
   tabnew
   setlocal wrap breakindent
-  setlocal filetype=markdown bufhidden=wipe
+  setlocal filetype=markdown
   setlocal conceallevel=2 concealcursor=nc
-  setlocal keywordprg=:help
+  setlocal keywordprg=:help iskeyword=@,48-57,_,192-255,-,#
   call s:enhance_syntax()
 
   if empty(healthchecks)
@@ -66,6 +63,8 @@ function! health#check(plugin_names) abort
     endfor
   endif
 
+  " needed for plasticboy/vim-markdown, because it uses fdm=expr
+  normal! zR
   setlocal nomodified
   redraw|echo ''
 endfunction
@@ -87,9 +86,9 @@ function! s:indent_after_line1(s, columns) abort
   return join(lines, "\n")
 endfunction
 
-" Changes ':help clipboard' to '|clipoard|'. Also removes surrounding quotes.
+" Changes ':h clipboard' to ':help |clipboard|'.
 function! s:help_to_link(s) abort
-  return substitute(a:s, '\v[''"]?:h%[elp] ([^''"]+)[''"]?', '|\1|', 'g')
+  return substitute(a:s, '\v:h%[elp] ([^|][^"\r\n]+)', ':help |\1|', 'g')
 endfunction
 
 " Format a message for a specific report item
@@ -145,8 +144,8 @@ function! health#report_error(msg, ...) abort " {{{
 endfunction " }}}
 
 function! s:filepath_to_function(name) abort
-  return substitute(substitute(substitute(a:name, ".*autoload/", "", ""),
-        \ "\\.vim", "#check", ""), "/", "#", "g")
+  return substitute(substitute(substitute(a:name, '.*autoload[\/]', '', ''),
+        \ '\.vim', '#check', ''), '[\/]', '#', 'g')
 endfunction
 
 function! s:discover_health_checks() abort

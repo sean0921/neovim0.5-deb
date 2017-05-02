@@ -1,7 +1,7 @@
 -- Tests for 'packpath' and :packadd
 
 local helpers = require('test.functional.helpers')(after_each)
-local clear, source, execute = helpers.clear, helpers.source, helpers.execute
+local clear, source, command = helpers.clear, helpers.source, helpers.command
 local call, eq, nvim = helpers.call, helpers.eq, helpers.meths
 local feed = helpers.feed
 
@@ -27,7 +27,7 @@ describe('packadd', function()
       endfunc
 
       func Test_packadd()
-        call mkdir(s:plugdir . '/plugin', 'p')
+        call mkdir(s:plugdir . '/plugin/also', 'p')
         call mkdir(s:plugdir . '/ftdetect', 'p')
         call mkdir(s:plugdir . '/after', 'p')
         set rtp&
@@ -38,6 +38,10 @@ describe('packadd', function()
         call setline(1, 'let g:plugin_works = 42')
         wq
 
+        exe 'split ' . s:plugdir . '/plugin/also/loaded.vim'
+        call setline(1, 'let g:plugin_also_works = 77')
+        wq
+
         exe 'split ' . s:plugdir . '/ftdetect/test.vim'
         call setline(1, 'let g:ftdetect_works = 17')
         wq
@@ -45,6 +49,7 @@ describe('packadd', function()
         packadd mytest
 
         call assert_true(42, g:plugin_works)
+        call assert_equal(77, g:plugin_also_works)
         call assert_true(17, g:ftdetect_works)
         call assert_true(len(&rtp) > len(rtp))
         call assert_true(&rtp =~ (s:plugdir . '\($\|,\)'))
@@ -258,12 +263,12 @@ describe('packadd', function()
         [2] = {bold = true, reverse = true}
       })
 
-      execute([[let optdir1 = &packpath . '/pack/mine/opt']])
-      execute([[let optdir2 = &packpath . '/pack/candidate/opt']])
-      execute([[call mkdir(optdir1 . '/pluginA', 'p')]])
-      execute([[call mkdir(optdir1 . '/pluginC', 'p')]])
-      execute([[call mkdir(optdir2 . '/pluginB', 'p')]])
-      execute([[call mkdir(optdir2 . '/pluginC', 'p')]])
+      command([[let optdir1 = &packpath . '/pack/mine/opt']])
+      command([[let optdir2 = &packpath . '/pack/candidate/opt']])
+      command([[call mkdir(optdir1 . '/pluginA', 'p')]])
+      command([[call mkdir(optdir1 . '/pluginC', 'p')]])
+      command([[call mkdir(optdir2 . '/pluginB', 'p')]])
+      command([[call mkdir(optdir2 . '/pluginC', 'p')]])
     end)
 
     it('works', function()

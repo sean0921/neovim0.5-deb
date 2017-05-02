@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /// @file popupmnu.c
 ///
 /// Popup menu (PUM)
@@ -38,9 +41,7 @@ static int pum_row;                 // top row of pum
 static int pum_col;                 // left column of pum
 
 static bool pum_is_visible = false;
-
 static bool pum_external = false;
-static bool pum_wants_external = false;
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "popupmnu.c.generated.h"
@@ -67,17 +68,17 @@ void pum_display(pumitem_T *array, int size, int selected, bool array_changed)
   int kind_width;
   int extra_width;
   int i;
-  int top_clear;
   int row;
   int context_lines;
   int col;
-  int above_row = cmdline_row;
+  int above_row;
+  int below_row;
   int redo_count = 0;
 
   if (!pum_is_visible) {
     // To keep the code simple, we only allow changing the
     // draw mode when the popup menu is not being displayed
-    pum_external = pum_wants_external;
+    pum_external = ui_is_external(kUIPopupmenu);
   }
 
 redo:
@@ -85,6 +86,8 @@ redo:
   // to avoid that must_redraw is set when 'cursorcolumn' is on.
   pum_is_visible = true;
   validate_cursor_col();
+  above_row = 0;
+  below_row = cmdline_row;
 
   // anchor position: the start of the completed word
   row = curwin->w_wrow + curwin->w_winrow;
@@ -123,17 +126,20 @@ redo:
   kind_width = 0;
   extra_width = 0;
 
-  if (firstwin->w_p_pvw) {
-    top_clear = firstwin->w_height;
-  } else {
-    top_clear = 0;
+  win_T *pvwin = NULL;
+  FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+    if (wp->w_p_pvw) {
+      pvwin = wp;
+      break;
+    }
   }
 
-  // When the preview window is at the bottom stop just above it.  Also
-  // avoid drawing over the status line so that it's clear there is a window
-  // boundary.
-  if (lastwin->w_p_pvw) {
-    above_row -= lastwin->w_height + lastwin->w_status_height + 1;
+  if (pvwin != NULL) {
+    if (pvwin->w_wrow < curwin->w_wrow) {
+      above_row = pvwin->w_wrow + pvwin->w_height;
+    } else if (pvwin->w_wrow > pvwin->w_wrow + curwin->w_height) {
+      below_row = pvwin->w_wrow;
+    }
   }
 
   // Figure out the size and position of the pum.
@@ -149,8 +155,8 @@ redo:
 
   // Put the pum below "row" if possible.  If there are few lines decide on
   // where there is more room.
-  if ((row  + 2 >= above_row - pum_height)
-      && (row > (above_row - top_clear) / 2)) {
+  if (row + 2 >= below_row - pum_height
+      && row - above_row > (below_row - above_row) / 2) {
     // pum above "row"
 
     // Leave two lines of context if possible
@@ -184,8 +190,8 @@ redo:
     }
 
     pum_row = row + context_lines;
-    if (size > above_row - pum_row) {
-      pum_height = above_row - pum_row;
+    if (size > below_row - pum_row) {
+      pum_height = below_row - pum_row;
     } else {
       pum_height = size;
     }
@@ -200,12 +206,10 @@ redo:
     return;
   }
 
-  // If there is a preview window at the top avoid drawing over it.
-  if (firstwin->w_p_pvw
-      && (pum_row < firstwin->w_height)
-      && (pum_height > firstwin->w_height + 4)) {
-    pum_row += firstwin->w_height;
-    pum_height -= firstwin->w_height;
+  // If there is a preview window at the above avoid drawing over it.
+  if (pvwin != NULL && pum_row < above_row && pum_height > above_row) {
+    pum_row += above_row;
+    pum_height -= above_row;
   }
 
   // Compute the width of the widest match and the widest extra.
@@ -588,7 +592,9 @@ static int pum_set_selected(int n, int repeat)
       g_do_tagpreview = 0;
 
       if (curwin->w_p_pvw) {
-        if ((curbuf->b_fname == NULL)
+        if (!resized
+            && (curbuf->b_nwindows == 1)
+            && (curbuf->b_fname == NULL)
             && (curbuf->b_p_bt[0] == 'n')
             && (curbuf->b_p_bt[2] == 'f')
             && (curbuf->b_p_bh[0] == 'w')) {
@@ -605,13 +611,10 @@ static int pum_set_selected(int n, int repeat)
           if (res == OK) {
             // Edit a new, empty buffer. Set options for a "wipeout"
             // buffer.
-            set_option_value((char_u *)"swf", 0L, NULL, OPT_LOCAL);
-            set_option_value((char_u *)"bt", 0L,
-                             (char_u *)"nofile", OPT_LOCAL);
-            set_option_value((char_u *)"bh", 0L,
-                             (char_u *)"wipe", OPT_LOCAL);
-            set_option_value((char_u *)"diff", 0L,
-                             NULL, OPT_LOCAL);
+            set_option_value("swf", 0L, NULL, OPT_LOCAL);
+            set_option_value("bt", 0L, "nofile", OPT_LOCAL);
+            set_option_value("bh", 0L, "wipe", OPT_LOCAL);
+            set_option_value("diff", 0L, NULL, OPT_LOCAL);
           }
         }
 
@@ -745,9 +748,4 @@ bool pum_drawn(void)
 int pum_get_height(void)
 {
   return pum_height;
-}
-
-void pum_set_external(bool external)
-{
-  pum_wants_external = external;
 }

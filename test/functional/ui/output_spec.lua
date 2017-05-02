@@ -8,13 +8,13 @@ describe("shell command :!", function()
   before_each(function()
     session.clear()
     screen = child_session.screen_setup(0, '["'..session.nvim_prog..
-      '", "-u", "NONE", "-i", "NONE", "--cmd", "set noswapfile"]')
+      '", "-u", "NONE", "-i", "NONE", "--cmd", "'..session.nvim_set..'"]')
     screen:expect([[
       {1: }                                                 |
       {4:~                                                 }|
       {4:~                                                 }|
       {4:~                                                 }|
-      {5:[No Name]                                         }|
+      {4:~                                                 }|
                                                         |
       {3:-- TERMINAL --}                                    |
     ]])
@@ -25,14 +25,14 @@ describe("shell command :!", function()
     screen:detach()
   end)
 
-  it("displays output even without LF/EOF. #4646 #4569 #3772", function()
+  it("displays output without LF/EOF. #4646 #4569 #3772", function()
     -- NOTE: We use a child nvim (within a :term buffer)
     --       to avoid triggering a UI flush.
     child_session.feed_data(":!printf foo; sleep 200\n")
     screen:expect([[
       {4:~                                                 }|
       {4:~                                                 }|
-      {5:[No Name]                                         }|
+      {4:~                                                 }|
       :!printf foo; sleep 200                           |
                                                         |
       foo                                               |
@@ -41,6 +41,11 @@ describe("shell command :!", function()
   end)
 
   it("throttles shell-command output greater than ~10KB", function()
+    if os.getenv("TRAVIS") and session.os_name() == "osx" then
+      pending("[Unreliable on Travis macOS.]", function() end)
+      return
+    end
+
     screen.timeout = 20000  -- Avoid false failure on slow systems.
     child_session.feed_data(
       ":!for i in $(seq 2 3000); do echo XXXXXXXXXX $i; done\n")

@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /*
  * search.c: code for normal mode searching commands
  */
@@ -282,7 +285,7 @@ void restore_search_patterns(void)
 static inline void free_spat(struct spat *const spat)
 {
   xfree(spat->pat);
-  dict_unref(spat->additional_data);
+  tv_dict_unref(spat->additional_data);
 }
 
 #if defined(EXITFREE)
@@ -308,13 +311,19 @@ void free_search_patterns(void)
  */
 int ignorecase(char_u *pat)
 {
-  int ic = p_ic;
+  return ignorecase_opt(pat, p_ic, p_scs);
+}
 
-  if (ic && !no_smartcase && p_scs
+/// As ignorecase() put pass the "ic" and "scs" flags.
+int ignorecase_opt(char_u *pat, int ic_in, int scs)
+{
+  int ic = ic_in;
+  if (ic && !no_smartcase && scs
       && !(ctrl_x_mode && curbuf->b_p_inf)
-      )
+      ) {
     ic = !pat_has_uppercase(pat);
-  no_smartcase = FALSE;
+  }
+  no_smartcase = false;
 
   return ic;
 }
@@ -329,30 +338,34 @@ int pat_has_uppercase(char_u *pat)
   while (*p != NUL) {
     int l;
 
-    if (has_mbyte && (l = (*mb_ptr2len)(p)) > 1) {
-      if (enc_utf8 && utf_isupper(utf_ptr2char(p)))
-        return TRUE;
+    if ((l = mb_ptr2len(p)) > 1) {
+      if (mb_isupper(utf_ptr2char(p))) {
+        return true;
+      }
       p += l;
     } else if (*p == '\\') {
-      if (p[1] == '_' && p[2] != NUL)        /* skip "\_X" */
+      if (p[1] == '_' && p[2] != NUL) {  // skip "\_X"
         p += 3;
-      else if (p[1] == '%' && p[2] != NUL)        /* skip "\%X" */
+      } else if (p[1] == '%' && p[2] != NUL) {  // skip "\%X"
         p += 3;
-      else if (p[1] != NUL)        /* skip "\X" */
+      } else if (p[1] != NUL) {  // skip "\X"
         p += 2;
-      else
+      } else {
         p += 1;
-    } else if (vim_isupper(*p))
-      return TRUE;
-    else
-      ++p;
+      }
+    } else if (mb_isupper(*p)) {
+      return true;
+    } else {
+      p++;
+    }
   }
   return FALSE;
 }
 
-char_u *last_csearch(void)
+const char *last_csearch(void)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  return lastc_bytes;
+  return (const char *)lastc_bytes;
 }
 
 int last_csearch_forward(void)
@@ -1284,10 +1297,11 @@ int search_for_exact_line(buf_T *buf, pos_T *pos, int dir, char_u *pat)
      * ignored because we are interested in the next line -- Acevedo */
     if ((compl_cont_status & CONT_ADDING)
         && !(compl_cont_status & CONT_SOL)) {
-      if ((p_ic ? mb_stricmp(p, pat) : STRCMP(p, pat)) == 0)
+      if (mb_strcmp_ic((bool)p_ic, (const char *)p, (const char *)pat) == 0) {
         return OK;
-    } else if (*p != NUL) {   /* ignore empty lines */
-      /* expanding lines or words */
+      }
+    } else if (*p != NUL) {  // Ignore empty lines.
+      // Expanding lines or words.
       assert(compl_length >= 0);
       if ((p_ic ? mb_strnicmp(p, pat, (size_t)compl_length)
            : STRNCMP(p, pat, compl_length)) == 0)
@@ -2411,32 +2425,20 @@ static int cls(void)
   int c;
 
   c = gchar_cursor();
-  if (p_altkeymap && c == F_BLANK)
+  if (p_altkeymap && c == F_BLANK) {
     return 0;
-  if (c == ' ' || c == '\t' || c == NUL)
-    return 0;
-  if (enc_dbcs != 0 && c > 0xFF) {
-    /* If cls_bigword, report multi-byte chars as class 1. */
-    if (enc_dbcs == DBCS_KOR && cls_bigword)
-      return 1;
-
-    /* process code leading/trailing bytes */
-    return dbcs_class(((unsigned)c >> 8), (c & 0xFF));
   }
-  if (enc_utf8) {
-    c = utf_class(c);
-    if (c != 0 && cls_bigword)
-      return 1;
-    return c;
+  if (c == ' ' || c == '\t' || c == NUL) {
+    return 0;
   }
 
-  /* If cls_bigword is TRUE, report all non-blanks as class 1. */
-  if (cls_bigword)
+  c = utf_class(c);
+
+  // If cls_bigword is TRUE, report all non-blanks as class 1.
+  if (c != 0 && cls_bigword) {
     return 1;
-
-  if (vim_iswordc(c))
-    return 2;
-  return 1;
+  }
+  return c;
 }
 
 /*
@@ -3022,7 +3024,8 @@ extend:
       ++curwin->w_cursor.col;
     VIsual = start_pos;
     VIsual_mode = 'v';
-    redraw_curbuf_later(INVERTED);      /* update the inversion */
+    redraw_cmdline = true;    // show mode later
+    redraw_curbuf_later(INVERTED);      // update the inversion
   } else {
     /* include a newline after the sentence, if there is one */
     if (incl(&curwin->w_cursor) == -1)
@@ -3976,12 +3979,10 @@ current_search (
   return OK;
 }
 
-/*
- * Check if the pattern is one character or zero-width.
- * If move is true, check from the beginning of the buffer,
- * else from the current cursor position.
- * Returns TRUE, FALSE or -1 for failure.
- */
+/// Check if the pattern is one character long or zero-width.
+/// If move is true, check from the beginning of the buffer,
+/// else from the current cursor position.
+/// Returns TRUE, FALSE or -1 for failure.
 static int is_one_char(char_u *pattern, bool move)
 {
   regmmatch_T regmatch;
@@ -3991,11 +3992,17 @@ static int is_one_char(char_u *pattern, bool move)
   int save_called_emsg = called_emsg;
   int flag = 0;
 
+  if (pattern == NULL) {
+    pattern = spats[last_idx].pat;
+  }
+
   if (search_regcomp(pattern, RE_SEARCH, RE_SEARCH,
           SEARCH_KEEP, &regmatch) == FAIL)
     return -1;
 
-  /* move to match */
+  // init startcol correctly
+  regmatch.startpos[0].col = -1;
+  // move to match
   if (move) {
     clearpos(&pos);
   } else {
@@ -4003,21 +4010,29 @@ static int is_one_char(char_u *pattern, bool move)
     /* accept a match at the cursor position */
     flag = SEARCH_START;
   }
-  if (searchit(curwin, curbuf, &pos, FORWARD, spats[last_idx].pat, 1,
-          SEARCH_KEEP + flag, RE_SEARCH, 0, NULL) != FAIL) {
-    /* Zero-width pattern should match somewhere, then we can check if
-     * start and end are in the same position. */
-    called_emsg = FALSE;
-    nmatched = vim_regexec_multi(&regmatch, curwin, curbuf,
-        pos.lnum, (colnr_T)0, NULL);
+  if (searchit(curwin, curbuf, &pos, FORWARD, pattern, 1,
+               SEARCH_KEEP + flag, RE_SEARCH, 0, NULL) != FAIL) {
+    // Zero-width pattern should match somewhere, then we can check if
+    // start and end are in the same position.
+    called_emsg = false;
+    do {
+      regmatch.startpos[0].col++;
+      nmatched = vim_regexec_multi(&regmatch, curwin, curbuf,
+                                   pos.lnum, regmatch.startpos[0].col, NULL);
+      if (!nmatched) {
+        break;
+      }
+    } while (regmatch.startpos[0].col < pos.col);
 
-    if (!called_emsg)
+    if (!called_emsg) {
       result = (nmatched != 0
                 && regmatch.startpos[0].lnum == regmatch.endpos[0].lnum
                 && regmatch.startpos[0].col == regmatch.endpos[0].col);
-
-    if (!result && inc(&pos) >= 0 && pos.col == regmatch.endpos[0].col)
-      result = TRUE;
+      // one char width
+      if (!result && inc(&pos) >= 0 && pos.col == regmatch.endpos[0].col) {
+        result = true;
+      }
+    }
   }
 
   called_emsg |= save_called_emsg;
@@ -4644,12 +4659,12 @@ static void show_pat_in_path(char_u *line, int type, int did_show, int action, F
       *(p + 1) = NUL;
     }
     if (action == ACTION_SHOW_ALL) {
-      sprintf((char *)IObuff, "%3ld: ", count);         /* show match nr */
-      msg_puts(IObuff);
-      sprintf((char *)IObuff, "%4ld", *lnum);           /* show line nr */
-      /* Highlight line numbers */
-      msg_puts_attr(IObuff, hl_attr(HLF_N));
-      MSG_PUTS(" ");
+      snprintf((char *)IObuff, IOSIZE, "%3ld: ", count);  // Show match nr.
+      msg_puts((const char *)IObuff);
+      snprintf((char *)IObuff, IOSIZE, "%4ld", *lnum);  // Show line nr.
+      // Highlight line numbers.
+      msg_puts_attr((const char *)IObuff, hl_attr(HLF_N));
+      msg_puts(" ");
     }
     msg_prt_line(line, FALSE);
     ui_flush();                        /* show one line at a time */

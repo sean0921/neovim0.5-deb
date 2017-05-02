@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /*
  * Code for menus.  Used for the GUI and 'wildmenu'.
  * GUI/Motif support by Robert Webb
@@ -755,10 +758,11 @@ static void show_menus_recursive(vimmenu_T *menu, int modes, int depth)
         else
           msg_putchar(' ');
         MSG_PUTS(" ");
-        if (*menu->strings[bit] == NUL)
-          msg_puts_attr((char_u *)"<Nop>", hl_attr(HLF_8));
-        else
-          msg_outtrans_special(menu->strings[bit], FALSE);
+        if (*menu->strings[bit] == NUL) {
+          msg_puts_attr("<Nop>", hl_attr(HLF_8));
+        } else {
+          msg_outtrans_special(menu->strings[bit], false);
+        }
       }
   } else {
     if (menu == NULL) {

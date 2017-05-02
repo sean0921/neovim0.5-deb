@@ -1,3 +1,15 @@
+neovim (0.2.0-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+    + Cursor shape/color is controlled by 'guicursor', even in the terminal.
+      $NVIM_TUI_ENABLE_CURSOR_SHAPE is no longer used.
+    + 'showcmd', 'ruler', and 'belloff=all' are set by default.
+    + 'mouse=a' is no longer set by default.
+    + debcontrol.vim: Add "rust" and "javascript" as known sections.  (Closes:
+      #847541)
+
+ -- James McCoy <jamessan@debian.org>  Mon, 01 May 2017 22:50:45 -0400
+
 neovim (0.1.7-4) unstable; urgency=high
 
   * Cherry-pick b338bb9d & 4af6c608 from upstream to fix buffer overflow if a

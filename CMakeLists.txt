@@ -42,8 +42,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   if(CMAKE_COMPILER_IS_GNUCXX)
     set(CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-isystem ")
   endif()
+endif()
 
-  # Enable fixing case-insensitive filenames for Mac.
+if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  # Enable fixing case-insensitive filenames for Windows and Mac.
   set(USE_FNAME_CASE TRUE)
 endif()
 
@@ -61,12 +63,12 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
 # If not in a git repo (e.g., a tarball) these tokens define the complete
 # version string, else they are combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
-set(NVIM_VERSION_MINOR 1)
-set(NVIM_VERSION_PATCH 7)
+set(NVIM_VERSION_MINOR 2)
+set(NVIM_VERSION_PATCH 0)
 set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 # API level
-set(NVIM_API_LEVEL 1)         # Bump this after any API change.
+set(NVIM_API_LEVEL 2)         # Bump this after any API change.
 set(NVIM_API_LEVEL_COMPAT 0)  # Adjust this after a _breaking_ API change.
 set(NVIM_API_PRERELEASE false)
 
@@ -150,9 +152,9 @@ if(NOT MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wconversion")
 endif()
 
-# gcc 4.0 and better turn on _FORTIFY_SOURCE=2 automatically.  This currently
+# gcc 4.0+ sets _FORTIFY_SOURCE=2 automatically.  This currently
 # does not work with Neovim due to some uses of dynamically-sized structures.
-# See https://github.com/neovim/neovim/issues/223 for details.
+# https://github.com/neovim/neovim/issues/223
 include(CheckCSourceCompiles)
 
 # Include the build type's default flags in the check for _FORTIFY_SOURCE,
@@ -255,11 +257,10 @@ if(HAS_DIAG_COLOR_FLAG)
   add_definitions(-fdiagnostics-color=auto)
 endif()
 
-option(
-  TRAVIS_CI_BUILD "Travis CI build.  Extra compilation flags will be set." OFF)
+option(TRAVIS_CI_BUILD "Travis/QuickBuild CI. Extra flags will be set." OFF)
 
 if(TRAVIS_CI_BUILD)
-  message(STATUS "Travis CI build enabled.")
+  message(STATUS "Travis/QuickBuild CI build enabled.")
   add_definitions(-Werror)
   if(DEFINED ENV{BUILD_32BIT})
     # Get some test coverage for unsigned char
@@ -274,7 +275,6 @@ else()
 endif()
 
 add_definitions(-DINCLUDE_GENERATED_DECLARATIONS)
-add_definitions(-DHAVE_CONFIG_H)
 
 if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
@@ -309,6 +309,21 @@ include_directories(SYSTEM ${LIBUV_INCLUDE_DIRS})
 find_package(Msgpack 1.0.0 REQUIRED)
 include_directories(SYSTEM ${MSGPACK_INCLUDE_DIRS})
 
+list(APPEND CMAKE_REQUIRED_INCLUDES "${MSGPACK_INCLUDE_DIRS}")
+check_c_source_compiles("
+#include <msgpack.h>
+
+int
+main(void)
+{
+  return MSGPACK_OBJECT_FLOAT32;
+}
+" MSGPACK_HAS_FLOAT32)
+
+if(MSGPACK_HAS_FLOAT32)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNVIM_MSGPACK_HAS_FLOAT32")
+endif()
+
 if(UNIX)
   option(FEAT_TUI "Enable the Terminal UI" ON)
 else()
@@ -340,8 +355,8 @@ if((CLANG_ASAN_UBSAN OR CLANG_MSAN OR CLANG_TSAN) AND NOT CMAKE_C_COMPILER_ID MA
   message(FATAL_ERROR "Sanitizers are only supported for Clang.")
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
-  message(STATUS "detected OpenBSD; disabled jemalloc. #5318")
+if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD|FreeBSD")
+  message(STATUS "detected OpenBSD/FreeBSD; disabled jemalloc. #5318")
   option(ENABLE_JEMALLOC "enable jemalloc" OFF)
 else()
   option(ENABLE_JEMALLOC "enable jemalloc" ON)
@@ -423,7 +438,6 @@ if(NOT BUSTED_OUTPUT_TYPE)
 endif()
 
 find_program(LUACHECK_PRG luacheck)
-
 find_program(GPERF_PRG gperf)
 
 include(InstallHelpers)
@@ -439,11 +453,11 @@ install_helper(
 # MIN_LOG_LEVEL for log.h
 if(DEFINED MIN_LOG_LEVEL)
   if(NOT MIN_LOG_LEVEL MATCHES "^[0-3]$")
-    message(FATAL_ERROR "MIN_LOG_LEVEL must be a number DEBUG (0), INFO (1), WARNING (2) or ERROR (3)")
+    message(FATAL_ERROR "MIN_LOG_LEVEL must be a number 0-3")
   endif()
-  message(STATUS "Log level set to ${MIN_LOG_LEVEL}")
+  message(STATUS "MIN_LOG_LEVEL set to ${MIN_LOG_LEVEL}")
 else()
-  message(STATUS "Log level not specified, defaulting to INFO(1)")
+  message(STATUS "MIN_LOG_LEVEL not specified, defaulting to INFO(1)")
 endif()
 
 # Go down the tree.
@@ -456,7 +470,7 @@ get_compile_flags(NVIM_VERSION_CFLAGS)
 
 add_subdirectory(test/includes)
 add_subdirectory(config)
-add_subdirectory(test/functional/fixtures) # compile pty/shell test programs
+add_subdirectory(test/functional/fixtures)  # compile test programs
 add_subdirectory(runtime)
 
 # Setup some test-related bits.  We do this after going down the tree because we
@@ -489,10 +503,9 @@ if(BUSTED_PRG)
     ${CMAKE_BINARY_DIR}/test/config/paths.lua)
 
   set(UNITTEST_PREREQS nvim-test unittest-headers)
-  if(WIN32)
-    set(FUNCTIONALTEST_PREREQS nvim shell-test)
-  else()
-    set(FUNCTIONALTEST_PREREQS nvim tty-test shell-test)
+  set(FUNCTIONALTEST_PREREQS nvim printargs-test shell-test)
+  if(NOT WIN32)
+    list(APPEND FUNCTIONALTEST_PREREQS tty-test)
   endif()
   set(BENCHMARK_PREREQS nvim tty-test)
 
@@ -522,8 +535,7 @@ if(BUSTED_PRG)
       DEPENDS ${UNITTEST_PREREQS}
       ${TEST_TARGET_ARGS})
   else()
-    message(WARNING "The Luajit ffi is not available in ${LUA_PRG}"
-	    ", disabling unit tests")
+    message(WARNING "disabling unit tests: no Luajit FFI in ${LUA_PRG}")
   endif()
 
   add_custom_target(functionaltest

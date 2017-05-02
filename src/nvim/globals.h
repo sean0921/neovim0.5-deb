@@ -12,10 +12,7 @@
 #include "nvim/syntax_defs.h"
 #include "nvim/types.h"
 #include "nvim/event/loop.h"
-
-/*
- * definition of global variables
- */
+#include "nvim/os/os_defs.h"
 
 #define IOSIZE         (1024+1)          // file I/O and sprintf buffer size
 
@@ -24,19 +21,6 @@
 # define MSG_BUF_LEN 480                 // length of buffer for small messages
 # define MSG_BUF_CLEN  (MSG_BUF_LEN / 6) // cell length (worst case: utf-8
                                          // takes 6 bytes for one cell)
-
-/*
- * Maximum length of a path (for non-unix systems) Make it a bit long, to stay
- * on the safe side.  But not too long to put on the stack.
- * TODO(metrix78): Move this to os_defs.h
- */
-#ifndef MAXPATHL
-# ifdef MAXPATHLEN
-#  define MAXPATHL  MAXPATHLEN
-# else
-#  define MAXPATHL  256
-# endif
-#endif
 
 #ifdef WIN32
 # define _PATHSEPSTR "\\"
@@ -108,12 +92,9 @@ typedef enum {
  * They may have different values when the screen wasn't (re)allocated yet
  * after setting Rows or Columns (e.g., when starting up).
  */
-
-#define DFLT_COLS       80              /* default value for 'columns' */
-#define DFLT_ROWS       24              /* default value for 'lines' */
-
+#define DFLT_COLS       80              // default value for 'columns'
+#define DFLT_ROWS       24              // default value for 'lines'
 EXTERN long Rows INIT(= DFLT_ROWS);     // nr of rows in the screen
-
 EXTERN long Columns INIT(= DFLT_COLS);  // nr of columns in the screen
 
 /*
@@ -409,10 +390,6 @@ EXTERN struct caller_scope {
 } provider_caller_scope;
 EXTERN int provider_call_nesting INIT(= 0);
 
-/* Magic number used for hashitem "hi_key" value indicating a deleted item.
- * Only the address is used. */
-EXTERN char_u hash_removed;
-
 
 EXTERN int t_colors INIT(= 256);                // int value of T_CCO
 
@@ -487,6 +464,7 @@ typedef enum {
   , HLF_CUL         // 'cursurline'
   , HLF_MC          // 'colorcolumn'
   , HLF_QFL         // selected quickfix line
+  , HLF_0           // Whitespace
   , HLF_COUNT       // MUST be the last one
 } hlf_T;
 
@@ -495,7 +473,7 @@ typedef enum {
 #define HL_FLAGS { '8', '~', 'z', 'Z', '@', 'd', 'e', 'i', 'l', 'm', 'M', 'n', \
                    'N', 'r', 's', 'S', 'c', 't', 'v', 'V', 'w', 'W', 'f', 'F', \
                    'A', 'C', 'D', 'T', '-', '>', 'B', 'P', 'R', 'L', '+', '=', \
-                   'x', 'X', '*', '#', '_', '!', '.', 'o', 'q' }
+                   'x', 'X', '*', '#', '_', '!', '.', 'o', 'q', '0' }
 
 EXTERN int highlight_attr[HLF_COUNT];       /* Highl. attr for each context. */
 EXTERN int highlight_user[9];                   /* User[1-9] attributes */
@@ -516,9 +494,9 @@ EXTERN int keep_filetype INIT(= FALSE);         /* value for did_filetype when
                                                    starting to execute
                                                    autocommands */
 
-/* When deleting the current buffer, another one must be loaded.  If we know
- * which one is preferred, au_new_curbuf is set to it */
-EXTERN buf_T    *au_new_curbuf INIT(= NULL);
+// When deleting the current buffer, another one must be loaded.
+// If we know which one is preferred, au_new_curbuf is set to it.
+EXTERN bufref_T au_new_curbuf INIT(= { NULL, 0 });
 
 // When deleting a buffer/window and autocmd_busy is TRUE, do not free the
 // buffer/window. but link it in the list starting with
@@ -570,6 +548,7 @@ EXTERN win_T    *prevwin INIT(= NULL);  /* previous window */
   FOR_ALL_TABS(tp) \
     FOR_ALL_WINDOWS_IN_TAB(wp, tp)
 
+// -V:FOR_ALL_WINDOWS_IN_TAB:501
 # define FOR_ALL_WINDOWS_IN_TAB(wp, tp) \
   for (win_T *wp = ((tp) == curtab) \
               ? firstwin : (tp)->tp_firstwin; wp != NULL; wp = wp->w_next)
@@ -605,7 +584,10 @@ EXTERN buf_T    *lastbuf INIT(= NULL);   // last buffer
 EXTERN buf_T    *curbuf INIT(= NULL);    // currently active buffer
 
 // Iterates over all buffers in the buffer list.
-# define FOR_ALL_BUFFERS(buf) for (buf_T *buf = firstbuf; buf != NULL; buf = buf->b_next)
+#define FOR_ALL_BUFFERS(buf) \
+  for (buf_T *buf = firstbuf; buf != NULL; buf = buf->b_next)
+#define FOR_ALL_BUFFERS_BACKWARDS(buf) \
+  for (buf_T *buf = lastbuf; buf != NULL; buf = buf->b_prev)
 
 /* Flag that is set when switching off 'swapfile'.  It means that all blocks
  * are to be loaded into memory.  Shouldn't be global... */
@@ -635,10 +617,10 @@ EXTERN int exiting INIT(= FALSE);
 /* TRUE when planning to exit Vim.  Might
  * still keep on running if there is a changed
  * buffer. */
-/* volatile because it is used in signal handler deathtrap(). */
-EXTERN volatile int full_screen INIT(= FALSE);
-/* TRUE when doing full-screen output
- * otherwise only writing some messages */
+// volatile because it is used in signal handler deathtrap().
+EXTERN volatile int full_screen INIT(= false);
+// TRUE when doing full-screen output
+// otherwise only writing some messages
 
 EXTERN int restricted INIT(= FALSE);
 // TRUE when started in restricted mode (-Z)
@@ -843,13 +825,11 @@ EXTERN int ex_no_reprint INIT(= FALSE); /* no need to print after z or p */
 EXTERN int Recording INIT(= FALSE);     /* TRUE when recording into a reg. */
 EXTERN int Exec_reg INIT(= FALSE);      /* TRUE when executing a register */
 
-EXTERN int no_mapping INIT(= FALSE);    /* currently no mapping allowed */
-EXTERN int no_zero_mapping INIT(= 0);   /* mapping zero not allowed */
-EXTERN int allow_keys INIT(= FALSE);    /* allow key codes when no_mapping
-                                         * is set */
-EXTERN int no_u_sync INIT(= 0);         /* Don't call u_sync() */
-EXTERN int u_sync_once INIT(= 0);       /* Call u_sync() once when evaluating
-                                           an expression. */
+EXTERN int no_mapping INIT(= false);    // currently no mapping allowed
+EXTERN int no_zero_mapping INIT(= 0);   // mapping zero not allowed
+EXTERN int no_u_sync INIT(= 0);         // Don't call u_sync()
+EXTERN int u_sync_once INIT(= 0);       // Call u_sync() once when evaluating
+                                        // an expression.
 
 EXTERN bool force_restart_edit INIT(= false);  // force restart_edit after
                                                // ex_normal returns
@@ -872,9 +852,10 @@ EXTERN int mapped_ctrl_c INIT(= 0);  // Modes where CTRL-C is mapped.
 
 EXTERN cmdmod_T cmdmod;                 /* Ex command modifiers */
 
-EXTERN int msg_silent INIT(= 0);        /* don't print messages */
-EXTERN int emsg_silent INIT(= 0);       /* don't print error messages */
-EXTERN int cmd_silent INIT(= FALSE);      /* don't echo the command line */
+EXTERN int msg_silent INIT(= 0);         // don't print messages
+EXTERN int emsg_silent INIT(= 0);        // don't print error messages
+EXTERN bool emsg_noredir INIT(= false);  // don't redirect error messages
+EXTERN int cmd_silent INIT(= false);     // don't echo the command line
 
 /* Values for swap_exists_action: what to do when swap file already exists */
 #define SEA_NONE        0       /* don't use dialog */
@@ -888,9 +869,16 @@ EXTERN int swap_exists_action INIT(= SEA_NONE);
 EXTERN int swap_exists_did_quit INIT(= FALSE);
 /* Selected "quit" at the dialog. */
 
-EXTERN char_u IObuff[IOSIZE];       /* sprintf's are done in this buffer */
-EXTERN char_u NameBuff[MAXPATHL];   /* buffer for expanding file names */
-EXTERN char_u msg_buf[MSG_BUF_LEN]; /* small buffer for messages */
+EXTERN char_u IObuff[IOSIZE];               ///< Buffer for sprintf, I/O, etc.
+EXTERN char_u NameBuff[MAXPATHL];           ///< Buffer for expanding file names
+EXTERN char_u msg_buf[MSG_BUF_LEN];         ///< Small buffer for messages
+EXTERN char os_buf[                         ///< Buffer for the os/ layer
+#if MAXPATHL > IOSIZE
+MAXPATHL
+#else
+IOSIZE
+#endif
+];
 
 /* When non-zero, postpone redrawing. */
 EXTERN int RedrawingDisabled INIT(= 0);
@@ -1125,9 +1113,8 @@ EXTERN char_u e_invcmd[] INIT(= N_("E476: Invalid command"));
 EXTERN char_u e_isadir2[] INIT(= N_("E17: \"%s\" is a directory"));
 EXTERN char_u e_invjob[] INIT(= N_("E900: Invalid job id"));
 EXTERN char_u e_jobtblfull[] INIT(= N_("E901: Job table is full"));
-EXTERN char_u e_jobexe[] INIT(= N_("E902: \"%s\" is not an executable"));
 EXTERN char_u e_jobspawn[] INIT(= N_(
-      "E903: Process for command \"%s\" could not be spawned"));
+        "E903: Process failed to start: %s: \"%s\""));
 EXTERN char_u e_jobnotpty[] INIT(= N_("E904: Job is not connected to a pty"));
 EXTERN char_u e_libcall[] INIT(= N_("E364: Library call failed for \"%s()\""));
 EXTERN char_u e_mkdir[] INIT(= N_("E739: Cannot create directory %s: %s"));
@@ -1153,7 +1140,6 @@ EXTERN char_u e_noprev[] INIT(= N_("E34: No previous command"));
 EXTERN char_u e_noprevre[] INIT(= N_("E35: No previous regular expression"));
 EXTERN char_u e_norange[] INIT(= N_("E481: No range allowed"));
 EXTERN char_u e_noroom[] INIT(= N_("E36: Not enough room"));
-EXTERN char_u e_notcreate[] INIT(= N_("E482: Can't create file %s"));
 EXTERN char_u e_notmp[] INIT(= N_("E483: Can't get temp file name"));
 EXTERN char_u e_notopen[] INIT(= N_("E484: Can't open file %s"));
 EXTERN char_u e_notread[] INIT(= N_("E485: Can't read file %s"));
@@ -1175,11 +1161,7 @@ EXTERN char_u e_loclist[] INIT(= N_("E776: No location list"));
 EXTERN char_u e_re_damg[] INIT(= N_("E43: Damaged match string"));
 EXTERN char_u e_re_corr[] INIT(= N_("E44: Corrupted regexp program"));
 EXTERN char_u e_readonly[] INIT(= N_(
-        "E45: 'readonly' option is set (add ! to override)"));
-EXTERN char_u e_readonlyvar[] INIT(= N_(
-        "E46: Cannot change read-only variable \"%s\""));
-EXTERN char_u e_readonlysbx[] INIT(= N_(
-        "E794: Cannot set variable in the sandbox: \"%s\""));
+    "E45: 'readonly' option is set (add ! to override)"));
 EXTERN char_u e_readerrf[] INIT(= N_("E47: Error while reading errorfile"));
 EXTERN char_u e_sandbox[] INIT(= N_("E48: Not allowed in sandbox"));
 EXTERN char_u e_secure[] INIT(= N_("E523: Not allowed here"));
@@ -1218,6 +1200,8 @@ EXTERN char_u e_invalidreg[] INIT(= N_("E850: Invalid register name"));
 EXTERN char_u e_dirnotf[] INIT(= N_(
     "E919: Directory not found in '%s': \"%s\""));
 EXTERN char_u e_unsupportedoption[] INIT(= N_("E519: Option not supported"));
+EXTERN char_u e_fnametoolong[] INIT(= N_("E856: Filename too long"));
+EXTERN char_u e_float_as_string[] INIT(= N_("E806: using Float as a String"));
 
 
 EXTERN char top_bot_msg[] INIT(= N_("search hit TOP, continuing at BOTTOM"));
@@ -1249,5 +1233,21 @@ typedef enum {
   kWorking,
   kBroken
 } WorkingStatus;
+
+/// The scope of a working-directory command like `:cd`.
+///
+/// Scopes are enumerated from lowest to highest. When adding a scope make sure
+/// to update all functions using scopes as well, such as the implementation of
+/// `getcwd()`. When using scopes as limits (e.g. in loops) don't use the scopes
+/// directly, use `MIN_CD_SCOPE` and `MAX_CD_SCOPE` instead.
+typedef enum {
+  kCdScopeInvalid = -1,
+  kCdScopeWindow,  ///< Affects one window.
+  kCdScopeTab,     ///< Affects one tab page.
+  kCdScopeGlobal,  ///< Affects the entire Nvim instance.
+} CdScope;
+
+#define MIN_CD_SCOPE  kCdScopeWindow
+#define MAX_CD_SCOPE  kCdScopeGlobal
 
 #endif /* NVIM_GLOBALS_H */

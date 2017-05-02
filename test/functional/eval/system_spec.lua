@@ -1,11 +1,13 @@
 local helpers = require('test.functional.helpers')(after_each)
-local eq, clear, eval, execute, feed, nvim =
-  helpers.eq, helpers.clear, helpers.eval, helpers.execute, helpers.feed,
-  helpers.nvim
+
+local nvim_dir = helpers.nvim_dir
+local eq, call, clear, eval, feed_command, feed, nvim =
+  helpers.eq, helpers.call, helpers.clear, helpers.eval, helpers.feed_command,
+  helpers.feed, helpers.nvim
+local command = helpers.command
+local iswin = helpers.iswin
 
 local Screen = require('test.functional.ui.screen')
-
-if helpers.pending_win32(pending) then return end
 
 local function create_file_with_nuls(name)
   return function()
@@ -31,15 +33,88 @@ end
 describe('system()', function()
   before_each(clear)
 
-  it('sets the v:shell_error variable', function()
-    eval([[system("sh -c 'exit'")]])
-    eq(0, eval('v:shell_error'))
-    eval([[system("sh -c 'exit 1'")]])
-    eq(1, eval('v:shell_error'))
-    eval([[system("sh -c 'exit 5'")]])
-    eq(5, eval('v:shell_error'))
-    eval([[system('this-should-not-exist')]])
-    eq(127, eval('v:shell_error'))
+  describe('command passed as a List', function()
+    local function printargs_path()
+      return nvim_dir..'/printargs-test' .. (iswin() and '.exe' or '')
+    end
+
+    it('sets v:shell_error if cmd[0] is not executable', function()
+      call('system', { 'this-should-not-exist' })
+      eq(-1, eval('v:shell_error'))
+    end)
+
+    it('parameter validation does NOT modify v:shell_error', function()
+      -- 1. Call system() with invalid parameters.
+      -- 2. Assert that v:shell_error was NOT set.
+      feed_command('call system({})')
+      eq('E475: Invalid argument: expected String or List', eval('v:errmsg'))
+      eq(0, eval('v:shell_error'))
+      feed_command('call system([])')
+      eq('E474: Invalid argument', eval('v:errmsg'))
+      eq(0, eval('v:shell_error'))
+
+      -- Provoke a non-zero v:shell_error.
+      call('system', { 'this-should-not-exist' })
+      local old_val = eval('v:shell_error')
+      eq(-1, old_val)
+
+      -- 1. Call system() with invalid parameters.
+      -- 2. Assert that v:shell_error was NOT modified.
+      feed_command('call system({})')
+      eq(old_val, eval('v:shell_error'))
+      feed_command('call system([])')
+      eq(old_val, eval('v:shell_error'))
+    end)
+
+    it('quotes arguments correctly #5280', function()
+      local out = call('system',
+        { printargs_path(), [[1]], [[2 "3]], [[4 ' 5]], [[6 ' 7']] })
+
+      eq(0, eval('v:shell_error'))
+      eq([[arg1=1;arg2=2 "3;arg3=4 ' 5;arg4=6 ' 7';]], out)
+
+      out = call('system', { printargs_path(), [['1]], [[2 "3]] })
+      eq(0, eval('v:shell_error'))
+      eq([[arg1='1;arg2=2 "3;]], out)
+
+      out = call('system', { printargs_path(), "A\nB" })
+      eq(0, eval('v:shell_error'))
+      eq("arg1=A\nB;", out)
+    end)
+
+    it('calls executable in $PATH', function()
+      if 0 == eval("executable('python')") then pending("missing `python`") end
+      eq("foo\n", eval([[system(['python', '-c', 'print("foo")'])]]))
+      eq(0, eval('v:shell_error'))
+    end)
+
+    it('does NOT run in shell', function()
+      if not iswin() then
+        eq("* $PATH %PATH%\n", eval("system(['echo', '*', '$PATH', '%PATH%'])"))
+      end
+    end)
+  end)
+
+  it('sets v:shell_error', function()
+    if iswin() then
+      eval([[system("cmd.exe /c exit")]])
+      eq(0, eval('v:shell_error'))
+      eval([[system("cmd.exe /c exit 1")]])
+      eq(1, eval('v:shell_error'))
+      eval([[system("cmd.exe /c exit 5")]])
+      eq(5, eval('v:shell_error'))
+      eval([[system('this-should-not-exist')]])
+      eq(1, eval('v:shell_error'))
+    else
+      eval([[system("sh -c 'exit'")]])
+      eq(0, eval('v:shell_error'))
+      eval([[system("sh -c 'exit 1'")]])
+      eq(1, eval('v:shell_error'))
+      eval([[system("sh -c 'exit 5'")]])
+      eq(5, eval('v:shell_error'))
+      eval([[system('this-should-not-exist')]])
+      eq(127, eval('v:shell_error'))
+    end
   end)
 
   describe('executes shell function if passed a string', function()
@@ -54,6 +129,40 @@ describe('system()', function()
     after_each(function()
         screen:detach()
     end)
+
+    if iswin() then
+      it('with shell=cmd.exe', function()
+        command('set shell=cmd.exe')
+        eq('""\n', eval([[system('echo ""')]]))
+        eq('"a b"\n', eval([[system('echo "a b"')]]))
+        eq('a \nb\n', eval([[system('echo a & echo b')]]))
+        eq('a \n', eval([[system('echo a 2>&1')]]))
+        eval([[system('cd "C:\Program Files"')]])
+        eq(0, eval('v:shell_error'))
+      end)
+
+      it('with shell=cmd', function()
+        command('set shell=cmd')
+        eq('"a b"\n', eval([[system('echo "a b"')]]))
+      end)
+
+      it('with shell=$COMSPEC', function()
+        local comspecshell = eval("fnamemodify($COMSPEC, ':t')")
+        if comspecshell == 'cmd.exe' then
+          command('set shell=$COMSPEC')
+          eq('"a b"\n', eval([[system('echo "a b"')]]))
+        else
+          pending('$COMSPEC is not cmd.exe: ' .. comspecshell)
+        end
+      end)
+
+      it('works with powershell', function()
+        helpers.set_shell_powershell()
+        eq('a\nb\n', eval([[system('echo a b')]]))
+        eq('C:\\\n', eval([[system('cd c:\; (Get-Location).Path')]]))
+        eq('a b\n', eval([[system('echo "a b"')]]))
+      end)
+    end
 
     it('`echo` and waits for its return', function()
       feed(':call system("echo")<cr>')
@@ -115,11 +224,15 @@ describe('system()', function()
 
   describe('passing no input', function()
     it('returns the program output', function()
-      eq("echoed", eval('system("echo -n echoed")'))
+      if iswin() then
+        eq("echoed\n", eval('system("echo echoed")'))
+      else
+        eq("echoed", eval('system("echo -n echoed")'))
+      end
     end)
     it('to backgrounded command does not crash', function()
       -- This is indeterminate, just exercise the codepath. May get E5677.
-      execute('call system("echo -n echoed &")')
+      feed_command('call system("echo -n echoed &")')
       local v_errnum = string.match(eval("v:errmsg"), "^E%d*:")
       if v_errnum then
         eq("E5677:", v_errnum)
@@ -134,7 +247,7 @@ describe('system()', function()
     end)
     it('to backgrounded command does not crash', function()
       -- This is indeterminate, just exercise the codepath. May get E5677.
-      execute('call system("cat - &")')
+      feed_command('call system("cat - &")')
       local v_errnum = string.match(eval("v:errmsg"), "^E%d*:")
       if v_errnum then
         eq("E5677:", v_errnum)
@@ -158,7 +271,7 @@ describe('system()', function()
     end)
   end)
 
-  describe('passing number as input', function()
+  describe('input passed as Number', function()
     it('stringifies the input', function()
       eq('1', eval('system("cat", 1)'))
     end)
@@ -175,8 +288,8 @@ describe('system()', function()
     end)
   end)
 
-  describe('passing list as input', function()
-    it('joins list items with linefeed characters', function()
+  describe('input passed as List', function()
+    it('joins List items with linefeed characters', function()
       eq('line1\nline2\nline3',
         eval("system('cat -', ['line1', 'line2', 'line3'])"))
     end)
@@ -185,7 +298,7 @@ describe('system()', function()
     -- is inconsistent and is a good reason for the existence of the
     -- `systemlist()` function, where input and output map to the same
     -- characters(see the following tests with `systemlist()` below)
-    describe('with linefeed characters inside list items', function()
+    describe('with linefeed characters inside List items', function()
       it('converts linefeed characters to NULs', function()
         eq('l1\001p2\nline2\001a\001b\nl3',
           eval([[system('cat -', ["l1\np2", "line2\na\nb", 'l3'])]]))
@@ -202,37 +315,40 @@ describe('system()', function()
 
   describe("with a program that doesn't close stdout", function()
     if not xclip then
-      pending('skipped (missing xclip)', function() end)
+      pending('missing `xclip`', function() end)
     else
       it('will exit properly after passing input', function()
-        eq('', eval([[system('xclip -i -selection clipboard', 'clip-data')]]))
+        eq('', eval([[system('xclip -i -loops 1 -selection clipboard', 'clip-data')]]))
         eq('clip-data', eval([[system('xclip -o -selection clipboard')]]))
       end)
     end
   end)
-
-  describe('command passed as a list', function()
-    it('does not execute &shell', function()
-      eq('* $NOTHING ~/file',
-         eval("system(['echo', '-n', '*', '$NOTHING', '~/file'])"))
-    end)
-  end)
 end)
 
 describe('systemlist()', function()
-  -- behavior is similar to `system()` but it returns a list instead of a
-  -- string.
+  -- Similar to `system()`, but returns List instead of String.
   before_each(clear)
 
-  it('sets the v:shell_error variable', function()
-    eval([[systemlist("sh -c 'exit'")]])
-    eq(0, eval('v:shell_error'))
-    eval([[systemlist("sh -c 'exit 1'")]])
-    eq(1, eval('v:shell_error'))
-    eval([[systemlist("sh -c 'exit 5'")]])
-    eq(5, eval('v:shell_error'))
-    eval([[systemlist('this-should-not-exist')]])
-    eq(127, eval('v:shell_error'))
+  it('sets v:shell_error', function()
+    if iswin() then
+      eval([[systemlist("cmd.exe /c exit")]])
+      eq(0, eval('v:shell_error'))
+      eval([[systemlist("cmd.exe /c exit 1")]])
+      eq(1, eval('v:shell_error'))
+      eval([[systemlist("cmd.exe /c exit 5")]])
+      eq(5, eval('v:shell_error'))
+      eval([[systemlist('this-should-not-exist')]])
+      eq(1, eval('v:shell_error'))
+    else
+      eval([[systemlist("sh -c 'exit'")]])
+      eq(0, eval('v:shell_error'))
+      eval([[systemlist("sh -c 'exit 1'")]])
+      eq(1, eval('v:shell_error'))
+      eval([[systemlist("sh -c 'exit 5'")]])
+      eq(5, eval('v:shell_error'))
+      eval([[systemlist('this-should-not-exist')]])
+      eq(127, eval('v:shell_error'))
+    end
   end)
 
   describe('exectues shell function', function()
@@ -330,18 +446,19 @@ describe('systemlist()', function()
     after_each(delete_file(fname))
 
     it('replaces NULs by newline characters', function()
+      if helpers.pending_win32(pending) then return end
       eq({'part1\npart2\npart3'}, eval('systemlist("cat '..fname..'")'))
     end)
   end)
 
-  describe('passing list as input', function()
+  describe('input passed as List', function()
     it('joins list items with linefeed characters', function()
       eq({'line1', 'line2', 'line3'},
         eval("systemlist('cat -', ['line1', 'line2', 'line3'])"))
     end)
 
     -- Unlike `system()` which uses SOH to represent NULs, with `systemlist()`
-    -- input and ouput are the same
+    -- input and ouput are the same.
     describe('with linefeed characters inside list items', function()
       it('converts linefeed characters to NULs', function()
         eq({'l1\np2', 'line2\na\nb', 'l3'},
@@ -381,11 +498,11 @@ describe('systemlist()', function()
 
   describe("with a program that doesn't close stdout", function()
     if not xclip then
-      pending('skipped (missing xclip)', function() end)
+      pending('missing `xclip`', function() end)
     else
       it('will exit properly after passing input', function()
         eq({}, eval(
-          "systemlist('xclip -i -selection clipboard', ['clip', 'data'])"))
+          "systemlist('xclip -i -loops 1 -selection clipboard', ['clip', 'data'])"))
         eq({'clip', 'data'}, eval(
           "systemlist('xclip -o -selection clipboard')"))
       end)
