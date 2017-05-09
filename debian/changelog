@@ -10,6 +10,7 @@ neovim (0.2.0-1) UNRELEASED; urgency=medium
   * Skip known flaky tests by setting $TEST_SKIP_FRAGILE.
   * Rewrite debian/rules to invoke cmake directly, instead of through
     top-level Makefile.
+  * Bump lua-nvim Build-Depends >= 0.0.1-26-1~, needed by new tests.
 
  -- James McCoy <jamessan@debian.org>  Mon, 01 May 2017 22:50:45 -0400
 
