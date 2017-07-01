@@ -7,6 +7,7 @@ neovim (0.2.0-1) UNRELEASED; urgency=medium
     + 'mouse=a' is no longer set by default.
     + debcontrol.vim: Add "rust" and "javascript" as known sections.  (Closes:
       #847541)
+    + Fix test failures with msgpack-c 2.x.  (Closes: #866802)
   * Skip known flaky tests by setting $TEST_SKIP_FRAGILE.
   * Rewrite debian/rules to invoke cmake directly, instead of through
     top-level Makefile.
