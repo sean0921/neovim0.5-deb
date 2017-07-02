@@ -1,4 +1,4 @@
-neovim (0.2.0-1) UNRELEASED; urgency=medium
+neovim (0.2.0-1) experimental; urgency=medium
 
   * New upstream release
     + Cursor shape/color is controlled by 'guicursor', even in the terminal.
@@ -15,7 +15,7 @@ neovim (0.2.0-1) UNRELEASED; urgency=medium
   * Cherry-pick 4d017256 from upstream to fix a test failure when $HOME is a
     long path.
 
- -- James McCoy <jamessan@debian.org>  Mon, 01 May 2017 22:50:45 -0400
+ -- James McCoy <jamessan@debian.org>  Sun, 02 Jul 2017 16:39:33 -0400
 
 neovim (0.1.7-4) unstable; urgency=high
 
