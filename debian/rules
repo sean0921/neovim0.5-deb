@@ -37,7 +37,7 @@ override_dh_auto_build:
 	$(BUILD)
 
 override_dh_auto_install:
-	$(BUILD) install
+	env DESTDIR=$(CURDIR)/debian/tmp $(BUILD) install
 
 override_dh_install:
 	dh_install --fail-missing
