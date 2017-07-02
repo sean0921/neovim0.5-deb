@@ -23,6 +23,7 @@ endif
 export USERNAME = pkg-vim-maintainers
 export HOSTNAME = lists.alioth.debian.org
 
+USER = $(shell id -un)
 ID = $(shell id -u)
 GID = $(shell id -g)
 BUILD = ninja -v -C build
