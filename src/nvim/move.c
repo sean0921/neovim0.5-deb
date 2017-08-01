@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /*
  * move.c: Functions for moving the cursor and scrolling text.
  *
@@ -24,6 +27,7 @@
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
 #include "nvim/misc1.h"
+#include "nvim/option.h"
 #include "nvim/popupmnu.h"
 #include "nvim/screen.h"
 #include "nvim/strings.h"
@@ -669,8 +673,7 @@ int win_col_off(win_T *wp)
   return ((wp->w_p_nu || wp->w_p_rnu) ? number_width(wp) + 1 : 0)
          + (cmdwin_type == 0 || wp != curwin ? 0 : 1)
          + (int)wp->w_p_fdc
-         + (wp->w_buffer->b_signlist != NULL ? 2 : 0)
-  ;
+         + (signcolumn_on(wp) ? 2 : 0);
 }
 
 int curwin_col_off(void)
@@ -1878,8 +1881,10 @@ int onepage(int dir, long count)
   }
   foldAdjustCursor();
   cursor_correct();
-  if (retval == OK)
+  check_cursor_col();
+  if (retval == OK) {
     beginline(BL_SOL | BL_FIX);
+  }
   curwin->w_valid &= ~(VALID_WCOL|VALID_WROW|VALID_VIRTCOL);
 
   /*
@@ -2137,7 +2142,8 @@ void do_check_cursorbind(void)
    * loop through the cursorbound windows
    */
   VIsual_select = VIsual_active = 0;
-  for (curwin = firstwin; curwin; curwin = curwin->w_next) {
+  FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+    curwin = wp;
     curbuf = curwin->w_buffer;
     /* skip original window  and windows with 'noscrollbind' */
     if (curwin != old_curwin && curwin->w_p_crb) {

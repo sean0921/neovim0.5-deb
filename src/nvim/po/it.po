@@ -2541,7 +2541,7 @@ msgstr "E490: Non trovo alcuna piegatura"
 
 #: ../fold.c:544
 msgid "E350: Cannot create fold with current 'foldmethod'"
-msgstr "E350: Non posso create piegatura con il 'foldmethod' in uso"
+msgstr "E350: Non posso creare piegatura con il 'foldmethod' in uso"
 
 #: ../fold.c:546
 msgid "E351: Cannot delete fold with current 'foldmethod'"
@@ -2703,11 +2703,6 @@ msgstr "E900: 'Job id' non valido"
 #: ../globals.h:1021
 msgid "E901: Job table is full"
 msgstr "E901: Job table piena"
-
-#: ../globals.h:1022
-#, c-format
-msgid "E902: \"%s\" is not an executable"
-msgstr "E902: \"%s\" non è un esegubile"
 
 #: ../globals.h:1024
 #, c-format

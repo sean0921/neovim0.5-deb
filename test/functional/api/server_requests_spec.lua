@@ -1,14 +1,14 @@
--- Tests for some server->client RPC scenarios. Note that unlike with
--- `rpcnotify`, to evaluate `rpcrequest` calls we need the client event loop to
--- be running.
+-- Test server -> client RPC scenarios. Note: unlike `rpcnotify`, to evaluate
+-- `rpcrequest` calls we need the client event loop to be running.
 local helpers = require('test.functional.helpers')(after_each)
+local Paths = require('test.config.paths')
+
 local clear, nvim, eval = helpers.clear, helpers.nvim, helpers.eval
 local eq, neq, run, stop = helpers.eq, helpers.neq, helpers.run, helpers.stop
 local nvim_prog, command, funcs = helpers.nvim_prog, helpers.command, helpers.funcs
 local source, next_message = helpers.source, helpers.next_message
+local ok = helpers.ok
 local meths = helpers.meths
-
-if helpers.pending_win32(pending) then return end
 
 describe('server -> client', function()
   local cid
@@ -182,7 +182,7 @@ describe('server -> client', function()
     it('returns an error if the request failed', function()
       local status, err = pcall(eval, "rpcrequest(vim, 'does-not-exist')")
       eq(false, status)
-      eq(true, string.match(err, ': (.*)') == 'Failed to evaluate expression')
+      ok(nil ~= string.match(err, 'Failed to evaluate expression'))
     end)
   end)
 
@@ -202,7 +202,7 @@ describe('server -> client', function()
         \ 'rpc': v:true
         \ }
       ]])
-      local lua_prog = arg[-1]
+      local lua_prog = Paths.test_lua_prg
       meths.set_var("args", {lua_prog, 'test/functional/api/rpc_fixture.lua'})
       jobid = eval("jobstart(g:args, g:job_opts)")
       neq(0, 'jobid')
@@ -211,6 +211,8 @@ describe('server -> client', function()
     after_each(function()
       funcs.jobstop(jobid)
     end)
+
+    if helpers.pending_win32(pending) then return end
 
     it('rpc and text stderr can be combined', function()
       eq("ok",funcs.rpcrequest(jobid, "poll"))

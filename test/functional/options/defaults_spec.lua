@@ -3,19 +3,15 @@ local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
 
 local meths = helpers.meths
-local execute = helpers.execute
+local command = helpers.command
 local clear = helpers.clear
 local eval = helpers.eval
 local eq = helpers.eq
 local neq = helpers.neq
 
-if helpers.pending_win32(pending) then return end
-
 local function init_session(...)
   local args = { helpers.nvim_prog, '-i', 'NONE', '--embed',
-    '--cmd', 'set shortmess+=I background=light noswapfile noautoindent',
-    '--cmd', 'set laststatus=1 undodir=. directory=. viewdir=. backupdir=.'
-    }
+                 '--cmd', helpers.nvim_set }
   for _, v in ipairs({...}) do
     table.insert(args, v)
   end
@@ -24,14 +20,16 @@ end
 
 describe('startup defaults', function()
   describe(':filetype', function()
+    if helpers.pending_win32(pending) then return end
+
     local function expect_filetype(expected)
-      local screen = Screen.new(48, 4)
+      local screen = Screen.new(50, 4)
       screen:attach()
-      execute('filetype')
+      command('filetype')
       screen:expect([[
-        ^                                                |
-        ~                                               |
-        ~                                               |
+        ^                                                  |
+        ~                                                 |
+        ~                                                 |
         ]]..expected
       )
     end
@@ -39,31 +37,49 @@ describe('startup defaults', function()
     it('enabled by `-u NORC`', function()
       init_session('-u', 'NORC')
       expect_filetype(
-        'filetype detection:ON  plugin:ON  indent:ON     |')
+        'filetype detection:ON  plugin:ON  indent:ON       |')
     end)
 
     it('disabled by `-u NONE`', function()
       init_session('-u', 'NONE')
       expect_filetype(
-        'filetype detection:OFF  plugin:OFF  indent:OFF  |')
+        'filetype detection:OFF  plugin:OFF  indent:OFF    |')
     end)
 
     it('overridden by early `filetype on`', function()
       init_session('-u', 'NORC', '--cmd', 'filetype on')
       expect_filetype(
-        'filetype detection:ON  plugin:OFF  indent:OFF   |')
+        'filetype detection:ON  plugin:OFF  indent:OFF     |')
     end)
 
     it('overridden by early `filetype plugin on`', function()
       init_session('-u', 'NORC', '--cmd', 'filetype plugin on')
       expect_filetype(
-        'filetype detection:ON  plugin:ON  indent:OFF    |')
+        'filetype detection:ON  plugin:ON  indent:OFF      |')
     end)
 
     it('overridden by early `filetype indent on`', function()
       init_session('-u', 'NORC', '--cmd', 'filetype indent on')
       expect_filetype(
-        'filetype detection:ON  plugin:OFF  indent:ON    |')
+        'filetype detection:ON  plugin:OFF  indent:ON      |')
+    end)
+
+    it('adjusted by late `filetype off`', function()
+      init_session('-u', 'NORC', '-c', 'filetype off')
+      expect_filetype(
+        'filetype detection:OFF  plugin:(on)  indent:(on)  |')
+    end)
+
+    it('adjusted by late `filetype plugin off`', function()
+      init_session('-u', 'NORC', '-c', 'filetype plugin off')
+      expect_filetype(
+        'filetype detection:ON  plugin:OFF  indent:ON      |')
+    end)
+
+    it('adjusted by late `filetype indent off`', function()
+      init_session('-u', 'NORC', '-c', 'filetype indent off')
+      expect_filetype(
+        'filetype detection:ON  plugin:ON  indent:OFF      |')
     end)
   end)
 
@@ -82,6 +98,11 @@ describe('startup defaults', function()
       init_session('-u', 'NORC', '--cmd', 'syntax off')
       eq(0, eval('exists("g:syntax_on")'))
     end)
+
+    it('adjusted by late `syntax off`', function()
+      init_session('-u', 'NORC', '-c', 'syntax off')
+      eq(0, eval('exists("g:syntax_on")'))
+    end)
   end)
 
   describe('packpath', function()
@@ -96,11 +117,44 @@ describe('startup defaults', function()
       eq(meths.get_option('runtimepath'), meths.get_option('packpath'))
     end)
   end)
+
+  it('v:progpath is set to the absolute path', function()
+    eq(eval("fnamemodify(v:progpath, ':p')"), eval('v:progpath'))
+  end)
 end)
 
 describe('XDG-based defaults', function()
-  -- Need to be in separate describe() block to not run clear() twice.
+  -- Need separate describe() blocks to not run clear() twice.
   -- Do not put before_each() here for the same reasons.
+
+  describe('with empty/broken environment', function()
+    it('sets correct defaults', function()
+      clear({env={
+        XDG_CONFIG_HOME=nil,
+        XDG_DATA_HOME=nil,
+        XDG_CACHE_HOME=nil,
+        XDG_RUNTIME_DIR=nil,
+        XDG_CONFIG_DIRS=nil,
+        XDG_DATA_DIRS=nil,
+        LOCALAPPDATA=nil,
+        HOMEPATH=nil,
+        HOMEDRIVE=nil,
+        HOME=nil,
+        TEMP=nil,
+        VIMRUNTIME=nil,
+        USER=nil,
+      }})
+
+      eq('.', meths.get_option('backupdir'))
+      eq('.', meths.get_option('viewdir'))
+      eq('.', meths.get_option('directory'))
+      eq('.', meths.get_option('undodir'))
+    end)
+  end)
+
+  -- TODO(jkeyes): tests below fail on win32 because of path separator.
+  if helpers.pending_win32(pending) then return end
+
   describe('with too long XDG variables', function()
     before_each(function()
       clear({env={

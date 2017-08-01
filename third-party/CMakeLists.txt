@@ -1,6 +1,6 @@
 # This is not meant to be included by the top-level.
 cmake_minimum_required (VERSION 2.8.7)
-project(NEOVIM_DEPS)
+project(NVIM_DEPS)
 
 # Point CMake at any custom modules we may ship
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
@@ -90,14 +90,14 @@ include(ExternalProject)
 set(LIBUV_URL https://github.com/libuv/libuv/archive/v1.9.1.tar.gz)
 set(LIBUV_SHA256 a6ca9f0648973d1463f46b495ce546ddcbe7cce2f04b32e802a15539e46c57ad)
 
-set(MSGPACK_URL https://github.com/msgpack/msgpack-c/archive/cpp-1.0.0.tar.gz)
-set(MSGPACK_SHA256 afda64ca445203bb7092372b822bae8b2539fdcebbfc3f753f393628c2bcfe7d)
+set(MSGPACK_URL https://github.com/msgpack/msgpack-c/archive/cpp-2.1.1.tar.gz)
+set(MSGPACK_SHA256 d6bef12d959816a39c7a6972f3f16c0724e4c7ff0927eb59a35247dc8267b609)
 
 set(LUAJIT_URL https://github.com/neovim/deps/raw/master/opt/LuaJIT-2.0.4.tar.gz)
 set(LUAJIT_SHA256 620fa4eb12375021bef6e4f237cbd2dd5d49e56beb414bee052c746beef1807d)
 
-set(LUA_URL https://github.com/lua/lua/archive/5.1.5.tar.gz)
-set(LUA_SHA256 1cd642c4c39778306a14e62ccddace5c7a4fb2257b0b06f43bc81cf305c7415f)
+set(LUA_URL https://www.lua.org/ftp/lua-5.1.5.tar.gz)
+set(LUA_SHA256 2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333)
 
 set(LUAROCKS_URL https://github.com/keplerproject/luarocks/archive/5d8a16526573b36d5b22aa74866120c998466697.tar.gz)
 set(LUAROCKS_SHA256 cae709111c5701235770047dfd7169f66b82ae1c7b9b79207f9df0afb722bfd9)
@@ -105,8 +105,8 @@ set(LUAROCKS_SHA256 cae709111c5701235770047dfd7169f66b82ae1c7b9b79207f9df0afb722
 set(UNIBILIUM_URL https://github.com/mauke/unibilium/archive/v1.2.0.tar.gz)
 set(UNIBILIUM_SHA256 623af1099515e673abfd3cae5f2fa808a09ca55dda1c65a7b5c9424eb304ead8)
 
-set(LIBTERMKEY_URL http://www.leonerd.org.uk/code/libtermkey/libtermkey-0.18.tar.gz)
-set(LIBTERMKEY_SHA256 239746de41c845af52bb3c14055558f743292dd6c24ac26c2d6567a5a6093926)
+set(LIBTERMKEY_URL http://www.leonerd.org.uk/code/libtermkey/libtermkey-0.19.tar.gz)
+set(LIBTERMKEY_SHA256 c505aa4cb48c8fa59c526265576b97a19e6ebe7b7da20f4ecaae898b727b48b7)
 
 set(LIBVTERM_URL https://github.com/neovim/libvterm/archive/a9c7c6fd20fa35e0ad3e0e98901ca12dfca9c25c.tar.gz)
 set(LIBVTERM_SHA256 1a4272be91d9614dc183a503786df83b6584e4afaab7feaaa5409f841afbd796)
@@ -119,6 +119,19 @@ set(LUV_SHA256 86a199403856018cd8e5529c8527450c83664a3d36f52d5253cbe909ea6c5a06)
 
 set(GPERF_URL http://ftp.gnu.org/pub/gnu/gperf/gperf-3.0.4.tar.gz)
 set(GPERF_SHA256 767112a204407e62dbc3106647cf839ed544f3cf5d0f0523aaa2508623aad63e)
+
+# 7za.exe cat.exe curl.exe ca-bundle.crt diff.exe tee.exe tidy.exe xxd.exe
+set(WINTOOLS_URL https://github.com/neovim/deps/raw/2f9acbecf06365c10baa3c0087f34a54c9c6f949/opt/win32tools.zip)
+set(WINTOOLS_SHA256 8bfce7e3a365721a027ce842f2ec1cf878f1726233c215c05964aac07300798c)
+
+set(WINGUI_URL https://github.com/equalsraf/neovim-qt/releases/download/v0.2.6/neovim-qt.zip)
+set(WINGUI_SHA256 90217351e9e51c81ef5bba39066f00d05e15ef1f881882c3c682e61cd446c211)
+
+set(WIN32YANK_URL https://github.com/equalsraf/win32yank/releases/download/v0.0.3/win32yank.zip)
+set(WIN32YANK_SHA256 b474439ed2854a9a24941d66970c7fcfece219401eaaa5ebc0ffcc962e69887a)
+
+set(WINPTY_URL https://github.com/rprichard/winpty/releases/download/0.4.2/winpty-0.4.2-msvc2015.zip)
+set(WINPTY_SHA256 b465f2584ff394b3fe27c01aa1dcfc679583c1ee951d0e83de3f859d8b8305b8)
 
 if(USE_BUNDLED_UNIBILIUM)
   include(BuildUnibilium)
@@ -162,6 +175,37 @@ endif()
 
 if(USE_BUNDLED_GPERF)
   include(BuildGperf)
+endif()
+
+include(GetBinaryDeps)
+
+if(WIN32)
+  GetBinaryDep(TARGET wintools
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory . ${DEPS_INSTALL_DIR}/bin)
+
+  GetBinaryDep(TARGET win32yank
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy win32yank.exe ${DEPS_INSTALL_DIR}/bin)
+
+  GetBinaryDep(TARGET wingui
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory bin ${DEPS_INSTALL_DIR}/bin)
+
+  include(TargetArch)
+  if("${TARGET_ARCH}" STREQUAL "X86_64")
+    set(TARGET_ARCH x64)
+  elseif(TARGET_ARCH STREQUAL "X86")
+    set(TARGET_ARCH ia32)
+  endif()
+  GetBinaryDep(TARGET winpty
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INSTALL_DIR}/bin
+      COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/winpty/${TARGET_ARCH}/bin/*
+        -DTO=${DEPS_INSTALL_DIR}/bin/
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake
+      COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/winpty/include/*
+        -DTO=${DEPS_INSTALL_DIR}/include/
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake
+      COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/winpty/${TARGET_ARCH}/lib/*
+        -DTO=${DEPS_INSTALL_DIR}/lib/
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake)
 endif()
 
 add_custom_target(clean-shared-libraries

@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <assert.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -14,12 +17,12 @@
 #include "nvim/window.h"
 #include "nvim/memory.h"
 #include "nvim/eval.h"
+#include "nvim/eval/typval.h"
 #include "nvim/map_defs.h"
 #include "nvim/map.h"
 #include "nvim/option.h"
 #include "nvim/option_defs.h"
 #include "nvim/version.h"
-#include "nvim/eval/typval_encode.h"
 #include "nvim/lib/kvec.h"
 
 /// Helper structure for vim_to_object
@@ -58,7 +61,7 @@ bool try_end(Error *err)
       discard_current_exception();
     }
 
-    api_set_error(err, Exception, _("Keyboard interrupt"));
+    api_set_error(err, kErrorTypeException, "Keyboard interrupt");
     got_int = false;
   } else if (msg_list != NULL && *msg_list != NULL) {
     int should_free;
@@ -66,19 +69,18 @@ bool try_end(Error *err)
                                              ET_ERROR,
                                              NULL,
                                              &should_free);
-    xstrlcpy(err->msg, msg, sizeof(err->msg));
-    err->set = true;
+    api_set_error(err, kErrorTypeException, "%s", msg);
     free_global_msglist();
 
     if (should_free) {
       xfree(msg);
     }
   } else if (did_throw) {
-    api_set_error(err, Exception, "%s", current_exception->value);
+    api_set_error(err, kErrorTypeException, "%s", current_exception->value);
     discard_current_exception();
   }
 
-  return err->set;
+  return ERROR_SET(err);
 }
 
 /// Recursively expands a vimscript value in a dict
@@ -88,18 +90,17 @@ bool try_end(Error *err)
 /// @param[out] err Details of an error that may have occurred
 Object dict_get_value(dict_T *dict, String key, Error *err)
 {
-  hashitem_T *hi = hash_find(&dict->dv_hashtab, (uint8_t *) key.data);
+  dictitem_T *const di = tv_dict_find(dict, key.data, (ptrdiff_t)key.size);
 
-  if (HASHITEM_EMPTY(hi)) {
-    api_set_error(err, Validation, _("Key not found"));
-    return (Object) OBJECT_INIT;
+  if (di == NULL) {
+    api_set_error(err, kErrorTypeValidation, "Key not found");
+    return (Object)OBJECT_INIT;
   }
 
-  dictitem_T *di = dict_lookup(hi);
   return vim_to_object(&di->di_tv);
 }
 
-/// Set a value in a dict. Objects are recursively expanded into their
+/// Set a value in a scope dict. Objects are recursively expanded into their
 /// vimscript equivalents.
 ///
 /// @param dict The vimscript dict
@@ -110,42 +111,55 @@ Object dict_get_value(dict_T *dict, String key, Error *err)
 /// @param retval If true the old value will be converted and returned.
 /// @param[out] err Details of an error that may have occurred
 /// @return The old value if `retval` is true and the key was present, else NIL
-Object dict_set_value(dict_T *dict, String key, Object value, bool del,
-                      bool retval, Error *err)
+Object dict_set_var(dict_T *dict, String key, Object value, bool del,
+                    bool retval, Error *err)
 {
   Object rv = OBJECT_INIT;
 
   if (dict->dv_lock) {
-    api_set_error(err, Exception, _("Dictionary is locked"));
+    api_set_error(err, kErrorTypeException, "Dictionary is locked");
     return rv;
   }
 
   if (key.size == 0) {
-    api_set_error(err, Validation, _("Empty dictionary keys aren't allowed"));
+    api_set_error(err, kErrorTypeValidation,
+                  "Empty variable names aren't allowed");
     return rv;
   }
 
   if (key.size > INT_MAX) {
-    api_set_error(err, Validation, _("Key length is too high"));
+    api_set_error(err, kErrorTypeValidation, "Key length is too high");
     return rv;
   }
 
-  dictitem_T *di = dict_find(dict, (uint8_t *)key.data, (int)key.size);
+  dictitem_T *di = tv_dict_find(dict, key.data, (ptrdiff_t)key.size);
+
+  if (di != NULL) {
+    if (di->di_flags & DI_FLAGS_RO) {
+      api_set_error(err, kErrorTypeException, "Key is read-only: %s", key.data);
+      return rv;
+    } else if (di->di_flags & DI_FLAGS_FIX) {
+      api_set_error(err, kErrorTypeException, "Key is fixed: %s", key.data);
+      return rv;
+    } else if (di->di_flags & DI_FLAGS_LOCK) {
+      api_set_error(err, kErrorTypeException, "Key is locked: %s", key.data);
+      return rv;
+    }
+  }
 
   if (del) {
     // Delete the key
     if (di == NULL) {
       // Doesn't exist, fail
-      api_set_error(err, Validation, _("Key \"%s\" doesn't exist"), key.data);
+      api_set_error(err, kErrorTypeValidation, "Key does not exist: %s",
+                    key.data);
     } else {
       // Return the old value
       if (retval) {
         rv = vim_to_object(&di->di_tv);
       }
       // Delete the entry
-      hashitem_T *hi = hash_find(&dict->dv_hashtab, di->di_key);
-      hash_remove(&dict->dv_hashtab, hi);
-      dictitem_free(di);
+      tv_dict_item_remove(dict, di);
     }
   } else {
     // Update the key
@@ -158,20 +172,20 @@ Object dict_set_value(dict_T *dict, String key, Object value, bool del,
 
     if (di == NULL) {
       // Need to create an entry
-      di = dictitem_alloc((uint8_t *) key.data);
-      dict_add(dict, di);
+      di = tv_dict_item_alloc_len(key.data, key.size);
+      tv_dict_add(dict, di);
     } else {
       // Return the old value
       if (retval) {
         rv = vim_to_object(&di->di_tv);
       }
-      clear_tv(&di->di_tv);
+      tv_clear(&di->di_tv);
     }
 
     // Update the value
-    copy_tv(&tv, &di->di_tv);
+    tv_copy(&tv, &di->di_tv);
     // Clear the temporary variable
-    clear_tv(&tv);
+    tv_clear(&tv);
   }
 
   return rv;
@@ -190,7 +204,7 @@ Object get_option_from(void *from, int type, String name, Error *err)
   Object rv = OBJECT_INIT;
 
   if (name.size == 0) {
-    api_set_error(err, Validation, _("Empty option name"));
+    api_set_error(err, kErrorTypeValidation, "Empty option name");
     return rv;
   }
 
@@ -202,8 +216,8 @@ Object get_option_from(void *from, int type, String name, Error *err)
 
   if (!flags) {
     api_set_error(err,
-                  Validation,
-                  _("Invalid option name \"%s\""),
+                  kErrorTypeValidation,
+                  "Invalid option name \"%s\"",
                   name.data);
     return rv;
   }
@@ -221,14 +235,14 @@ Object get_option_from(void *from, int type, String name, Error *err)
       rv.data.string.size = strlen(stringval);
     } else {
       api_set_error(err,
-                    Exception,
-                    _("Unable to get value for option \"%s\""),
+                    kErrorTypeException,
+                    "Unable to get value for option \"%s\"",
                     name.data);
     }
   } else {
     api_set_error(err,
-                  Exception,
-                  _("Unknown type for option \"%s\""),
+                  kErrorTypeException,
+                  "Unknown type for option \"%s\"",
                   name.data);
   }
 
@@ -245,7 +259,7 @@ Object get_option_from(void *from, int type, String name, Error *err)
 void set_option_to(void *to, int type, String name, Object value, Error *err)
 {
   if (name.size == 0) {
-    api_set_error(err, Validation, _("Empty option name"));
+    api_set_error(err, kErrorTypeValidation, "Empty option name");
     return;
   }
 
@@ -253,8 +267,8 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
 
   if (flags == 0) {
     api_set_error(err,
-                  Validation,
-                  _("Invalid option name \"%s\""),
+                  kErrorTypeValidation,
+                  "Invalid option name \"%s\"",
                   name.data);
     return;
   }
@@ -262,15 +276,15 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
   if (value.type == kObjectTypeNil) {
     if (type == SREQ_GLOBAL) {
       api_set_error(err,
-                    Exception,
-                    _("Unable to unset option \"%s\""),
+                    kErrorTypeException,
+                    "Unable to unset option \"%s\"",
                     name.data);
       return;
     } else if (!(flags & SOPT_GLOBAL)) {
       api_set_error(err,
-                    Exception,
-                    _("Cannot unset option \"%s\" "
-                      "because it doesn't have a global value"),
+                    kErrorTypeException,
+                    "Cannot unset option \"%s\" "
+                    "because it doesn't have a global value",
                     name.data);
       return;
     } else {
@@ -279,13 +293,13 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
     }
   }
 
-  int opt_flags = (type ? OPT_LOCAL : OPT_GLOBAL);
+  int opt_flags = (type == SREQ_GLOBAL) ? OPT_GLOBAL : OPT_LOCAL;
 
   if (flags & SOPT_BOOL) {
     if (value.type != kObjectTypeBoolean) {
       api_set_error(err,
-                    Validation,
-                    _("Option \"%s\" requires a boolean value"),
+                    kErrorTypeValidation,
+                    "Option \"%s\" requires a boolean value",
                     name.data);
       return;
     }
@@ -295,16 +309,16 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
   } else if (flags & SOPT_NUM) {
     if (value.type != kObjectTypeInteger) {
       api_set_error(err,
-                    Validation,
-                    _("Option \"%s\" requires an integer value"),
+                    kErrorTypeValidation,
+                    "Option \"%s\" requires an integer value",
                     name.data);
       return;
     }
 
     if (value.data.integer > INT_MAX || value.data.integer < INT_MIN) {
       api_set_error(err,
-                    Validation,
-                    _("Value for option \"%s\" is outside range"),
+                    kErrorTypeValidation,
+                    "Value for option \"%s\" is outside range",
                     name.data);
       return;
     }
@@ -314,8 +328,8 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
   } else {
     if (value.type != kObjectTypeString) {
       api_set_error(err,
-                    Validation,
-                    _("Option \"%s\" requires a string value"),
+                    kErrorTypeValidation,
+                    "Option \"%s\" requires a string value",
                     name.data);
       return;
     }
@@ -327,21 +341,21 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
 
 #define TYPVAL_ENCODE_ALLOW_SPECIALS false
 
-#define TYPVAL_ENCODE_CONV_NIL() \
+#define TYPVAL_ENCODE_CONV_NIL(tv) \
     kv_push(edata->stack, NIL)
 
-#define TYPVAL_ENCODE_CONV_BOOL(num) \
+#define TYPVAL_ENCODE_CONV_BOOL(tv, num) \
     kv_push(edata->stack, BOOLEAN_OBJ((Boolean)(num)))
 
-#define TYPVAL_ENCODE_CONV_NUMBER(num) \
+#define TYPVAL_ENCODE_CONV_NUMBER(tv, num) \
     kv_push(edata->stack, INTEGER_OBJ((Integer)(num)))
 
 #define TYPVAL_ENCODE_CONV_UNSIGNED_NUMBER TYPVAL_ENCODE_CONV_NUMBER
 
-#define TYPVAL_ENCODE_CONV_FLOAT(flt) \
+#define TYPVAL_ENCODE_CONV_FLOAT(tv, flt) \
     kv_push(edata->stack, FLOATING_OBJ((Float)(flt)))
 
-#define TYPVAL_ENCODE_CONV_STRING(str, len) \
+#define TYPVAL_ENCODE_CONV_STRING(tv, str, len) \
     do { \
       const size_t len_ = (size_t)(len); \
       const char *const str_ = (const char *)(str); \
@@ -354,16 +368,23 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
 
 #define TYPVAL_ENCODE_CONV_STR_STRING TYPVAL_ENCODE_CONV_STRING
 
-#define TYPVAL_ENCODE_CONV_EXT_STRING(str, len, type) \
-    TYPVAL_ENCODE_CONV_NIL()
+#define TYPVAL_ENCODE_CONV_EXT_STRING(tv, str, len, type) \
+    TYPVAL_ENCODE_CONV_NIL(tv)
 
-#define TYPVAL_ENCODE_CONV_FUNC(fun) \
-    TYPVAL_ENCODE_CONV_NIL()
+#define TYPVAL_ENCODE_CONV_FUNC_START(tv, fun) \
+    do { \
+      TYPVAL_ENCODE_CONV_NIL(tv); \
+      goto typval_encode_stop_converting_one_item; \
+    } while (0)
 
-#define TYPVAL_ENCODE_CONV_EMPTY_LIST() \
+#define TYPVAL_ENCODE_CONV_FUNC_BEFORE_ARGS(tv, len)
+#define TYPVAL_ENCODE_CONV_FUNC_BEFORE_SELF(tv, len)
+#define TYPVAL_ENCODE_CONV_FUNC_END(tv)
+
+#define TYPVAL_ENCODE_CONV_EMPTY_LIST(tv) \
     kv_push(edata->stack, ARRAY_OBJ(((Array) { .capacity = 0, .size = 0 })))
 
-#define TYPVAL_ENCODE_CONV_EMPTY_DICT() \
+#define TYPVAL_ENCODE_CONV_EMPTY_DICT(tv, dict) \
     kv_push(edata->stack, \
             DICTIONARY_OBJ(((Dictionary) { .capacity = 0, .size = 0 })))
 
@@ -374,12 +395,14 @@ static inline void typval_encode_list_start(EncodedData *const edata,
   kv_push(edata->stack, ARRAY_OBJ(((Array) {
     .capacity = len,
     .size = 0,
-    .items = xmalloc(len * sizeof(*((Object *)NULL)->data.array.items)),
+    .items = xmalloc(len * sizeof(*((Object)OBJECT_INIT).data.array.items)),
   })));
 }
 
-#define TYPVAL_ENCODE_CONV_LIST_START(len) \
+#define TYPVAL_ENCODE_CONV_LIST_START(tv, len) \
     typval_encode_list_start(edata, (size_t)(len))
+
+#define TYPVAL_ENCODE_CONV_REAL_LIST_AFTER_START(tv, mpsv)
 
 static inline void typval_encode_between_list_items(EncodedData *const edata)
   FUNC_ATTR_ALWAYS_INLINE FUNC_ATTR_NONNULL_ALL
@@ -391,7 +414,7 @@ static inline void typval_encode_between_list_items(EncodedData *const edata)
   list->data.array.items[list->data.array.size++] = item;
 }
 
-#define TYPVAL_ENCODE_CONV_LIST_BETWEEN_ITEMS() \
+#define TYPVAL_ENCODE_CONV_LIST_BETWEEN_ITEMS(tv) \
     typval_encode_between_list_items(edata)
 
 static inline void typval_encode_list_end(EncodedData *const edata)
@@ -404,7 +427,7 @@ static inline void typval_encode_list_end(EncodedData *const edata)
 #endif
 }
 
-#define TYPVAL_ENCODE_CONV_LIST_END() \
+#define TYPVAL_ENCODE_CONV_LIST_END(tv) \
     typval_encode_list_end(edata)
 
 static inline void typval_encode_dict_start(EncodedData *const edata,
@@ -414,14 +437,17 @@ static inline void typval_encode_dict_start(EncodedData *const edata,
   kv_push(edata->stack, DICTIONARY_OBJ(((Dictionary) {
     .capacity = len,
     .size = 0,
-    .items = xmalloc(len * sizeof(*((Object *)NULL)->data.dictionary.items)),
+    .items = xmalloc(len * sizeof(
+        *((Object)OBJECT_INIT).data.dictionary.items)),
   })));
 }
 
-#define TYPVAL_ENCODE_CONV_DICT_START(len) \
+#define TYPVAL_ENCODE_CONV_DICT_START(tv, dict, len) \
     typval_encode_dict_start(edata, (size_t)(len))
 
-#define TYPVAL_ENCODE_CONV_SPECIAL_DICT_KEY_CHECK(label, kv_pair)
+#define TYPVAL_ENCODE_CONV_REAL_DICT_AFTER_START(tv, dict, mpsv)
+
+#define TYPVAL_ENCODE_SPECIAL_DICT_KEY_CHECK(label, kv_pair)
 
 static inline void typval_encode_after_key(EncodedData *const edata)
   FUNC_ATTR_ALWAYS_INLINE FUNC_ATTR_NONNULL_ALL
@@ -440,7 +466,7 @@ static inline void typval_encode_after_key(EncodedData *const edata)
   }
 }
 
-#define TYPVAL_ENCODE_CONV_DICT_AFTER_KEY() \
+#define TYPVAL_ENCODE_CONV_DICT_AFTER_KEY(tv, dict) \
     typval_encode_after_key(edata)
 
 static inline void typval_encode_between_dict_items(EncodedData *const edata)
@@ -453,7 +479,7 @@ static inline void typval_encode_between_dict_items(EncodedData *const edata)
   dict->data.dictionary.items[dict->data.dictionary.size++].value = val;
 }
 
-#define TYPVAL_ENCODE_CONV_DICT_BETWEEN_ITEMS() \
+#define TYPVAL_ENCODE_CONV_DICT_BETWEEN_ITEMS(tv, dict) \
     typval_encode_between_dict_items(edata)
 
 static inline void typval_encode_dict_end(EncodedData *const edata)
@@ -466,31 +492,44 @@ static inline void typval_encode_dict_end(EncodedData *const edata)
 #endif
 }
 
-#define TYPVAL_ENCODE_CONV_DICT_END() \
+#define TYPVAL_ENCODE_CONV_DICT_END(tv, dict) \
     typval_encode_dict_end(edata)
 
 #define TYPVAL_ENCODE_CONV_RECURSE(val, conv_type) \
     TYPVAL_ENCODE_CONV_NIL()
 
-TYPVAL_ENCODE_DEFINE_CONV_FUNCTIONS(static, object, EncodedData *const, edata)
+#define TYPVAL_ENCODE_SCOPE static
+#define TYPVAL_ENCODE_NAME object
+#define TYPVAL_ENCODE_FIRST_ARG_TYPE EncodedData *const
+#define TYPVAL_ENCODE_FIRST_ARG_NAME edata
+#include "nvim/eval/typval_encode.c.h"
+#undef TYPVAL_ENCODE_SCOPE
+#undef TYPVAL_ENCODE_NAME
+#undef TYPVAL_ENCODE_FIRST_ARG_TYPE
+#undef TYPVAL_ENCODE_FIRST_ARG_NAME
 
 #undef TYPVAL_ENCODE_CONV_STRING
 #undef TYPVAL_ENCODE_CONV_STR_STRING
 #undef TYPVAL_ENCODE_CONV_EXT_STRING
 #undef TYPVAL_ENCODE_CONV_NUMBER
 #undef TYPVAL_ENCODE_CONV_FLOAT
-#undef TYPVAL_ENCODE_CONV_FUNC
+#undef TYPVAL_ENCODE_CONV_FUNC_START
+#undef TYPVAL_ENCODE_CONV_FUNC_BEFORE_ARGS
+#undef TYPVAL_ENCODE_CONV_FUNC_BEFORE_SELF
+#undef TYPVAL_ENCODE_CONV_FUNC_END
 #undef TYPVAL_ENCODE_CONV_EMPTY_LIST
 #undef TYPVAL_ENCODE_CONV_LIST_START
+#undef TYPVAL_ENCODE_CONV_REAL_LIST_AFTER_START
 #undef TYPVAL_ENCODE_CONV_EMPTY_DICT
 #undef TYPVAL_ENCODE_CONV_NIL
 #undef TYPVAL_ENCODE_CONV_BOOL
 #undef TYPVAL_ENCODE_CONV_UNSIGNED_NUMBER
 #undef TYPVAL_ENCODE_CONV_DICT_START
+#undef TYPVAL_ENCODE_CONV_REAL_DICT_AFTER_START
 #undef TYPVAL_ENCODE_CONV_DICT_END
 #undef TYPVAL_ENCODE_CONV_DICT_AFTER_KEY
 #undef TYPVAL_ENCODE_CONV_DICT_BETWEEN_ITEMS
-#undef TYPVAL_ENCODE_CONV_SPECIAL_DICT_KEY_CHECK
+#undef TYPVAL_ENCODE_SPECIAL_DICT_KEY_CHECK
 #undef TYPVAL_ENCODE_CONV_LIST_END
 #undef TYPVAL_ENCODE_CONV_LIST_BETWEEN_ITEMS
 #undef TYPVAL_ENCODE_CONV_RECURSE
@@ -504,7 +543,10 @@ TYPVAL_ENCODE_DEFINE_CONV_FUNCTIONS(static, object, EncodedData *const, edata)
 Object vim_to_object(typval_T *obj)
 {
   EncodedData edata = { .stack = KV_INITIAL_VALUE };
-  encode_vim_to_object(&edata, obj, "vim_to_object argument");
+  const int evo_ret = encode_vim_to_object(&edata, obj,
+                                           "vim_to_object argument");
+  (void)evo_ret;
+  assert(evo_ret == OK);
   Object ret = kv_A(edata.stack, 0);
   assert(kv_size(edata.stack) == 1);
   kv_destroy(edata.stack);
@@ -520,13 +562,13 @@ buf_T *find_buffer_by_handle(Buffer buffer, Error *err)
   buf_T *rv = handle_get_buffer(buffer);
 
   if (!rv) {
-    api_set_error(err, Validation, _("Invalid buffer id"));
+    api_set_error(err, kErrorTypeValidation, "Invalid buffer id");
   }
 
   return rv;
 }
 
-win_T * find_window_by_handle(Window window, Error *err)
+win_T *find_window_by_handle(Window window, Error *err)
 {
   if (window == 0) {
     return curwin;
@@ -535,13 +577,13 @@ win_T * find_window_by_handle(Window window, Error *err)
   win_T *rv = handle_get_window(window);
 
   if (!rv) {
-    api_set_error(err, Validation, _("Invalid window id"));
+    api_set_error(err, kErrorTypeValidation, "Invalid window id");
   }
 
   return rv;
 }
 
-tabpage_T * find_tab_by_handle(Tabpage tabpage, Error *err)
+tabpage_T *find_tab_by_handle(Tabpage tabpage, Error *err)
 {
   if (tabpage == 0) {
     return curtab;
@@ -550,7 +592,7 @@ tabpage_T * find_tab_by_handle(Tabpage tabpage, Error *err)
   tabpage_T *rv = handle_get_tabpage(tabpage);
 
   if (!rv) {
-    api_set_error(err, Validation, _("Invalid tabpage id"));
+    api_set_error(err, kErrorTypeValidation, "Invalid tabpage id");
   }
 
   return rv;
@@ -587,7 +629,7 @@ String cstr_as_string(char *str) FUNC_ATTR_PURE
   if (str == NULL) {
     return (String) STRING_INIT;
   }
-  return (String) {.data = str, .size = strlen(str)};
+  return (String) { .data = str, .size = strlen(str) };
 }
 
 /// Converts from type Object to a VimL value.
@@ -618,7 +660,7 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
     case kObjectTypeInteger:
       if (obj.data.integer > VARNUMBER_MAX
           || obj.data.integer < VARNUMBER_MIN) {
-        api_set_error(err, Validation, _("Integer value outside range"));
+        api_set_error(err, kErrorTypeValidation, "Integer value outside range");
         return false;
       }
 
@@ -642,20 +684,20 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
       break;
 
     case kObjectTypeArray: {
-      list_T *list = list_alloc();
+      list_T *const list = tv_list_alloc();
 
       for (uint32_t i = 0; i < obj.data.array.size; i++) {
         Object item = obj.data.array.items[i];
-        listitem_T *li = listitem_alloc();
+        listitem_T *li = tv_list_item_alloc();
 
         if (!object_to_vim(item, &li->li_tv, err)) {
           // cleanup
-          listitem_free(li);
-          list_free(list, true);
+          tv_list_item_free(li);
+          tv_list_free(list);
           return false;
         }
 
-        list_append(list, li);
+        tv_list_append(list, li);
       }
       list->lv_refcount++;
 
@@ -665,30 +707,30 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
     }
 
     case kObjectTypeDictionary: {
-      dict_T *dict = dict_alloc();
+      dict_T *const dict = tv_dict_alloc();
 
       for (uint32_t i = 0; i < obj.data.dictionary.size; i++) {
         KeyValuePair item = obj.data.dictionary.items[i];
         String key = item.key;
 
         if (key.size == 0) {
-          api_set_error(err, Validation,
-                        _("Empty dictionary keys aren't allowed"));
+          api_set_error(err, kErrorTypeValidation,
+                        "Empty dictionary keys aren't allowed");
           // cleanup
-          dict_free(dict, true);
+          tv_dict_free(dict);
           return false;
         }
 
-        dictitem_T *di = dictitem_alloc((uint8_t *)key.data);
+        dictitem_T *const di = tv_dict_item_alloc(key.data);
 
         if (!object_to_vim(item.value, &di->di_tv, err)) {
           // cleanup
-          dictitem_free(di);
-          dict_free(dict, true);
+          tv_dict_item_free(di);
+          tv_dict_free(dict);
           return false;
         }
 
-        dict_add(dict, di);
+        tv_dict_add(dict, di);
       }
       dict->dv_refcount++;
 
@@ -758,6 +800,17 @@ void api_free_dictionary(Dictionary value)
   }
 
   xfree(value.items);
+}
+
+void api_clear_error(Error *value)
+  FUNC_ATTR_NONNULL_ALL
+{
+  if (!ERROR_SET(value)) {
+    return;
+  }
+  xfree(value->msg);
+  value->msg = NULL;
+  value->type = kErrorTypeNone;
 }
 
 Dictionary api_metadata(void)
@@ -873,7 +926,7 @@ static void set_option_value_for(char *key,
 {
   win_T *save_curwin = NULL;
   tabpage_T *save_curtab = NULL;
-  buf_T *save_curbuf = NULL;
+  bufref_T save_curbuf =  { NULL, 0 };
 
   try_start();
   switch (opt_type)
@@ -886,8 +939,8 @@ static void set_option_value_for(char *key,
           return;
         }
         api_set_error(err,
-                      Exception,
-                      _("Problem while switching windows"));
+                      kErrorTypeException,
+                      "Problem while switching windows");
         return;
       }
       set_option_value_err(key, numval, stringval, opt_flags, err);
@@ -896,14 +949,14 @@ static void set_option_value_for(char *key,
     case SREQ_BUF:
       switch_buffer(&save_curbuf, (buf_T *)from);
       set_option_value_err(key, numval, stringval, opt_flags, err);
-      restore_buffer(save_curbuf);
+      restore_buffer(&save_curbuf);
       break;
     case SREQ_GLOBAL:
       set_option_value_err(key, numval, stringval, opt_flags, err);
       break;
   }
 
-  if (err->set) {
+  if (ERROR_SET(err)) {
     return;
   }
 
@@ -919,15 +972,31 @@ static void set_option_value_err(char *key,
 {
   char *errmsg;
 
-  if ((errmsg = (char *)set_option_value((uint8_t *)key,
-                                         numval,
-                                         (uint8_t *)stringval,
-                                         opt_flags)))
-  {
+  if ((errmsg = set_option_value(key, numval, stringval, opt_flags))) {
     if (try_end(err)) {
       return;
     }
 
-    api_set_error(err, Exception, "%s", errmsg);
+    api_set_error(err, kErrorTypeException, "%s", errmsg);
   }
+}
+
+void api_set_error(Error *err, ErrorType errType, const char *format, ...)
+  FUNC_ATTR_NONNULL_ALL
+{
+  assert(kErrorTypeNone != errType);
+  va_list args1;
+  va_list args2;
+  va_start(args1, format);
+  va_copy(args2, args1);
+  int len = vsnprintf(NULL, 0, format, args1);
+  va_end(args1);
+  assert(len >= 0);
+  // Limit error message to 1 MB.
+  size_t bufsize = MIN((size_t)len + 1, 1024 * 1024);
+  err->msg = xmalloc(bufsize);
+  vsnprintf(err->msg, bufsize, format, args2);
+  va_end(args2);
+
+  err->type = errType;
 }

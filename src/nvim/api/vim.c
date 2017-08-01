@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <assert.h>
 #include <stdint.h>
 #include <inttypes.h>
@@ -22,7 +25,9 @@
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/eval.h"
+#include "nvim/eval/typval.h"
 #include "nvim/option.h"
+#include "nvim/state.h"
 #include "nvim/syntax.h"
 #include "nvim/getchar.h"
 #include "nvim/os/input.h"
@@ -39,6 +44,7 @@
 /// @param command  Ex-command string
 /// @param[out] err Error details (including actual VimL error), if any
 void nvim_command(String command, Error *err)
+    FUNC_API_SINCE(1)
 {
   // Run the command
   try_start();
@@ -56,11 +62,13 @@ void nvim_command(String command, Error *err)
 /// @see feedkeys()
 /// @see vim_strsave_escape_csi
 void nvim_feedkeys(String keys, String mode, Boolean escape_csi)
+    FUNC_API_SINCE(1)
 {
   bool remap = true;
   bool insert = false;
   bool typed = false;
   bool execute = false;
+  bool dangerous = false;
 
   for (size_t i = 0; i < mode.size; ++i) {
     switch (mode.data[i]) {
@@ -69,6 +77,7 @@ void nvim_feedkeys(String keys, String mode, Boolean escape_csi)
     case 't': typed = true; break;
     case 'i': insert = true; break;
     case 'x': execute = true; break;
+    case '!': dangerous = true; break;
     }
   }
 
@@ -99,7 +108,13 @@ void nvim_feedkeys(String keys, String mode, Boolean escape_csi)
 
     /* Avoid a 1 second delay when the keys start Insert mode. */
     msg_scroll = false;
+    if (!dangerous) {
+      ex_normal_busy++;
+    }
     exec_normal(true);
+    if (!dangerous) {
+      ex_normal_busy--;
+    }
     msg_scroll |= save_msg_scroll;
   }
 }
@@ -114,7 +129,7 @@ void nvim_feedkeys(String keys, String mode, Boolean escape_csi)
 /// @return Number of bytes actually written (can be fewer than
 ///         requested if the buffer becomes full).
 Integer nvim_input(String keys)
-    FUNC_API_ASYNC
+    FUNC_API_SINCE(1) FUNC_API_ASYNC
 {
   return (Integer)input_enqueue(keys);
 }
@@ -125,6 +140,7 @@ Integer nvim_input(String keys)
 /// @see cpoptions
 String nvim_replace_termcodes(String str, Boolean from_part, Boolean do_lt,
                               Boolean special)
+    FUNC_API_SINCE(1)
 {
   if (str.size == 0) {
     // Empty string
@@ -144,13 +160,14 @@ String nvim_replace_termcodes(String str, Boolean from_part, Boolean do_lt,
 }
 
 String nvim_command_output(String str, Error *err)
+    FUNC_API_SINCE(1)
 {
   do_cmdline_cmd("redir => v:command_output");
   nvim_command(str, err);
   do_cmdline_cmd("redir END");
 
-  if (err->set) {
-    return (String) STRING_INIT;
+  if (ERROR_SET(err)) {
+    return (String)STRING_INIT;
   }
 
   return cstr_to_string((char *)get_vim_var_str(VV_COMMAND_OUTPUT));
@@ -164,23 +181,25 @@ String nvim_command_output(String str, Error *err)
 /// @param[out] err Error details, if any
 /// @return         Evaluation result or expanded object
 Object nvim_eval(String expr, Error *err)
+    FUNC_API_SINCE(1)
 {
   Object rv = OBJECT_INIT;
   // Evaluate the expression
   try_start();
-  typval_T *expr_result = eval_expr((char_u *)expr.data, NULL);
 
-  if (!expr_result) {
-    api_set_error(err, Exception, _("Failed to evaluate expression"));
+  typval_T rettv;
+  if (eval0((char_u *)expr.data, &rettv, NULL, true) == FAIL) {
+    api_set_error(err, kErrorTypeException, "Failed to evaluate expression");
   }
 
   if (!try_end(err)) {
     // No errors, convert the result
-    rv = vim_to_object(expr_result);
+    rv = vim_to_object(&rettv);
   }
 
-  // Free the vim object
-  free_tv(expr_result);
+  // Free the Vim object
+  tv_clear(&rettv);
+
   return rv;
 }
 
@@ -192,11 +211,12 @@ Object nvim_eval(String expr, Error *err)
 /// @param[out] err Error details, if any
 /// @return Result of the function call
 Object nvim_call_function(String fname, Array args, Error *err)
+    FUNC_API_SINCE(1)
 {
   Object rv = OBJECT_INIT;
   if (args.size > MAX_FUNC_ARGS) {
-    api_set_error(err, Validation,
-      _("Function called with too many arguments."));
+    api_set_error(err, kErrorTypeValidation,
+                  "Function called with too many arguments.");
     return rv;
   }
 
@@ -213,22 +233,21 @@ Object nvim_call_function(String fname, Array args, Error *err)
   // Call the function
   typval_T rettv;
   int dummy;
-  int r = call_func((char_u *) fname.data, (int) fname.size,
-                    &rettv, (int) args.size, vim_args,
+  int r = call_func((char_u *)fname.data, (int)fname.size,
+                    &rettv, (int)args.size, vim_args, NULL,
                     curwin->w_cursor.lnum, curwin->w_cursor.lnum, &dummy,
-                    true,
-                    NULL);
+                    true, NULL, NULL);
   if (r == FAIL) {
-    api_set_error(err, Exception, _("Error calling function."));
+    api_set_error(err, kErrorTypeException, "Error calling function.");
   }
   if (!try_end(err)) {
     rv = vim_to_object(&rettv);
   }
-  clear_tv(&rettv);
+  tv_clear(&rettv);
 
 free_vim_args:
   while (i > 0) {
-    clear_tv(&vim_args[--i]);
+    tv_clear(&vim_args[--i]);
   }
 
   return rv;
@@ -241,9 +260,10 @@ free_vim_args:
 /// @param[out] err   Error details, if any
 /// @return Number of cells
 Integer nvim_strwidth(String str, Error *err)
+    FUNC_API_SINCE(1)
 {
   if (str.size > INT_MAX) {
-    api_set_error(err, Validation, _("String length is too high"));
+    api_set_error(err, kErrorTypeValidation, "String length is too high");
     return 0;
   }
 
@@ -254,6 +274,7 @@ Integer nvim_strwidth(String str, Error *err)
 ///
 /// @return List of paths
 ArrayOf(String) nvim_list_runtime_paths(void)
+    FUNC_API_SINCE(1)
 {
   Array rv = ARRAY_DICT_INIT;
   uint8_t *rtp = p_rtp;
@@ -295,21 +316,22 @@ ArrayOf(String) nvim_list_runtime_paths(void)
 /// @param dir      Directory path
 /// @param[out] err Error details, if any
 void nvim_set_current_dir(String dir, Error *err)
+    FUNC_API_SINCE(1)
 {
   if (dir.size >= MAXPATHL) {
-    api_set_error(err, Validation, _("Directory string is too long"));
+    api_set_error(err, kErrorTypeValidation, "Directory string is too long");
     return;
   }
 
   char string[MAXPATHL];
-  strncpy(string, dir.data, dir.size);
+  memcpy(string, dir.data, dir.size);
   string[dir.size] = NUL;
 
   try_start();
 
-  if (vim_chdir((char_u *)string)) {
+  if (vim_chdir((char_u *)string, kCdScopeGlobal)) {
     if (!try_end(err)) {
-      api_set_error(err, Exception, _("Failed to change directory"));
+      api_set_error(err, kErrorTypeException, "Failed to change directory");
     }
     return;
   }
@@ -323,6 +345,7 @@ void nvim_set_current_dir(String dir, Error *err)
 /// @param[out] err Error details, if any
 /// @return Current line string
 String nvim_get_current_line(Error *err)
+    FUNC_API_SINCE(1)
 {
   return buffer_get_line(curbuf->handle, curwin->w_cursor.lnum - 1, err);
 }
@@ -332,6 +355,7 @@ String nvim_get_current_line(Error *err)
 /// @param line     Line contents
 /// @param[out] err Error details, if any
 void nvim_set_current_line(String line, Error *err)
+    FUNC_API_SINCE(1)
 {
   buffer_set_line(curbuf->handle, curwin->w_cursor.lnum - 1, line, err);
 }
@@ -340,6 +364,7 @@ void nvim_set_current_line(String line, Error *err)
 ///
 /// @param[out] err Error details, if any
 void nvim_del_current_line(Error *err)
+    FUNC_API_SINCE(1)
 {
   buffer_del_line(curbuf->handle, curwin->w_cursor.lnum - 1, err);
 }
@@ -350,6 +375,7 @@ void nvim_del_current_line(Error *err)
 /// @param[out] err Error details, if any
 /// @return Variable value
 Object nvim_get_var(String name, Error *err)
+    FUNC_API_SINCE(1)
 {
   return dict_get_value(&globvardict, name, err);
 }
@@ -360,8 +386,9 @@ Object nvim_get_var(String name, Error *err)
 /// @param value    Variable value
 /// @param[out] err Error details, if any
 void nvim_set_var(String name, Object value, Error *err)
+    FUNC_API_SINCE(1)
 {
-  dict_set_value(&globvardict, name, value, false, false, err);
+  dict_set_var(&globvardict, name, value, false, false, err);
 }
 
 /// Removes a global (g:) variable
@@ -369,8 +396,9 @@ void nvim_set_var(String name, Object value, Error *err)
 /// @param name     Variable name
 /// @param[out] err Error details, if any
 void nvim_del_var(String name, Error *err)
+    FUNC_API_SINCE(1)
 {
-  dict_set_value(&globvardict, name, NIL, true, false, err);
+  dict_set_var(&globvardict, name, NIL, true, false, err);
 }
 
 /// Sets a global variable
@@ -386,7 +414,7 @@ void nvim_del_var(String name, Error *err)
 ///                  or if previous value was `v:null`.
 Object vim_set_var(String name, Object value, Error *err)
 {
-  return dict_set_value(&globvardict, name, value, false, true, err);
+  return dict_set_var(&globvardict, name, value, false, true, err);
 }
 
 /// Removes a global variable
@@ -398,7 +426,7 @@ Object vim_set_var(String name, Object value, Error *err)
 /// @return Old value
 Object vim_del_var(String name, Error *err)
 {
-  return dict_set_value(&globvardict, name, NIL, true, true, err);
+  return dict_set_var(&globvardict, name, NIL, true, true, err);
 }
 
 /// Gets a v: variable
@@ -407,6 +435,7 @@ Object vim_del_var(String name, Error *err)
 /// @param[out] err Error details, if any
 /// @return         Variable value
 Object nvim_get_vvar(String name, Error *err)
+    FUNC_API_SINCE(1)
 {
   return dict_get_value(&vimvardict, name, err);
 }
@@ -415,8 +444,9 @@ Object nvim_get_vvar(String name, Error *err)
 ///
 /// @param name     Option name
 /// @param[out] err Error details, if any
-/// @return         Option value
+/// @return         Option value (global)
 Object nvim_get_option(String name, Error *err)
+    FUNC_API_SINCE(1)
 {
   return get_option_from(NULL, SREQ_GLOBAL, name, err);
 }
@@ -427,6 +457,7 @@ Object nvim_get_option(String name, Error *err)
 /// @param value    New option value
 /// @param[out] err Error details, if any
 void nvim_set_option(String name, Object value, Error *err)
+    FUNC_API_SINCE(1)
 {
   set_option_to(NULL, SREQ_GLOBAL, name, value, err);
 }
@@ -435,6 +466,7 @@ void nvim_set_option(String name, Object value, Error *err)
 ///
 /// @param str Message
 void nvim_out_write(String str)
+    FUNC_API_SINCE(1)
 {
   write_msg(str, false);
 }
@@ -443,6 +475,7 @@ void nvim_out_write(String str)
 ///
 /// @param str Message
 void nvim_err_write(String str)
+    FUNC_API_SINCE(1)
 {
   write_msg(str, true);
 }
@@ -453,6 +486,7 @@ void nvim_err_write(String str)
 /// @param str Message
 /// @see nvim_err_write()
 void nvim_err_writeln(String str)
+    FUNC_API_SINCE(1)
 {
   nvim_err_write(str);
   nvim_err_write((String) { .data = "\n", .size = 1 });
@@ -462,6 +496,7 @@ void nvim_err_writeln(String str)
 ///
 /// @return List of buffer handles
 ArrayOf(Buffer) nvim_list_bufs(void)
+    FUNC_API_SINCE(1)
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -483,6 +518,7 @@ ArrayOf(Buffer) nvim_list_bufs(void)
 ///
 /// @return Buffer handle
 Buffer nvim_get_current_buf(void)
+    FUNC_API_SINCE(1)
 {
   return curbuf->handle;
 }
@@ -492,6 +528,7 @@ Buffer nvim_get_current_buf(void)
 /// @param id       Buffer handle
 /// @param[out] err Error details, if any
 void nvim_set_current_buf(Buffer buffer, Error *err)
+    FUNC_API_SINCE(1)
 {
   buf_T *buf = find_buffer_by_handle(buffer, err);
 
@@ -503,8 +540,8 @@ void nvim_set_current_buf(Buffer buffer, Error *err)
   int result = do_buffer(DOBUF_GOTO, DOBUF_FIRST, FORWARD, buf->b_fnum, 0);
   if (!try_end(err) && result == FAIL) {
     api_set_error(err,
-                  Exception,
-                  _("Failed to switch to buffer %d"),
+                  kErrorTypeException,
+                  "Failed to switch to buffer %d",
                   buffer);
   }
 }
@@ -513,6 +550,7 @@ void nvim_set_current_buf(Buffer buffer, Error *err)
 ///
 /// @return List of window handles
 ArrayOf(Window) nvim_list_wins(void)
+    FUNC_API_SINCE(1)
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -534,6 +572,7 @@ ArrayOf(Window) nvim_list_wins(void)
 ///
 /// @return Window handle
 Window nvim_get_current_win(void)
+    FUNC_API_SINCE(1)
 {
   return curwin->handle;
 }
@@ -542,6 +581,7 @@ Window nvim_get_current_win(void)
 ///
 /// @param handle Window handle
 void nvim_set_current_win(Window window, Error *err)
+    FUNC_API_SINCE(1)
 {
   win_T *win = find_window_by_handle(window, err);
 
@@ -553,8 +593,8 @@ void nvim_set_current_win(Window window, Error *err)
   goto_tabpage_win(win_find_tabpage(win), win);
   if (!try_end(err) && win != curwin) {
     api_set_error(err,
-                  Exception,
-                  _("Failed to switch to window %d"),
+                  kErrorTypeException,
+                  "Failed to switch to window %d",
                   window);
   }
 }
@@ -563,6 +603,7 @@ void nvim_set_current_win(Window window, Error *err)
 ///
 /// @return List of tabpage handles
 ArrayOf(Tabpage) nvim_list_tabpages(void)
+    FUNC_API_SINCE(1)
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -584,6 +625,7 @@ ArrayOf(Tabpage) nvim_list_tabpages(void)
 ///
 /// @return Tabpage handle
 Tabpage nvim_get_current_tabpage(void)
+    FUNC_API_SINCE(1)
 {
   return curtab->handle;
 }
@@ -593,6 +635,7 @@ Tabpage nvim_get_current_tabpage(void)
 /// @param handle   Tabpage handle
 /// @param[out] err Error details, if any
 void nvim_set_current_tabpage(Tabpage tabpage, Error *err)
+    FUNC_API_SINCE(1)
 {
   tabpage_T *tp = find_tab_by_handle(tabpage, err);
 
@@ -604,8 +647,8 @@ void nvim_set_current_tabpage(Tabpage tabpage, Error *err)
   goto_tabpage_tp(tp, true, true);
   if (!try_end(err) && tp != curtab) {
     api_set_error(err,
-                  Exception,
-                  _("Failed to switch to tabpage %d"),
+                  kErrorTypeException,
+                  "Failed to switch to tabpage %d",
                   tabpage);
   }
 }
@@ -615,7 +658,7 @@ void nvim_set_current_tabpage(Tabpage tabpage, Error *err)
 /// @param channel_id Channel id (passed automatically by the dispatcher)
 /// @param event      Event type string
 void nvim_subscribe(uint64_t channel_id, String event)
-    FUNC_API_NOEVAL
+    FUNC_API_SINCE(1) FUNC_API_NOEVAL
 {
   size_t length = (event.size < METHOD_MAXLEN ? event.size : METHOD_MAXLEN);
   char e[METHOD_MAXLEN + 1];
@@ -629,7 +672,7 @@ void nvim_subscribe(uint64_t channel_id, String event)
 /// @param channel_id Channel id (passed automatically by the dispatcher)
 /// @param event      Event type string
 void nvim_unsubscribe(uint64_t channel_id, String event)
-    FUNC_API_NOEVAL
+    FUNC_API_SINCE(1) FUNC_API_NOEVAL
 {
   size_t length = (event.size < METHOD_MAXLEN ?
                    event.size :
@@ -641,11 +684,13 @@ void nvim_unsubscribe(uint64_t channel_id, String event)
 }
 
 Integer nvim_get_color_by_name(String name)
+    FUNC_API_SINCE(1)
 {
   return name_to_color((uint8_t *)name.data);
 }
 
 Dictionary nvim_get_color_map(void)
+    FUNC_API_SINCE(1)
 {
   Dictionary colors = ARRAY_DICT_INIT;
 
@@ -657,8 +702,26 @@ Dictionary nvim_get_color_map(void)
 }
 
 
+/// Gets the current mode.
+/// mode:     Mode string. |mode()|
+/// blocking: true if Nvim is waiting for input.
+///
+/// @returns Dictionary { "mode": String, "blocking": Boolean }
+Dictionary nvim_get_mode(void)
+  FUNC_API_SINCE(2) FUNC_API_ASYNC
+{
+  Dictionary rv = ARRAY_DICT_INIT;
+  char *modestr = get_mode();
+  bool blocked = input_blocking();
+
+  PUT(rv, "mode", STRING_OBJ(cstr_as_string(modestr)));
+  PUT(rv, "blocking", BOOLEAN_OBJ(blocked));
+
+  return rv;
+}
+
 Array nvim_get_api_info(uint64_t channel_id)
-    FUNC_API_ASYNC FUNC_API_NOEVAL
+    FUNC_API_SINCE(1) FUNC_API_ASYNC FUNC_API_NOEVAL
 {
   Array rv = ARRAY_DICT_INIT;
 
@@ -691,7 +754,7 @@ Array nvim_get_api_info(uint64_t channel_id)
 /// which resulted in an error, the error type and the error message. If an
 /// error ocurred, the values from all preceding calls will still be returned.
 Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
-  FUNC_API_NOEVAL
+    FUNC_API_SINCE(1) FUNC_API_NOEVAL
 {
   Array rv = ARRAY_DICT_INIT;
   Array results = ARRAY_DICT_INIT;
@@ -701,30 +764,30 @@ Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
   for (i = 0; i < calls.size; i++) {
     if (calls.items[i].type != kObjectTypeArray) {
       api_set_error(err,
-                    Validation,
-                    _("All items in calls array must be arrays"));
+                    kErrorTypeValidation,
+                    "All items in calls array must be arrays");
       goto validation_error;
     }
     Array call = calls.items[i].data.array;
     if (call.size != 2) {
       api_set_error(err,
-                    Validation,
-                    _("All items in calls array must be arrays of size 2"));
+                    kErrorTypeValidation,
+                    "All items in calls array must be arrays of size 2");
       goto validation_error;
     }
 
     if (call.items[0].type != kObjectTypeString) {
       api_set_error(err,
-                    Validation,
-                    _("name must be String"));
+                    kErrorTypeValidation,
+                    "Name must be String");
       goto validation_error;
     }
     String name = call.items[0].data.string;
 
     if (call.items[1].type != kObjectTypeArray) {
       api_set_error(err,
-                    Validation,
-                    _("args must be Array"));
+                    kErrorTypeValidation,
+                    "Args must be Array");
       goto validation_error;
     }
     Array args = call.items[1].data.array;
@@ -732,7 +795,7 @@ Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
     MsgpackRpcRequestHandler handler = msgpack_rpc_get_handler_for(name.data,
                                                                    name.size);
     Object result = handler.fn(channel_id, args, &nested_error);
-    if (nested_error.set) {
+    if (ERROR_SET(&nested_error)) {
       // error handled after loop
       break;
     }
@@ -741,7 +804,7 @@ Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
   }
 
   ADD(rv, ARRAY_OBJ(results));
-  if (nested_error.set) {
+  if (ERROR_SET(&nested_error)) {
     Array errval = ARRAY_DICT_INIT;
     ADD(errval, INTEGER_OBJ((Integer)i));
     ADD(errval, INTEGER_OBJ(nested_error.type));
@@ -750,10 +813,12 @@ Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
   } else {
     ADD(rv, NIL);
   }
-  return rv;
+  goto theend;
 
 validation_error:
   api_free_array(results);
+theend:
+  api_clear_error(&nested_error);
   return rv;
 }
 

@@ -5,7 +5,7 @@ Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends:
  cmake,
- debhelper (>= 9),
+ debhelper (>= 10),
  gperf,
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
@@ -21,13 +21,13 @@ Build-Depends:
  lua-busted <!nocheck>,
  lua-lpeg,
  lua-mpack,
- lua-nvim [alpha amd64 armel armhf hppa i386 mips mips64el mipsel powerpc ppc64el sparc64 x32] <!nocheck>,
+ lua-nvim (>= 0.0.1-26-1~) [alpha amd64 armel armhf hppa i386 mips mips64el mipsel powerpc ppc64el sparc64 x32] <!nocheck>,
  luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 powerpc powerpcspe] | lua5.1,
  ninja-build,
  pkg-config
 Standards-Version: 3.9.8
 Homepage: https://neovim.io/
-Vcs-Git: https://anonscm.debian.org/git/pkg-vim/neovim.git
+Vcs-Git: https://anonscm.debian.org/git/pkg-vim/neovim.git -b debian/experimental
 Vcs-Browser: https://anonscm.debian.org/cgit/pkg-vim/neovim.git
 
 Package: neovim

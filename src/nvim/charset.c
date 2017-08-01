@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /// @file charset.c
 ///
 /// Code related to character sets.
@@ -15,6 +18,7 @@
 #include "nvim/func_attr.h"
 #include "nvim/indent.h"
 #include "nvim/main.h"
+#include "nvim/mark.h"
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
 #include "nvim/memory.h"
@@ -41,8 +45,10 @@ static bool chartab_initialized = false;
     (buf)->b_chartab[(unsigned)(c) >> 6] |= (1ull << ((c) & 0x3f))
 #define RESET_CHARTAB(buf, c) \
     (buf)->b_chartab[(unsigned)(c) >> 6] &= ~(1ull << ((c) & 0x3f))
+#define GET_CHARTAB_TAB(chartab, c) \
+    ((chartab)[(unsigned)(c) >> 6] & (1ull << ((c) & 0x3f)))
 #define GET_CHARTAB(buf, c) \
-    ((buf)->b_chartab[(unsigned)(c) >> 6] & (1ull << ((c) & 0x3f)))
+    GET_CHARTAB_TAB((buf)->b_chartab, c)
 
 // Table used below, see init_chartab() for an explanation
 static char_u g_chartab[256];
@@ -59,12 +65,8 @@ static char_u g_chartab[256];
 /// Depends on the option settings 'iskeyword', 'isident', 'isfname',
 /// 'isprint' and 'encoding'.
 ///
-/// The index in g_chartab[] depends on 'encoding':
-/// - For non-multi-byte index with the byte (same as the character).
-/// - For DBCS index with the first byte.
-/// - For UTF-8 index with the character (when first byte is up to 0x80 it is
-///   the same as the character, if the first byte is 0x80 and above it depends
-///   on further bytes).
+/// The index in g_chartab[] is the character when first byte is up to 0x80,
+/// if the first byte is 0x80 and above it depends on further bytes.
 ///
 /// The contents of g_chartab[]:
 /// - The lower two bits, masked by CT_CELL_MASK, give the number of display
@@ -92,7 +94,6 @@ int buf_init_chartab(buf_T *buf, int global)
 {
   int c;
   int c2;
-  char_u *p;
   int i;
   bool tilde;
   bool do_isalpha;
@@ -118,15 +119,9 @@ int buf_init_chartab(buf_T *buf, int global)
     }
 
     while (c < 256) {
-      if (enc_utf8 && (c >= 0xa0)) {
+      if (c >= 0xa0) {
         // UTF-8: bytes 0xa0 - 0xff are printable (latin1)
         g_chartab[c++] = CT_PRINT_CHAR + 1;
-      } else if ((enc_dbcs == DBCS_JPNU) && (c == 0x8e)) {
-        // euc-jp characters starting with 0x8e are single width
-        g_chartab[c++] = CT_PRINT_CHAR + 1;
-      } else if ((enc_dbcs != 0) && (MB_BYTE2LEN(c) == 2)) {
-        // other double-byte chars can be printable AND double-width
-        g_chartab[c++] = CT_PRINT_CHAR + 2;
       } else {
         // the rest is unprintable by default
         g_chartab[c++] = (dy_flags & DY_UHEX) ? 4 : 2;
@@ -134,10 +129,8 @@ int buf_init_chartab(buf_T *buf, int global)
     }
 
     // Assume that every multi-byte char is a filename character.
-    for (c = 1; c < 256; ++c) {
-      if (((enc_dbcs != 0) && (MB_BYTE2LEN(c) > 1))
-          || ((enc_dbcs == DBCS_JPNU) && (c == 0x8e))
-          || (enc_utf8 && (c >= 0xa0))) {
+    for (c = 1; c < 256; c++) {
+      if (c >= 0xa0) {
         g_chartab[c] |= CT_FNAME_CHAR;
       }
     }
@@ -145,15 +138,6 @@ int buf_init_chartab(buf_T *buf, int global)
 
   // Init word char flags all to false
   memset(buf->b_chartab, 0, (size_t)32);
-
-  if (enc_dbcs != 0) {
-    for (c = 0; c < 256; ++c) {
-      // double-byte characters are probably word characters
-      if (MB_BYTE2LEN(c) == 2) {
-        SET_CHARTAB(buf, c);
-      }
-    }
-  }
 
   // In lisp mode the '-' character is included in keywords.
   if (buf->b_p_lisp) {
@@ -163,7 +147,8 @@ int buf_init_chartab(buf_T *buf, int global)
   // Walk through the 'isident', 'iskeyword', 'isfname' and 'isprint'
   // options Each option is a list of characters, character numbers or
   // ranges, separated by commas, e.g.: "200-210,x,#-178,-"
-  for (i = global ? 0 : 3; i <= 3; ++i) {
+  for (i = global ? 0 : 3; i <= 3; i++) {
+    const char_u *p;
     if (i == 0) {
       // first round: 'isident'
       p = p_isi;
@@ -188,11 +173,9 @@ int buf_init_chartab(buf_T *buf, int global)
       }
 
       if (ascii_isdigit(*p)) {
-        c = getdigits_int(&p);
-      } else if (has_mbyte) {
-        c = mb_ptr2char_adv(&p);
+        c = getdigits_int((char_u **)&p);
       } else {
-        c = *p++;
+        c = mb_ptr2char_adv(&p);
       }
       c2 = -1;
 
@@ -200,11 +183,9 @@ int buf_init_chartab(buf_T *buf, int global)
         ++p;
 
         if (ascii_isdigit(*p)) {
-          c2 = getdigits_int(&p);
-        } else if (has_mbyte) {
-          c2 = mb_ptr2char_adv(&p);
+          c2 = getdigits_int((char_u **)&p);
         } else {
-          c2 = *p++;
+          c2 = mb_ptr2char_adv(&p);
         }
       }
 
@@ -235,8 +216,8 @@ int buf_init_chartab(buf_T *buf, int global)
         // work properly when 'encoding' is "latin1" and the locale is
         // "C".
         if (!do_isalpha
-            || vim_islower(c)
-            || vim_isupper(c)
+            || mb_islower(c)
+            || mb_isupper(c)
             || (p_altkeymap && (F_isalpha(c) || F_isdigit(c)))) {
           if (i == 0) {
             // (re)set ID flag
@@ -251,8 +232,7 @@ int buf_init_chartab(buf_T *buf, int global)
             // that we can detect it from the first byte.
             if (((c < ' ')
                  || (c > '~')
-                 || (p_altkeymap && (F_isalpha(c) || F_isdigit(c))))
-                && !(enc_dbcs && (MB_BYTE2LEN(c) == 2))) {
+                 || (p_altkeymap && (F_isalpha(c) || F_isdigit(c))))) {
               if (tilde) {
                 g_chartab[c] = (uint8_t)((g_chartab[c] & ~CT_CELL_MASK)
                                          + ((dy_flags & DY_UHEX) ? 4 : 2));
@@ -313,7 +293,7 @@ void trans_characters(char_u *buf, int bufsize)
 
   while (*buf != 0) {
     // Assume a multi-byte character doesn't need translation.
-    if (has_mbyte && ((trs_len = (*mb_ptr2len)(buf)) > 1)) {
+    if ((trs_len = (*mb_ptr2len)(buf)) > 1) {
       len -= trs_len;
     } else {
       trs = transchar_byte(*buf);
@@ -347,44 +327,40 @@ char_u *transstr(char_u *s) FUNC_ATTR_NONNULL_RET
   size_t l;
   char_u hexbuf[11];
 
-  if (has_mbyte) {
-    // Compute the length of the result, taking account of unprintable
-    // multi-byte characters.
-    size_t len = 0;
-    p = s;
+  // Compute the length of the result, taking account of unprintable
+  // multi-byte characters.
+  size_t len = 0;
+  p = s;
 
-    while (*p != NUL) {
-      if ((l = (size_t)(*mb_ptr2len)(p)) > 1) {
-        c = (*mb_ptr2char)(p);
-        p += l;
+  while (*p != NUL) {
+    if ((l = (size_t)(*mb_ptr2len)(p)) > 1) {
+      c = (*mb_ptr2char)(p);
+      p += l;
 
-        if (vim_isprintc(c)) {
-          len += l;
-        } else {
-          transchar_hex(hexbuf, c);
-          len += STRLEN(hexbuf);
-        }
+      if (vim_isprintc(c)) {
+        len += l;
       } else {
-        l = (size_t)byte2cells(*p++);
+        transchar_hex(hexbuf, c);
+        len += STRLEN(hexbuf);
+      }
+    } else {
+      l = (size_t)byte2cells(*p++);
 
-        if (l > 0) {
-          len += l;
-        } else {
-          // illegal byte sequence
-          len += 4;
-        }
+      if (l > 0) {
+        len += l;
+      } else {
+        // illegal byte sequence
+        len += 4;
       }
     }
-    res = xmallocz(len);
-  } else {
-    res = xmallocz((size_t)vim_strsize(s));
   }
+  res = xmallocz(len);
 
   *res = NUL;
   p = s;
 
   while (*p != NUL) {
-    if (has_mbyte && ((l = (size_t)(*mb_ptr2len)(p)) > 1)) {
+    if ((l = (size_t)(*mb_ptr2len)(p)) > 1) {
       c = (*mb_ptr2char)(p);
 
       if (vim_isprintc(c)) {
@@ -443,58 +419,48 @@ char_u* str_foldcase(char_u *str, int orglen, char_u *buf, int buflen)
   // Make each character lower case.
   i = 0;
   while (STR_CHAR(i) != NUL) {
-    if (enc_utf8 || (has_mbyte && (MB_BYTE2LEN(STR_CHAR(i)) > 1))) {
-      if (enc_utf8) {
-        int c = utf_ptr2char(STR_PTR(i));
-        int olen = utf_ptr2len(STR_PTR(i));
-        int lc = utf_tolower(c);
+    int c = utf_ptr2char(STR_PTR(i));
+    int olen = utf_ptr2len(STR_PTR(i));
+    int lc = mb_tolower(c);
 
-        // Only replace the character when it is not an invalid
-        // sequence (ASCII character or more than one byte) and
-        // utf_tolower() doesn't return the original character.
-        if (((c < 0x80) || (olen > 1)) && (c != lc)) {
-          int nlen = utf_char2len(lc);
+    // Only replace the character when it is not an invalid
+    // sequence (ASCII character or more than one byte) and
+    // mb_tolower() doesn't return the original character.
+    if (((c < 0x80) || (olen > 1)) && (c != lc)) {
+      int nlen = utf_char2len(lc);
 
-          // If the byte length changes need to shift the following
-          // characters forward or backward.
-          if (olen != nlen) {
-            if (nlen > olen) {
-              if (buf == NULL) {
-                ga_grow(&ga, nlen - olen + 1);
-              } else {
-                if (len + nlen - olen >= buflen) {
-                  // out of memory, keep old char
-                  lc = c;
-                  nlen = olen;
-                }
-              }
-            }
-
-            if (olen != nlen) {
-              if (buf == NULL) {
-                STRMOVE(GA_PTR(i) + nlen, GA_PTR(i) + olen);
-                ga.ga_len += nlen - olen;
-              } else {
-                STRMOVE(buf + i + nlen, buf + i + olen);
-                len += nlen - olen;
-              }
+      // If the byte length changes need to shift the following
+      // characters forward or backward.
+      if (olen != nlen) {
+        if (nlen > olen) {
+          if (buf == NULL) {
+            ga_grow(&ga, nlen - olen + 1);
+          } else {
+            if (len + nlen - olen >= buflen) {
+              // out of memory, keep old char
+              lc = c;
+              nlen = olen;
             }
           }
-          (void)utf_char2bytes(lc, STR_PTR(i));
+        }
+
+        if (olen != nlen) {
+          if (buf == NULL) {
+            STRMOVE(GA_PTR(i) + nlen, GA_PTR(i) + olen);
+            ga.ga_len += nlen - olen;
+          } else {
+            STRMOVE(buf + i + nlen, buf + i + olen);
+            len += nlen - olen;
+          }
         }
       }
-
-      // skip to next multi-byte char
-      i += (*mb_ptr2len)(STR_PTR(i));
-    } else {
-      if (buf == NULL) {
-        GA_CHAR(i) = (char_u)TOLOWER_LOC(GA_CHAR(i));
-      } else {
-        buf[i] = (char_u)TOLOWER_LOC(buf[i]);
-      }
-      ++i;
+      (void)utf_char2bytes(lc, STR_PTR(i));
     }
+
+    // skip to next multi-byte char
+    i += (*mb_ptr2len)(STR_PTR(i));
   }
+
 
   if (buf == NULL) {
     return (char_u *)ga.ga_data;
@@ -526,7 +492,8 @@ char_u* transchar(int c)
     c = K_SECOND(c);
   }
 
-  if ((!chartab_initialized && (((c >= ' ') && (c <= '~')) || F_ischar(c)))
+  if ((!chartab_initialized && (((c >= ' ') && (c <= '~'))
+                                || (p_altkeymap && F_ischar(c))))
       || ((c < 256) && vim_isprintc_strict(c))) {
     // printable character
     transchar_buf[i] = (char_u)c;
@@ -545,7 +512,7 @@ char_u* transchar(int c)
 /// @return pointer to translated character in transchar_buf.
 char_u* transchar_byte(int c)
 {
-  if (enc_utf8 && (c >= 0x80)) {
+  if (c >= 0x80) {
     transchar_nonprint(transchar_buf, c);
     return transchar_buf;
   }
@@ -578,7 +545,7 @@ void transchar_nonprint(char_u *buf, int c)
     buf[1] = (char_u)(c ^ 0x40);
 
     buf[2] = NUL;
-  } else if (enc_utf8 && (c >= 0x80)) {
+  } else if (c >= 0x80) {
     transchar_hex(buf, c);
   } else if ((c >= ' ' + 0x80) && (c <= '~' + 0x80)) {
     // 0xa0 - 0xfe
@@ -632,15 +599,15 @@ static unsigned nr2hex(unsigned c)
 /// Caller must make sure 0 <= b <= 255.
 /// For multi-byte mode "b" must be the first byte of a character.
 /// A TAB is counted as two cells: "^I".
-/// For UTF-8 mode this will return 0 for bytes >= 0x80, because the number of
-/// cells depends on further bytes.
+/// This will return 0 for bytes >= 0x80, because the number of
+/// cells depends on further bytes in UTF-8.
 ///
 /// @param b
 ///
 /// @reeturn Number of display cells.
 int byte2cells(int b)
 {
-  if (enc_utf8 && (b >= 0x80)) {
+  if (b >= 0x80) {
     return 0;
   }
   return g_chartab[b] & CT_CELL_MASK;
@@ -662,18 +629,7 @@ int char2cells(int c)
 
   if (c >= 0x80) {
     // UTF-8: above 0x80 need to check the value
-    if (enc_utf8) {
-      return utf_char2cells(c);
-    }
-
-    // DBCS: double-byte means double-width, except for euc-jp with first
-    // byte 0x8e
-    if ((enc_dbcs != 0) && (c >= 0x100)) {
-      if ((enc_dbcs == DBCS_JPNU) && (((unsigned)c >> 8) == 0x8e)) {
-        return 1;
-      }
-      return 2;
-    }
+    return utf_char2cells(c);
   }
   return g_chartab[c & 0xff] & CT_CELL_MASK;
 }
@@ -684,10 +640,10 @@ int char2cells(int c)
 /// @param p
 ///
 /// @return number of display cells.
-int ptr2cells(char_u *p)
+int ptr2cells(const char_u *p)
 {
   // For UTF-8 we need to look at more bytes if the first byte is >= 0x80.
-  if (enc_utf8 && (*p >= 0x80)) {
+  if (*p >= 0x80) {
     return utf_ptr2cells(p);
   }
 
@@ -722,14 +678,10 @@ int vim_strnsize(char_u *s, int len)
   assert(s != NULL);
   int size = 0;
   while (*s != NUL && --len >= 0) {
-    if (has_mbyte) {
-      int l = (*mb_ptr2len)(s);
-      size += ptr2cells(s);
-      s += l;
-      len -= l - 1;
-    } else {
-      size += byte2cells(*s++);
-    }
+    int l = (*mb_ptr2len)(s);
+    size += ptr2cells(s);
+    s += l;
+    len -= l - 1;
   }
   return size;
 }
@@ -830,6 +782,20 @@ bool vim_iswordc(int c)
   return vim_iswordc_buf(c, curbuf);
 }
 
+/// Check that "c" is a keyword character
+/// Letters and characters from 'iskeyword' option for given buffer.
+/// For multi-byte characters mb_get_class() is used (builtin rules).
+///
+/// @param[in]  c  Character to check.
+/// @param[in]  chartab  Buffer chartab.
+bool vim_iswordc_tab(const int c, const uint64_t *const chartab)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
+{
+  return (c >= 0x100
+          ? (utf_class(c) >= 2)
+          : (c > 0 && GET_CHARTAB_TAB(chartab, c) != 0));
+}
+
 /// Check that "c" is a keyword character:
 /// Letters and characters from 'iskeyword' option for given buffer.
 /// For multi-byte characters mb_get_class() is used (builtin rules).
@@ -839,16 +805,7 @@ bool vim_iswordc(int c)
 bool vim_iswordc_buf(int c, buf_T *buf)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(2)
 {
-  if (c >= 0x100) {
-    if (enc_dbcs != 0) {
-      return dbcs_class((unsigned)c >> 8, (unsigned)(c & 0xff)) >= 2;
-    }
-
-    if (enc_utf8) {
-      return utf_class(c) >= 2;
-    }
-  }
-  return c > 0 && c < 0x100 && GET_CHARTAB(buf, c) != 0;
+  return vim_iswordc_tab(c, buf->b_chartab);
 }
 
 /// Just like vim_iswordc() but uses a pointer to the (multi-byte) character.
@@ -859,7 +816,7 @@ bool vim_iswordc_buf(int c, buf_T *buf)
 bool vim_iswordp(char_u *p)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
-  if (has_mbyte && (MB_BYTE2LEN(*p) > 1)) {
+  if (MB_BYTE2LEN(*p) > 1) {
     return mb_get_class(p) >= 2;
   }
   return GET_CHARTAB(curbuf, *p) != 0;
@@ -875,7 +832,7 @@ bool vim_iswordp(char_u *p)
 bool vim_iswordp_buf(char_u *p, buf_T *buf)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
-  if (has_mbyte && (MB_BYTE2LEN(*p) > 1)) {
+  if (MB_BYTE2LEN(*p) > 1) {
     return mb_get_class(p) >= 2;
   }
   return GET_CHARTAB(buf, *p) != 0;
@@ -913,7 +870,7 @@ bool vim_isfilec_or_wc(int c)
 bool vim_isprintc(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  if (enc_utf8 && (c >= 0x100)) {
+  if (c >= 0x100) {
     return utf_printable(c);
   }
   return c >= 0x100 || (c > 0 && (g_chartab[c] & CT_PRINT_CHAR));
@@ -928,14 +885,10 @@ bool vim_isprintc(int c)
 bool vim_isprintc_strict(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  if ((enc_dbcs != 0) && (c < 0x100) && (MB_BYTE2LEN(c) > 1)) {
-    return false;
-  }
-
-  if (enc_utf8 && (c >= 0x100)) {
+  if (c >= 0x100) {
     return utf_printable(c);
   }
-  return c >= 0x100 || (c > 0 && (g_chartab[c] & CT_PRINT_CHAR));
+  return c > 0 && (g_chartab[c] & CT_PRINT_CHAR);
 }
 
 /// like chartabsize(), but also check for line breaks on the screen
@@ -1052,8 +1005,7 @@ int win_lbr_chartabsize(win_T *wp, char_u *line, char_u *s, colnr_T col, int *he
         break;
       }
     }
-  } else if (has_mbyte
-             && (size == 2)
+  } else if ((size == 2)
              && (MB_BYTE2LEN(*s) > 1)
              && wp->w_p_wrap
              && in_win_border(wp, col)) {
@@ -1225,7 +1177,13 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor,
     // continue until the NUL
     posptr = NULL;
   } else {
+    // Special check for an empty line, which can happen on exit, when
+    // ml_get_buf() always returns an empty string.
+    if (*ptr == NUL) {
+      pos->col = 0;
+    }
     posptr = ptr + pos->col;
+    posptr -= utf_head_off(line, posptr);
   }
 
   // This function is used very often, do some speed optimizations.
@@ -1251,27 +1209,23 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor,
       if (c == TAB) {
         incr = ts - (vcol % ts);
       } else {
-        if (has_mbyte) {
-          // For utf-8, if the byte is >= 0x80, need to look at
-          // further bytes to find the cell width.
-          if (enc_utf8 && (c >= 0x80)) {
-            incr = utf_ptr2cells(ptr);
-          } else {
-            incr = g_chartab[c] & CT_CELL_MASK;
-          }
-
-          // If a double-cell char doesn't fit at the end of a line
-          // it wraps to the next line, it's like this char is three
-          // cells wide.
-          if ((incr == 2)
-              && wp->w_p_wrap
-              && (MB_BYTE2LEN(*ptr) > 1)
-              && in_win_border(wp, vcol)) {
-            ++incr;
-            head = 1;
-          }
+        // For utf-8, if the byte is >= 0x80, need to look at
+        // further bytes to find the cell width.
+        if (c >= 0x80) {
+          incr = utf_ptr2cells(ptr);
         } else {
           incr = g_chartab[c] & CT_CELL_MASK;
+        }
+
+        // If a double-cell char doesn't fit at the end of a line
+        // it wraps to the next line, it's like this char is three
+        // cells wide.
+        if ((incr == 2)
+            && wp->w_p_wrap
+            && (MB_BYTE2LEN(*ptr) > 1)
+            && in_win_border(wp, vcol)) {
+          incr++;
+          head = 1;
         }
       }
 
@@ -1416,7 +1370,7 @@ void getvcols(win_T *wp, pos_T *pos1, pos_T *pos2, colnr_T *left,
   colnr_T to1;
   colnr_T to2;
 
-  if (ltp(pos1, pos2)) {
+  if (lt(*pos1, *pos2)) {
     getvvcol(wp, pos1, &from1, NULL, &to1);
     getvvcol(wp, pos2, &from2, NULL, &to2);
   } else {
@@ -1443,32 +1397,35 @@ void getvcols(win_T *wp, pos_T *pos1, pos_T *pos2, colnr_T *left,
 
 /// skipwhite: skip over ' ' and '\t'.
 ///
-/// @param q
+/// @param[in]  q  String to skip in.
 ///
 /// @return Pointer to character after the skipped whitespace.
-char_u* skipwhite(char_u *q)
+char_u *skipwhite(const char_u *q)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
+  FUNC_ATTR_NONNULL_RET
 {
-  char_u *p = q;
+  const char_u *p = q;
   while (ascii_iswhite(*p)) {
-    // skip to next non-white
     p++;
   }
-  return p;
+  return (char_u *)p;
 }
 
-/// skip over digits
+/// Skip over digits
 ///
-/// @param q
+/// @param[in]  q  String to skip digits in.
 ///
 /// @return Pointer to the character after the skipped digits.
-char_u* skipdigits(char_u *q)
+char_u *skipdigits(const char_u *q)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
+  FUNC_ATTR_NONNULL_RET
 {
-  char_u *p = q;
+  const char_u *p = q;
   while (ascii_isdigit(*p)) {
     // skip to next non-digit
     p++;
   }
-  return p;
+  return (char_u *)p;
 }
 
 /// skip over binary digits
@@ -1553,160 +1510,17 @@ char_u* skiptohex(char_u *q)
   return p;
 }
 
-// Vim's own character class functions.  These exist because many library
-// islower()/toupper() etc. do not work properly: they crash when used with
-// invalid values or can't handle latin1 when the locale is C.
-// Speed is most important here.
-#define LATIN1LOWER 'l'
-#define LATIN1UPPER 'U'
-
-static char_u latin1flags[257] =
-    "                                                                "
-    " UUUUUUUUUUUUUUUUUUUUUUUUUU      llllllllllllllllllllllllll     "
-    "                                                                "
-    "UUUUUUUUUUUUUUUUUUUUUUU UUUUUUUllllllllllllllllllllllll llllllll";
-static char_u latin1upper[257] =
-    "                                 !\"#$%&'()*+,-./0123456789:;<=>"
-    "?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`ABCDEFGHIJKLMNOPQRSTUVWXYZ{|}~"
-    "\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e"
-    "\x8f\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e"
-    "\x9f\xa0\xa1\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xab\xac\xad\xae"
-    "\xaf\xb0\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xbb\xbc\xbd\xbe"
-    "\xbf\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xcb\xcc\xcd\xce"
-    "\xcf\xd0\xd1\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xdb\xdc\xdd\xde"
-    "\xdf\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xcb\xcc\xcd\xce"
-    "\xcf\xd0\xd1\xd2\xd3\xd4\xd5\xd6\xf7\xd8\xd9\xda\xdb\xdc\xdd\xde\xff";
-static char_u latin1lower[257] =
-    "                                 !\"#$%&'()*+,-./0123456789:;<=>"
-    "?@abcdefghijklmnopqrstuvwxyz[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-    "\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e"
-    "\x8f\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e"
-    "\x9f\xa0\xa1\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xab\xac\xad\xae"
-    "\xaf\xb0\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xbb\xbc\xbd\xbe"
-    "\xbf\xe0\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xeb\xec\xed\xee"
-    "\xef\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xd7\xf8\xf9\xfa\xfb\xfc\xfd\xfe"
-    "\xdf\xe0\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xeb\xec\xed\xee"
-    "\xef\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff";
-
-/// Check that the character is lower-case
+/// Skip over text until ' ' or '\t' or NUL
 ///
-/// @param  c  character to check
-bool vim_islower(int c)
-  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
-{
-  if (c <= '@') {
-    return false;
-  }
-
-  if (c >= 0x80) {
-    if (enc_utf8) {
-      return utf_islower(c);
-    }
-
-    if (c >= 0x100) {
-      if (has_mbyte) {
-        return iswlower((wint_t)c);
-      }
-
-      // islower() can't handle these chars and may crash
-      return false;
-    }
-
-    return (latin1flags[c] & LATIN1LOWER) == LATIN1LOWER;
-  }
-  return islower(c);
-}
-
-/// Check that the character is upper-case
-///
-/// @param  c  character to check
-bool vim_isupper(int c)
-  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
-{
-  if (c <= '@') {
-    return false;
-  }
-
-  if (c >= 0x80) {
-    if (enc_utf8) {
-      return utf_isupper(c);
-    }
-
-    if (c >= 0x100) {
-      if (has_mbyte) {
-        return iswupper((wint_t)c);
-      }
-
-      // isupper() can't handle these chars and may crash
-      return false;
-    }
-
-    return (latin1flags[c] & LATIN1UPPER) == LATIN1UPPER;
-  }
-  return isupper(c);
-}
-
-int vim_toupper(int c)
-{
-  if (c <= '@') {
-    return c;
-  }
-
-  if (c >= 0x80) {
-    if (enc_utf8) {
-      return utf_toupper(c);
-    }
-
-    if (c >= 0x100) {
-      if (has_mbyte) {
-        return (int)towupper((wint_t)c);
-      }
-
-      // toupper() can't handle these chars and may crash
-      return c;
-    }
-
-    return latin1upper[c];
-  }
-  return TOUPPER_LOC(c);
-}
-
-int vim_tolower(int c)
-{
-  if (c <= '@') {
-    return c;
-  }
-
-  if (c >= 0x80) {
-    if (enc_utf8) {
-      return utf_tolower(c);
-    }
-
-    if (c >= 0x100) {
-      if (has_mbyte) {
-        return (int)towlower((wint_t)c);
-      }
-
-      // tolower() can't handle these chars and may crash
-      return c;
-    }
-
-    return latin1lower[c];
-  }
-  return TOLOWER_LOC(c);
-}
-
-/// skiptowhite: skip over text until ' ' or '\t' or NUL.
-///
-/// @param p
+/// @param[in]  p  Text to skip over.
 ///
 /// @return Pointer to the next whitespace or NUL character.
-char_u* skiptowhite(char_u *p)
+char_u *skiptowhite(const char_u *p)
 {
   while (*p != ' ' && *p != '\t' && *p != NUL) {
     p++;
   }
-  return p;
+  return (char_u *)p;
 }
 
 /// skiptowhite_esc: Like skiptowhite(), but also skip escaped chars

@@ -14,8 +14,6 @@ local nvim_current_line = function()
   return curwinmeths.get_cursor()[1]
 end
 
-if helpers.pending_win32(pending) then return end
-
 describe('ShaDa support code', function()
   local testfilename = 'Xtestfile-functional-shada-marks'
   local testfilename_2 = 'Xtestfile-functional-shada-marks-2'
@@ -151,6 +149,19 @@ describe('ShaDa support code', function()
     nvim_command('qall')
     reset()
     eq(saved, redir_exec('jumps'))
+  end)
+
+  it('when dumping jump list also dumps current position', function()
+    nvim_command('edit ' .. testfilename)
+    nvim_command('normal! G')
+    nvim_command('split ' .. testfilename_2)
+    nvim_command('normal! G')
+    nvim_command('wshada')
+    nvim_command('quit')
+    nvim_command('rshada')
+    nvim_command('normal! \15')  -- <C-o>
+    eq(testfilename_2, funcs.bufname('%'))
+    eq({2, 0}, curwinmeths.get_cursor())
   end)
 
   it('is able to dump and restore jump list with different times (slow!)',

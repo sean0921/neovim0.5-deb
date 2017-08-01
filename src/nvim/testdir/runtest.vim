@@ -39,6 +39,9 @@ if &lines < 24 || &columns < 80
   cquit
 endif
 
+" Common with all tests on all systems.
+source setup.vim
+
 " This also enables use of line continuation.
 set viminfo+=nviminfo
 
@@ -59,6 +62,20 @@ lang mess C
 " Always use forward slashes.
 set shellslash
 
+" Make sure $HOME does not get read or written.
+let $HOME = '/does/not/exist'
+
+" Prepare for calling garbagecollect_for_testing().
+let v:testing = 1
+
+" Align Nvim defaults to Vim.
+set directory^=.
+set backspace=
+set nohidden smarttab noautoindent noautoread complete-=i noruler noshowcmd
+set listchars=eol:$
+" Prevent Nvim log from writing to stderr.
+let $NVIM_LOG_FILE='Xnvim.log'
+
 function RunTheTest(test)
   echo 'Executing ' . a:test
   if exists("*SetUp")
@@ -69,6 +86,9 @@ function RunTheTest(test)
   let s:done += 1
   try
     exe 'call ' . a:test
+  catch /^\cskipped/
+    call add(s:messages, '    Skipped')
+    call add(s:skipped, 'SKIPPED ' . a:test . ': ' . substitute(v:exception, '^\S*\s\+', '',  ''))
   catch
     call add(v:errors, 'Caught exception in ' . a:test . ': ' . v:exception . ' @ ' . v:throwpoint)
   endtry
@@ -76,6 +96,21 @@ function RunTheTest(test)
   if exists("*TearDown")
     call TearDown()
   endif
+
+  " Close any extra windows and make the current one not modified.
+  while 1
+    let wincount = winnr('$')
+    if wincount == 1
+      break
+    endif
+    bwipe!
+    if wincount == winnr('$')
+      " Did not manage to close a window.
+      only!
+      break
+    endif
+  endwhile
+  set nomodified
 endfunc
 
 " Source the test script.  First grab the file name, in case the script
@@ -85,6 +120,7 @@ let s:done = 0
 let s:fail = 0
 let s:errors = []
 let s:messages = []
+let s:skipped = []
 if expand('%') =~ 'test_viml.vim'
   " this test has intentional s:errors, don't use try/catch.
   source %
@@ -131,6 +167,9 @@ for s:test in sort(s:tests)
 
 endfor
 
+" Don't write viminfo on exit.
+set viminfo=
+
 if s:fail == 0
   " Success, create the .res file so that make knows it's done.
   exe 'split ' . fnamemodify(g:testname, ':r') . '.res'
@@ -156,7 +195,10 @@ if s:fail > 0
   call extend(s:messages, s:errors)
 endif
 
-" Append messages to "messages"
+" Add SKIPPED messages
+call extend(s:messages, s:skipped)
+
+" Append messages to the file "messages"
 split messages
 call append(line('$'), '')
 call append(line('$'), 'From ' . g:testname . ':')

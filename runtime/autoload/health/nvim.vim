@@ -1,15 +1,27 @@
-let s:suggest_faq = 'See https://github.com/neovim/neovim/wiki/FAQ'
+let s:suggest_faq = 'https://github.com/neovim/neovim/wiki/FAQ'
 
 function! s:check_config() abort
+  let ok = v:true
   call health#report_start('Configuration')
-  let sensible_pi = globpath(&runtimepath, '**/sensible.vim', 1, 1)
-  if empty(sensible_pi)
-    call health#report_ok('no issues found')
-  else
+
+  if get(g:, 'loaded_sensible', 0)
+    let ok = v:false
+    let sensible_pi = globpath(&runtimepath, '**/sensible.vim', 1, 1)
     call health#report_info("found sensible.vim plugin:\n".join(sensible_pi, "\n"))
     call health#report_error("sensible.vim plugin is not needed; Nvim has the same defaults built-in."
       \ ." Also, sensible.vim sets 'ttimeoutlen' to a sub-optimal value.",
       \ ["Remove sensible.vim plugin, or wrap it in a `if !has('nvim')` check."])
+  endif
+
+  if exists('$NVIM_TUI_ENABLE_CURSOR_SHAPE')
+    let ok = v:false
+    call health#report_warn("$NVIM_TUI_ENABLE_CURSOR_SHAPE is ignored in Nvim 0.2+",
+          \ [ "Use the 'guicursor' option to configure cursor shape. :help 'guicursor'",
+          \   'https://github.com/neovim/neovim/wiki/Following-HEAD#20170402' ])
+  endif
+
+  if ok
+    call health#report_ok('no issues found')
   endif
 endfunction
 
@@ -41,7 +53,7 @@ function! s:check_rplugin_manifest() abort
           \ + glob(python_dir.'/*/__init__.py', 1, 1)
       let contents = join(readfile(script))
       if contents =~# '\<\%(from\|import\)\s\+neovim\>'
-        if script =~# '/__init__\.py$'
+        if script =~# '[\/]__init__\.py$'
           let script = fnamemodify(script, ':h')
         endif
 
@@ -113,39 +125,49 @@ function! s:check_tmux() abort
     call health#report_ok('escape-time: '.tmux_esc_time.'ms')
   endif
 
-  " check $TERM
+  " check default-terminal and $TERM
   call health#report_info('$TERM: '.$TERM)
-  if $TERM !~# '\v(tmux-256color|screen-256color)'
+  let cmd = 'tmux show-option -qvg default-terminal'
+  let out = system(cmd)
+  let tmux_default_term = substitute(out, '\v(\s|\r|\n)', '', 'g')
+  if empty(tmux_default_term)
+    let cmd = 'tmux show-option -qvgs default-terminal'
+    let out = system(cmd)
+    let tmux_default_term = substitute(out, '\v(\s|\r|\n)', '', 'g')
+  endif
+
+  if v:shell_error
+    call health#report_error('command failed: '.cmd."\n".out)
+  elseif tmux_default_term !=# $TERM
+    call health#report_info('default-terminal: '.tmux_default_term)
     call health#report_error(
-          \ '$TERM should be "screen-256color" or "tmux-256color" when running tmux.',
+          \ '$TERM differs from the tmux `default-terminal` setting. Colors might look wrong.',
+          \ ['$TERM may have been set by some rc (.bashrc, .zshrc, ...).'])
+  elseif $TERM !~# '\v(tmux-256color|screen-256color)'
+    call health#report_error(
+          \ '$TERM should be "screen-256color" or "tmux-256color" in tmux. Colors might look wrong.',
           \ ["Set default-terminal in ~/.tmux.conf:\nset-option -g default-terminal \"screen-256color\"",
           \  s:suggest_faq])
   endif
 endfunction
 
-function! s:check_terminfo() abort
+function! s:check_terminal() abort
   if !executable('infocmp')
     return
   endif
-  call health#report_start('terminfo')
-  let suggestions = [
-        \ "Set key_backspace to \\177 (ASCII BACKSPACE). Run these commands:\n"
-        \   .'infocmp $TERM | sed ''s/kbs=^[hH]/kbs=\\177/'' > $TERM.ti'
-        \   ."\n"
-        \   .'tic $TERM.ti',
-        \ s:suggest_faq]
+  call health#report_start('terminal')
   let cmd = 'infocmp -L'
   let out = system(cmd)
-  let kbs_entry = matchstr(out, 'key_backspace=\S*')
+  let kbs_entry   = matchstr(out, 'key_backspace=[^,[:space:]]*')
+  let kdch1_entry = matchstr(out, 'key_dc=[^,[:space:]]*')
 
   if v:shell_error
     call health#report_error('command failed: '.cmd."\n".out)
-  elseif !empty(matchstr(out, '\Vkey_backspace=^H'))
-    call health#report_error('key_backspace (kbs) entry is ^H (ASCII DELETE): '
-        \ .kbs_entry, suggestions)
   else
-    call health#report_info('key_backspace terminfo entry: '
+    call health#report_info('key_backspace (kbs) terminfo entry: '
         \ .(empty(kbs_entry) ? '? (not found)' : kbs_entry))
+    call health#report_info('key_dc (kdch1) terminfo entry: '
+        \ .(empty(kbs_entry) ? '? (not found)' : kdch1_entry))
   endif
 endfunction
 
@@ -153,6 +175,6 @@ function! health#nvim#check() abort
   call s:check_config()
   call s:check_performance()
   call s:check_rplugin_manifest()
-  call s:check_terminfo()
+  call s:check_terminal()
   call s:check_tmux()
 endfunction

@@ -17,8 +17,8 @@
 -- types: bool, number, string
 -- lists: (nil), comma, onecomma, flags, flagscomma
 -- scopes: global, buffer, window
--- redraw options: statuslines, current_window, current_buffer, all_windows, 
---                 everything, curswant
+-- redraw options: statuslines, current_window, curent_window_only,
+--                 current_buffer, all_windows, everything, curswant
 -- default: {vi=…[, vim=…]}
 -- defaults: {condition=#if condition, if_true=default, if_false=default}
 -- #if condition:
@@ -190,7 +190,7 @@ return {
       type='string', list='comma', scope={'global'},
       vi_def=true,
       varname='p_bo',
-      defaults={if_true={vi=""}}
+      defaults={if_true={vi="all"}}
     },
     {
       full_name='binary', abbreviation='bin',
@@ -539,7 +539,7 @@ return {
       full_name='cursorline', abbreviation='cul',
       type='bool', scope={'window'},
       vi_def=true,
-      redraw={'current_window'},
+      redraw={'current_window_only'},
       defaults={if_true={vi=false}}
     },
     {
@@ -709,13 +709,6 @@ return {
       vi_def=true,
       varname='p_efm',
       defaults={if_true={vi=macros('DFLT_EFM')}}
-    },
-    {
-      full_name='esckeys', abbreviation='ek',
-      type='bool', scope={'global'},
-      vim=true,
-      varname='p_ek',
-      defaults={if_true={vi=false, vim=true}}
     },
     {
       full_name='eventignore', abbreviation='ei',
@@ -955,7 +948,7 @@ return {
     },
     {
       full_name='formatprg', abbreviation='fp',
-      type='string', scope={'global'},
+      type='string', scope={'global', 'buffer'},
       secure=true,
       vi_def=true,
       expand=true,
@@ -1007,7 +1000,7 @@ return {
       deny_duplicates=true,
       vi_def=true,
       varname='p_guicursor',
-      defaults={if_true={vi="n-v-c:block,o:hor50,i-ci:hor15,r-cr:hor30,sm:block"}}
+      defaults={if_true={vi="n-v-c-sm:block,i-ci-ve:ver25,r-cr-o:hor20"}}
     },
     {
       full_name='guifont', abbreviation='gfn',
@@ -1031,13 +1024,6 @@ return {
       vi_def=true,
       redraw={'everything'},
       enable_if=false,
-    },
-    {
-      full_name='guiheadroom', abbreviation='ghr',
-      type='number', scope={'global'},
-      vi_def=true,
-      enable_if=false,
-      defaults={if_true={vi=50}}
     },
     {
       full_name='guioptions', abbreviation='go',
@@ -1354,6 +1340,12 @@ return {
       defaults={if_true={vi=false, vim=true}}
     },
     {
+      full_name='langremap', abbreviation='lrm',
+      type='bool', scope={'global'},
+      varname='p_lrm',
+      defaults={if_true={vi=true, vim=false}}
+    },
+    {
       full_name='laststatus', abbreviation='ls',
       type='number', scope={'global'},
       vim=true,
@@ -1572,7 +1564,7 @@ return {
       full_name='mouse',
       type='string', list='flags', scope={'global'},
       varname='p_mouse',
-      defaults={if_true={vi="", vim="a"}}
+      defaults={if_true={vi="", vim=""}}
     },
     {
       full_name='mousefocus', abbreviation='mousef',
@@ -1890,7 +1882,7 @@ return {
       vim=true,
       redraw={'statuslines'},
       varname='p_ru',
-      defaults={if_true={vi=false}}
+      defaults={if_true={vi=true}}
     },
     {
       full_name='rulerformat', abbreviation='ruf',
@@ -1918,6 +1910,14 @@ return {
       vi_def=true,
       pv_name='p_scroll',
       defaults={if_true={vi=12}}
+    },
+    {
+      full_name='scrollback', abbreviation='scbk',
+      type='number', scope={'buffer'},
+      vi_def=true,
+      varname='p_scbk',
+      redraw={'current_buffer'},
+      defaults={if_true={vi=1000}}
     },
     {
       full_name='scrollbind', abbreviation='scb',
@@ -2051,7 +2051,11 @@ return {
       secure=true,
       vi_def=true,
       varname='p_srr',
-      defaults={if_true={vi=">"}}
+      defaults={
+        condition='WIN32',
+        if_true={vi=">%s 2>&1"},
+        if_false={vi=">"}
+      }
     },
     {
       full_name='shellslash', abbreviation='ssl',
@@ -2118,11 +2122,7 @@ return {
       type='bool', scope={'global'},
       vim=true,
       varname='p_sc',
-      defaults={
-        condition='UNIX',
-        if_true={vi=false, vim=false},
-        if_false={vi=false, vim=true},
-      }
+      defaults={if_true={vi=false, vim=true}}
     },
     {
       full_name='showfulltag', abbreviation='sft',
@@ -2168,6 +2168,14 @@ return {
       redraw={'current_buffer'},
       varname='p_siso',
       defaults={if_true={vi=0}}
+    },
+    {
+      full_name='signcolumn', abbreviation='scl',
+      type='string', scope={'window'},
+      vi_def=true,
+      alloced=true,
+      redraw={'current_window'},
+      defaults={if_true={vi="auto"}}
     },
     {
       full_name='smartcase', abbreviation='scs',

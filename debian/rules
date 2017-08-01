@@ -23,24 +23,29 @@ endif
 export USERNAME = pkg-vim-maintainers
 export HOSTNAME = lists.alioth.debian.org
 
+USER = $(shell id -un)
 ID = $(shell id -u)
 GID = $(shell id -g)
+BUILD = ninja -v -C build
 
 %:
-	dh $@ --parallel
+	dh $@ --buildsystem=cmake --builddirectory=build
+
+override_dh_auto_configure:
+	dh_auto_configure -- -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUSTED_OUTPUT_TYPE=nvim
 
 override_dh_auto_build:
-	dh_auto_build --parallel -- VERBOSE=1 USE_BUNDLED_DEPS=OFF CMAKE_BUILD_TYPE=None "CMAKE_EXTRA_FLAGS=-DCMAKE_INSTALL_PREFIX=/usr -DBUSTED_OUTPUT_TYPE=TAP"
+	$(BUILD)
 
 override_dh_auto_install:
-	dh_auto_install --parallel -- VERBOSE=1 USE_BUNDLED_DEPS=OFF
-
-override_dh_auto_clean:
-	-[ -f debian/global_spec.lua ] && mv debian/global_spec.lua test/functional/ex_cmds/
-	dh_auto_clean
+	env DESTDIR=$(CURDIR)/debian/tmp $(BUILD) install
 
 override_dh_install:
 	dh_install --fail-missing
+
+override_dh_auto_clean:
+	$(MAKE) clean
+	dh_auto_clean
 
 debian/passwd:
 	printf -- "$(USER):x:$(ID):$(GID):nvim test:$(CURDIR)/debian/fakehome:/bin/false\n" > debian/passwd
@@ -52,5 +57,8 @@ debian/fakehome:
 override_dh_auto_test-indep:
 
 override_dh_auto_test-arch: debian/passwd debian/fakehome
-	mv -f test/functional/ex_cmds/global_spec.lua debian/
-	env "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" make $(UNITTEST) $(FUNCTIONALTEST) oldtest VERBOSE=1 USE_BUNDLED_DEPS=OFF
+	env "HOME=$(CURDIR)/debian/fakehome" $(MAKE) -C src/nvim/testdir clean
+	env "HOME=$(CURDIR)/debian/fakehome" TERM=xterm $(MAKE) -C src/nvim/testdir "NVIM_PRG=$(CURDIR)/build/bin/nvim"
+ifneq (,$(UNITTEST)$(FUNCTIONALTEST))
+	env TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(UNITTEST) $(FUNCTIONALTEST)
+endif

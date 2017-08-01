@@ -1,3 +1,6 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 /*
  * Handling of regular expressions: vim_regcomp(), vim_regexec(), vim_regsub()
  *
@@ -2221,10 +2224,11 @@ collection:
               if (*regparse == '[')
                 endc = get_coll_element(&regparse);
               if (endc == 0) {
-                if (has_mbyte)
-                  endc = mb_ptr2char_adv(&regparse);
-                else
+                if (has_mbyte) {
+                  endc = mb_ptr2char_adv((const char_u **)&regparse);
+                } else {
                   endc = *regparse++;
+                }
               }
 
               /* Handle \o40, \x20 and \u20AC style sequences */
@@ -2309,48 +2313,64 @@ collection:
               }
               break;
             case CLASS_ALNUM:
-              for (cu = 1; cu <= 255; cu++)
-                if (isalnum(cu))
-                  regc(cu);
+              for (cu = 1; cu < 128; cu++) {
+                if (isalnum(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_ALPHA:
-              for (cu = 1; cu <= 255; cu++)
-                if (isalpha(cu))
-                  regc(cu);
+              for (cu = 1; cu < 128; cu++) {
+                if (isalpha(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_BLANK:
               regc(' ');
               regc('\t');
               break;
             case CLASS_CNTRL:
-              for (cu = 1; cu <= 255; cu++)
-                if (iscntrl(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (iscntrl(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_DIGIT:
-              for (cu = 1; cu <= 255; cu++)
-                if (ascii_isdigit(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (ascii_isdigit(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_GRAPH:
-              for (cu = 1; cu <= 255; cu++)
-                if (isgraph(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (isgraph(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_LOWER:
-              for (cu = 1; cu <= 255; cu++)
-                if (vim_islower(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (mb_islower(cu) && cu != 170 && cu != 186) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_PRINT:
-              for (cu = 1; cu <= 255; cu++)
-                if (vim_isprintc(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (vim_isprintc(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_PUNCT:
-              for (cu = 1; cu <= 255; cu++)
-                if (ispunct(cu))
-                  regc(cu);
+              for (cu = 1; cu < 128; cu++) {
+                if (ispunct(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_SPACE:
               for (cu = 9; cu <= 13; cu++)
@@ -2358,14 +2378,18 @@ collection:
               regc(' ');
               break;
             case CLASS_UPPER:
-              for (cu = 1; cu <= 255; cu++)
-                if (vim_isupper(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (mb_isupper(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_XDIGIT:
-              for (cu = 1; cu <= 255; cu++)
-                if (ascii_isxdigit(cu))
-                  regc(cu);
+              for (cu = 1; cu <= 255; cu++) {
+                if (ascii_isxdigit(cu)) {
+                  regmbc(cu);
+                }
+              }
               break;
             case CLASS_TAB:
               regc('\t');
@@ -2377,7 +2401,7 @@ collection:
               regc('\b');
               break;
             case CLASS_ESCAPE:
-              regc('\033');
+              regc(ESC);
               break;
             }
           } else {
@@ -2902,13 +2926,8 @@ static void skipchr(void)
   else
     prevchr_len = 0;
   if (regparse[prevchr_len] != NUL) {
-    if (enc_utf8)
-      /* exclude composing chars that mb_ptr2len does include */
-      prevchr_len += utf_ptr2len(regparse + prevchr_len);
-    else if (has_mbyte)
-      prevchr_len += (*mb_ptr2len)(regparse + prevchr_len);
-    else
-      ++prevchr_len;
+    // Exclude composing chars that utfc_ptr2len does include.
+    prevchr_len += utf_ptr2len(regparse + prevchr_len);
   }
   regparse += prevchr_len;
   prev_at_start = at_start;
@@ -3031,7 +3050,7 @@ static int getoctchrs(void)
   int c;
   int i;
 
-  for (i = 0; i < 3 && nr < 040; ++i) {
+  for (i = 0; i < 3 && nr < 040; i++) {  // -V536
     c = regparse[0];
     if (c < '0' || c > '7')
       break;
@@ -3453,7 +3472,7 @@ static long bt_regexec_both(char_u *line,
         || (ireg_ic
             && (((enc_utf8 && utf_fold(prog->regstart) == utf_fold(c)))
                 || (c < 255 && prog->regstart < 255
-                    && vim_tolower(prog->regstart) == vim_tolower(c))))) {
+                    && mb_tolower(prog->regstart) == mb_tolower(c))))) {
       retval = regtry(prog, col);
     } else {
       retval = 0;
@@ -3630,9 +3649,11 @@ static long regtry(bt_regprog_T *prog, colnr_T col)
  */
 static int reg_prev_class(void)
 {
-  if (reginput > regline)
-    return mb_get_class_buf(reginput - 1
-        - (*mb_head_off)(regline, reginput - 1), reg_buf);
+  if (reginput > regline) {
+    return mb_get_class_tab(reginput - 1 - (*mb_head_off)(regline,
+                                                          reginput - 1),
+                            reg_buf->b_chartab);
+  }
   return -1;
 }
 
@@ -3898,12 +3919,13 @@ regmatch (
           else if (has_mbyte) {
             int this_class;
 
-            /* Get class of current and previous char (if it exists). */
-            this_class = mb_get_class_buf(reginput, reg_buf);
-            if (this_class <= 1)
-              status = RA_NOMATCH;        /* not on a word at all */
-            else if (reg_prev_class() == this_class)
-              status = RA_NOMATCH;        /* previous char is in same word */
+            // Get class of current and previous char (if it exists).
+            this_class = mb_get_class_tab(reginput, reg_buf->b_chartab);
+            if (this_class <= 1) {
+              status = RA_NOMATCH;  // Not on a word at all.
+            } else if (reg_prev_class() == this_class) {
+              status = RA_NOMATCH;  // Previous char is in same word.
+            }
           } else {
             if (!vim_iswordc_buf(c, reg_buf) || (reginput > regline
                                                  && vim_iswordc_buf(reginput[-1
@@ -3918,8 +3940,8 @@ regmatch (
           else if (has_mbyte) {
             int this_class, prev_class;
 
-            /* Get class of current and previous char (if it exists). */
-            this_class = mb_get_class_buf(reginput, reg_buf);
+            // Get class of current and previous char (if it exists).
+            this_class = mb_get_class_tab(reginput, reg_buf->b_chartab);
             prev_class = reg_prev_class();
             if (this_class == prev_class
                 || prev_class == 0 || prev_class == 1)
@@ -4131,7 +4153,7 @@ regmatch (
           if (*opnd != *reginput
               && (!ireg_ic
                   || (!enc_utf8
-                      && vim_tolower(*opnd) != vim_tolower(*reginput)))) {
+                      && mb_tolower(*opnd) != mb_tolower(*reginput)))) {
             status = RA_NOMATCH;
           } else if (*opnd == NUL) {
             // match empty string always works; happens when "~" is
@@ -4549,12 +4571,14 @@ regmatch (
           if (OP(next) == EXACTLY) {
             rst.nextb = *OPERAND(next);
             if (ireg_ic) {
-              if (vim_isupper(rst.nextb))
-                rst.nextb_ic = vim_tolower(rst.nextb);
-              else
-                rst.nextb_ic = vim_toupper(rst.nextb);
-            } else
+              if (mb_isupper(rst.nextb)) {
+                rst.nextb_ic = mb_tolower(rst.nextb);
+              } else {
+                rst.nextb_ic = mb_toupper(rst.nextb);
+              }
+            } else {
               rst.nextb_ic = rst.nextb;
+            }
           } else {
             rst.nextb = NUL;
             rst.nextb_ic = NUL;
@@ -5315,8 +5339,8 @@ do_class:
      * would have been used for it.  It does handle single-byte
      * characters, such as latin1. */
     if (ireg_ic) {
-      cu = vim_toupper(*opnd);
-      cl = vim_tolower(*opnd);
+      cu = mb_toupper(*opnd);
+      cl = mb_tolower(*opnd);
       while (count < maxcount && (*scan == cu || *scan == cl)) {
         count++;
         scan++;
@@ -6248,8 +6272,8 @@ static int cstrncmp(char_u *s1, char_u *s2, int *n)
     str2 = s2;
     c1 = c2 = 0;
     while ((int)(str1 - s1) < *n) {
-      c1 = mb_ptr2char_adv(&str1);
-      c2 = mb_ptr2char_adv(&str2);
+      c1 = mb_ptr2char_adv((const char_u **)&str1);
+      c2 = mb_ptr2char_adv((const char_u **)&str2);
 
       /* decompose the character if necessary, into 'base' characters
        * because I don't care about Arabic, I will hard-code the Hebrew
@@ -6288,14 +6312,15 @@ static char_u *cstrchr(char_u *s, int c)
   /* tolower() and toupper() can be slow, comparing twice should be a lot
    * faster (esp. when using MS Visual C++!).
    * For UTF-8 need to use folded case. */
-  if (enc_utf8 && c > 0x80)
+  if (c > 0x80) {
     cc = utf_fold(c);
-  else if (vim_isupper(c))
-    cc = vim_tolower(c);
-  else if (vim_islower(c))
-    cc = vim_toupper(c);
-  else
+  } else if (mb_isupper(c)) {
+    cc = mb_tolower(c);
+  } else if (mb_islower(c)) {
+    cc = mb_toupper(c);
+  } else {
     return vim_strchr(s, c);
+  }
 
   if (has_mbyte) {
     for (p = s; *p != NUL; p += (*mb_ptr2len)(p)) {
@@ -6324,28 +6349,28 @@ static char_u *cstrchr(char_u *s, int c)
 
 static fptr_T do_upper(int *d, int c)
 {
-  *d = vim_toupper(c);
+  *d = mb_toupper(c);
 
   return (fptr_T)NULL;
 }
 
 static fptr_T do_Upper(int *d, int c)
 {
-  *d = vim_toupper(c);
+  *d = mb_toupper(c);
 
   return (fptr_T)do_Upper;
 }
 
 static fptr_T do_lower(int *d, int c)
 {
-  *d = vim_tolower(c);
+  *d = mb_tolower(c);
 
   return (fptr_T)NULL;
 }
 
 static fptr_T do_Lower(int *d, int c)
 {
-  *d = vim_tolower(c);
+  *d = mb_tolower(c);
 
   return (fptr_T)do_Lower;
 }
@@ -6422,32 +6447,72 @@ static linenr_T submatch_firstlnum;
 static linenr_T submatch_maxline;
 static int submatch_line_lbr;
 
-/*
- * vim_regsub() - perform substitutions after a vim_regexec() or
- * vim_regexec_multi() match.
- *
- * If "copy" is TRUE really copy into "dest".
- * If "copy" is FALSE nothing is copied, this is just to find out the length
- * of the result.
- *
- * If "backslash" is TRUE, a backslash will be removed later, need to double
- * them to keep them, and insert a backslash before a CR to avoid it being
- * replaced with a line break later.
- *
- * Note: The matched text must not change between the call of
- * vim_regexec()/vim_regexec_multi() and vim_regsub()!  It would make the back
- * references invalid!
- *
- * Returns the size of the replacement, including terminating NUL.
- */
-int vim_regsub(regmatch_T *rmp, char_u *source, char_u *dest, int copy, int magic, int backslash)
+/// Put the submatches in "argv[0]" which is a list passed into call_func() by
+/// vim_regsub_both().
+static int fill_submatch_list(int argc, typval_T *argv, int argcount)
+{
+  listitem_T *li;
+  int        i;
+  char_u     *s;
+
+  if (argcount == 0) {
+    // called function doesn't take an argument
+    return 0;
+  }
+
+  // Relies on sl_list to be the first item in staticList10_T.
+  init_static_list((staticList10_T *)(argv->vval.v_list));
+
+  // There are always 10 list items in staticList10_T.
+  li = argv->vval.v_list->lv_first;
+  for (i = 0; i < 10; i++) {
+    s = submatch_match->startp[i];
+    if (s == NULL || submatch_match->endp[i] == NULL) {
+      s = NULL;
+    } else {
+      s = vim_strnsave(s, (int)(submatch_match->endp[i] - s));
+    }
+    li->li_tv.v_type = VAR_STRING;
+    li->li_tv.vval.v_string = s;
+    li = li->li_next;
+  }
+  return 1;
+}
+
+static void clear_submatch_list(staticList10_T *sl)
+{
+  int i;
+
+  for (i = 0; i < 10; i++) {
+    xfree(sl->sl_items[i].li_tv.vval.v_string);
+  }
+}
+
+/// vim_regsub() - perform substitutions after a vim_regexec() or
+/// vim_regexec_multi() match.
+///
+/// If "copy" is TRUE really copy into "dest".
+/// If "copy" is FALSE nothing is copied, this is just to find out the length
+/// of the result.
+///
+/// If "backslash" is TRUE, a backslash will be removed later, need to double
+/// them to keep them, and insert a backslash before a CR to avoid it being
+/// replaced with a line break later.
+///
+/// Note: The matched text must not change between the call of
+/// vim_regexec()/vim_regexec_multi() and vim_regsub()!  It would make the back
+/// references invalid!
+///
+/// Returns the size of the replacement, including terminating NUL.
+int vim_regsub(regmatch_T *rmp, char_u *source, typval_T *expr, char_u *dest,
+               int copy, int magic, int backslash)
 {
   reg_match = rmp;
   reg_mmatch = NULL;
   reg_maxline = 0;
   reg_buf = curbuf;
-  reg_line_lbr = TRUE;
-  return vim_regsub_both(source, dest, copy, magic, backslash);
+  reg_line_lbr = true;
+  return vim_regsub_both(source, expr, dest, copy, magic, backslash);
 }
 
 int vim_regsub_multi(regmmatch_T *rmp, linenr_T lnum, char_u *source, char_u *dest, int copy, int magic, int backslash)
@@ -6457,11 +6522,12 @@ int vim_regsub_multi(regmmatch_T *rmp, linenr_T lnum, char_u *source, char_u *de
   reg_buf = curbuf;             /* always works on the current buffer! */
   reg_firstlnum = lnum;
   reg_maxline = curbuf->b_ml.ml_line_count - lnum;
-  reg_line_lbr = FALSE;
-  return vim_regsub_both(source, dest, copy, magic, backslash);
+  reg_line_lbr = false;
+  return vim_regsub_both(source, NULL, dest, copy, magic, backslash);
 }
 
-static int vim_regsub_both(char_u *source, char_u *dest, int copy, int magic, int backslash)
+static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest,
+                           int copy, int magic, int backslash)
 {
   char_u      *src;
   char_u      *dst;
@@ -6475,8 +6541,8 @@ static int vim_regsub_both(char_u *source, char_u *dest, int copy, int magic, in
   int len = 0;                  /* init for GCC */
   static char_u *eval_result = NULL;
 
-  /* Be paranoid... */
-  if (source == NULL || dest == NULL) {
+  // Be paranoid...
+  if ((source == NULL && expr == NULL) || dest == NULL) {
     EMSG(_(e_null));
     return 0;
   }
@@ -6485,16 +6551,13 @@ static int vim_regsub_both(char_u *source, char_u *dest, int copy, int magic, in
   src = source;
   dst = dest;
 
-  /*
-   * When the substitute part starts with "\=" evaluate it as an expression.
-   */
-  if (source[0] == '\\' && source[1] == '='
-      && !can_f_submatch            /* can't do this recursively */
-      ) {
-    /* To make sure that the length doesn't change between checking the
-     * length and copying the string, and to speed up things, the
-     * resulting string is saved from the call with "copy" == FALSE to the
-     * call with "copy" == TRUE. */
+  // When the substitute part starts with "\=" evaluate it as an expression.
+  if (expr != NULL || (source[0] == '\\' && source[1] == '='
+                       && !can_f_submatch)) {       // can't do this recursively
+    // To make sure that the length doesn't change between checking the
+    // length and copying the string, and to speed up things, the
+    // resulting string is saved from the call with "copy" == FALSE to the
+    // call with "copy" == TRUE.
     if (copy) {
       if (eval_result != NULL) {
         STRCPY(dest, eval_result);
@@ -6505,6 +6568,7 @@ static int vim_regsub_both(char_u *source, char_u *dest, int copy, int magic, in
     } else {
       win_T       *save_reg_win;
       int save_ireg_ic;
+      bool prev_can_f_submatch = can_f_submatch;
 
       xfree(eval_result);
 
@@ -6519,9 +6583,50 @@ static int vim_regsub_both(char_u *source, char_u *dest, int copy, int magic, in
       submatch_line_lbr = reg_line_lbr;
       save_reg_win = reg_win;
       save_ireg_ic = ireg_ic;
-      can_f_submatch = TRUE;
+      can_f_submatch = true;
 
-      eval_result = eval_to_string(source + 2, NULL, TRUE);
+      if (expr != NULL) {
+        typval_T argv[2];
+        int dummy;
+        typval_T rettv;
+        staticList10_T matchList;
+
+        rettv.v_type = VAR_STRING;
+        rettv.vval.v_string = NULL;
+        if (prev_can_f_submatch) {
+          // can't do this recursively
+        } else {
+          argv[0].v_type = VAR_LIST;
+          argv[0].vval.v_list = &matchList.sl_list;
+          matchList.sl_list.lv_len = 0;
+          if (expr->v_type == VAR_FUNC) {
+            s = expr->vval.v_string;
+            call_func(s, (int)STRLEN(s), &rettv, 1, argv,
+                      fill_submatch_list, 0L, 0L, &dummy,
+                      true, NULL, NULL);
+          } else if (expr->v_type == VAR_PARTIAL) {
+            partial_T *partial = expr->vval.v_partial;
+
+            s = partial_name(partial);
+            call_func(s, (int)STRLEN(s), &rettv, 1, argv,
+                      fill_submatch_list, 0L, 0L, &dummy,
+                      true, partial, NULL);
+          }
+          if (matchList.sl_list.lv_len > 0) {
+            // fill_submatch_list() was called.
+            clear_submatch_list(&matchList);
+          }
+        }
+        char buf[NUMBUFLEN];
+        eval_result = (char_u *)tv_get_string_buf_chk(&rettv, buf);
+        if (eval_result != NULL) {
+          eval_result = vim_strsave(eval_result);
+        }
+        tv_clear(&rettv);
+      } else {
+        eval_result = eval_to_string(source + 2, NULL, true);
+      }
+
       if (eval_result != NULL) {
         int had_backslash = FALSE;
 
@@ -6876,7 +6981,7 @@ list_T *reg_submatch_list(int no)
   linenr_T slnum;
   linenr_T elnum;
   list_T *list;
-  char_u *s;
+  const char *s;
 
   if (submatch_match == NULL) {
     slnum = submatch_mmatch->startpos[no].lnum;
@@ -6888,27 +6993,27 @@ list_T *reg_submatch_list(int no)
     colnr_T scol = submatch_mmatch->startpos[no].col;
     colnr_T ecol = submatch_mmatch->endpos[no].col;
 
-    list = list_alloc();
+    list = tv_list_alloc();
 
-    s = reg_getline_submatch(slnum) + scol;
+    s = (const char *)reg_getline_submatch(slnum) + scol;
     if (slnum == elnum) {
-      list_append_string(list, s, ecol - scol);
+      tv_list_append_string(list, s, ecol - scol);
     } else {
-      list_append_string(list, s, -1);
+      tv_list_append_string(list, s, -1);
       for (int i = 1; i < elnum - slnum; i++) {
-        s = reg_getline_submatch(slnum + i);
-        list_append_string(list, s, -1);
+        s = (const char *)reg_getline_submatch(slnum + i);
+        tv_list_append_string(list, s, -1);
       }
-      s = reg_getline_submatch(elnum);
-      list_append_string(list, s, ecol);
+      s = (const char *)reg_getline_submatch(elnum);
+      tv_list_append_string(list, s, ecol);
     }
   } else {
-    s = submatch_match->startp[no];
+    s = (const char *)submatch_match->startp[no];
     if (s == NULL || submatch_match->endp[no] == NULL) {
       return NULL;
     }
-    list = list_alloc();
-    list_append_string(list, s, (int)(submatch_match->endp[no] - s));
+    list = tv_list_alloc();
+    tv_list_append_string(list, s, (const char *)submatch_match->endp[no] - s);
   }
 
   return list;

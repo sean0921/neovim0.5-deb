@@ -11,7 +11,7 @@ Copyright: 2016 James McCoy <jamessan@debian.org>
 License: Apache
 
 Files: runtime/*
-       src/*
+       src/nvim/*
        test/functional/legacy/*
 Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
            2006 Benji Fisher <benji@member.ams.org>
@@ -63,6 +63,9 @@ Files: src/nvim/api/*
        runtime/doc/provider.txt
        runtime/doc/remote_plugin.txt
        runtime/doc/vim_diff.txt
+       runtime/nvim.desktop
+       runtime/nvim.png
+       runtime/plugin/gui_shim.vim
        runtime/plugin/health.vim
        runtime/plugin/man.vim
 Copyright: Neovim contributors
@@ -123,12 +126,14 @@ License: Expat
  The above copyright notice and this permission notice shall be included in
  all copies or substantial portions of the Software.
  .
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
- X CONSORTIUM BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
- AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNEC-
- TION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ NONINFRINGEMENT.  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
 
 License: ISC
  Permission to use, copy, modify, and/or distribute this software for any
