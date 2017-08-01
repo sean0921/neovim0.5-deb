@@ -1,5 +1,6 @@
 neovim (0.2.0-2) UNRELEASED; urgency=medium
 
+  * Upload to unstable.
   * Get the username from `id -un` instead of relying on the environment.
   * Cherry-pick 347dd947 from upstream to fix test failures related to stdin
     being /dev/null in Debian builds.
