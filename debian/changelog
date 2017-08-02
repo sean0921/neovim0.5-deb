@@ -1,3 +1,10 @@
+neovim (0.2.0-3) UNRELEASED; urgency=medium
+
+  * Cherry-pick b98ea042 from upstream to fix reading values of integer
+    options on big-endian systems.  (Closes: #870367)
+
+ -- James McCoy <jamessan@debian.org>  Tue, 01 Aug 2017 20:59:28 -0400
+
 neovim (0.2.0-2) unstable; urgency=medium
 
   * Upload to unstable.
