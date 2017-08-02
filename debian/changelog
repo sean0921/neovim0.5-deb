@@ -1,9 +1,9 @@
-neovim (0.2.0-3) UNRELEASED; urgency=medium
+neovim (0.2.0-3) unstable; urgency=medium
 
   * Cherry-pick b98ea042 from upstream to fix reading values of integer
     options on big-endian systems.  (Closes: #870367)
 
- -- James McCoy <jamessan@debian.org>  Tue, 01 Aug 2017 20:59:28 -0400
+ -- James McCoy <jamessan@debian.org>  Tue, 01 Aug 2017 22:19:33 -0400
 
 neovim (0.2.0-2) unstable; urgency=medium
 
@@ -26,7 +26,7 @@ neovim (0.2.0-1) experimental; urgency=medium
     + Fix test failures with msgpack-c 2.x.  (Closes: #866802)
   * Skip known flaky tests by setting $TEST_SKIP_FRAGILE.
   * Rewrite debian/rules to invoke cmake directly, instead of through
-    top-level Makefile.
+    top-level Makefile.  (Closes: #857256)
   * Bump lua-nvim Build-Depends >= 0.0.1-26-1~, needed by new tests.
   * Cherry-pick 4d017256 from upstream to fix a test failure when $HOME is a
     long path.
