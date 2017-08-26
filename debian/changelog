@@ -1,7 +1,11 @@
 neovim (0.2.0-4) UNRELEASED; urgency=medium
 
+  [ Jason Pleau ]
   * Cherry-pick f400c6f05 from upstream to allow the ruby host path to be
     set to a user-defined value.
+
+  [ James McCoy ]
+  * Re-enable luajit on mips*, as long as it's >= 2.1.0~beta3.
 
  -- Jason Pleau <jason@jpleau.ca>  Wed, 02 Aug 2017 18:50:43 -0400
 
