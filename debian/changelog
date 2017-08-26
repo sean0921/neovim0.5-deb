@@ -6,6 +6,8 @@ neovim (0.2.0-4) UNRELEASED; urgency=medium
 
   [ James McCoy ]
   * Re-enable luajit on mips*, as long as it's >= 2.1.0~beta3.
+  * Declare compliance with Policy 4.1.0
+    + Change Priority to optional
 
  -- Jason Pleau <jason@jpleau.ca>  Wed, 02 Aug 2017 18:50:43 -0400
 
