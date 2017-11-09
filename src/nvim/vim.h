@@ -163,6 +163,7 @@ enum {
   EXPAND_SYNTIME,
   EXPAND_USER_ADDR_TYPE,
   EXPAND_PACKADD,
+  EXPAND_MESSAGES,
 };
 
 
@@ -318,5 +319,9 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 
 // Lowest number used for window ID. Cannot have this many windows per tab.
 #define LOWEST_WIN_ID 1000
+
+#if (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) && defined(S_ISCHR)
+# define OPEN_CHR_FILES
+#endif
 
 #endif /* NVIM_VIM_H */

@@ -74,6 +74,7 @@ local get_flags = function(o)
     {'gettext'},
     {'noglob'},
     {'normal_fname_chars', 'P_NFNAME'},
+    {'normal_dname_chars', 'P_NDNAME'},
     {'pri_mkrc'},
     {'deny_in_modelines', 'P_NO_ML'},
     {'deny_duplicates', 'P_NODUP'},
@@ -118,7 +119,7 @@ local get_value = function(v)
 end
 
 local get_defaults = function(d)
-  return '{' .. get_value(d.vi) .. ', ' .. get_value(d.vim) .. '}'
+  return ('{' .. get_value(d.vi) .. ', ' .. get_value(d.vim) .. '}')
 end
 
 local defines = {}

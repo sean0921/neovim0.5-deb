@@ -38,6 +38,16 @@ function! s:system_handler(jobid, data, event) dict abort
   endif
 endfunction
 
+" Attempts to construct a shell command from an args list.
+" Only for display, to help users debug a failed command.
+function! s:shellify(cmd) abort
+  if type(a:cmd) != type([])
+    return a:cmd
+  endif
+  return join(map(copy(a:cmd),
+    \'v:val =~# ''\m[\-.a-zA-Z_/]'' ? shellescape(v:val) : v:val'), ' ')
+endfunction
+
 " Run a system command and timeout after 30 seconds.
 function! s:system(cmd, ...) abort
   let stdin = a:0 ? a:1 : ''
@@ -54,8 +64,7 @@ function! s:system(cmd, ...) abort
   let jobid = jobstart(a:cmd, opts)
 
   if jobid < 1
-    call health#report_error(printf('Command error %d: %s', jobid,
-          \ type(a:cmd) == type([]) ? join(a:cmd) : a:cmd))
+    call health#report_error(printf('Command error (job=%d): %s', jobid, s:shellify(a:cmd)))
     let s:shell_error = 1
     return opts.output
   endif
@@ -66,13 +75,11 @@ function! s:system(cmd, ...) abort
 
   let res = jobwait([jobid], 30000)
   if res[0] == -1
-    call health#report_error(printf('Command timed out: %s',
-          \ type(a:cmd) == type([]) ? join(a:cmd) : a:cmd))
+    call health#report_error(printf('Command timed out: %s', s:shellify(a:cmd)))
     call jobstop(jobid)
   elseif s:shell_error != 0 && !ignore_error
-    call health#report_error(printf('Command error (%d) %s: %s', jobid,
-          \ type(a:cmd) == type([]) ? join(a:cmd) : a:cmd,
-          \ opts.output))
+    call health#report_error(printf("Command error (job=%d): %s\nOutput: %s", jobid,
+          \ s:shellify(a:cmd), opts.output))
   endif
 
   return opts.output
@@ -114,9 +121,13 @@ function! s:check_clipboard() abort
   call health#report_start('Clipboard (optional)')
 
   let clipboard_tool = provider#clipboard#Executable()
-  if empty(clipboard_tool)
+  if exists('g:clipboard') && empty(clipboard_tool)
+    call health#report_error(
+          \ provider#clipboard#Error(),
+          \ ["Use the example in :help g:clipboard as a template, or don't set g:clipboard at all."])
+  elseif empty(clipboard_tool)
     call health#report_warn(
-          \ 'No clipboard tool found. Clipboard registers will not work.',
+          \ 'No clipboard tool found. Clipboard registers (`"+` and `"*`) will not work.',
           \ [':help clipboard'])
   else
     call health#report_ok('Clipboard tool found: '. clipboard_tool)
@@ -157,7 +168,7 @@ function! s:version_info(python) abort
         \ ]))
 
   if empty(python_version)
-    let python_version = 'unable to parse python response'
+    let python_version = 'unable to parse '.a:python.' response'
   endif
 
   let nvim_path = s:trim(s:system([
@@ -176,7 +187,7 @@ function! s:version_info(python) abort
   endfunction
 
   " Try to get neovim.VERSION (added in 0.1.11dev).
-  let nvim_version = s:system(['python', '-c',
+  let nvim_version = s:system([a:python, '-c',
         \ 'from neovim import VERSION as v; '.
         \ 'print("{}.{}.{}{}".format(v.major, v.minor, v.patch, v.prerelease))'],
         \ '', 1, 1)
@@ -228,7 +239,7 @@ function! s:check_python(version) abort
 
   let pyname = 'python'.(a:version == 2 ? '' : '3')
   let pyenv = resolve(exepath('pyenv'))
-  let pyenv_root = exists('$PYENV_ROOT') ? resolve($PYENV_ROOT) : 'n'
+  let pyenv_root = exists('$PYENV_ROOT') ? resolve($PYENV_ROOT) : ''
   let venv = exists('$VIRTUAL_ENV') ? resolve($VIRTUAL_ENV) : ''
   let host_prog_var = pyname.'_host_prog'
   let loaded_var = 'g:loaded_'.pyname.'_provider'
@@ -238,6 +249,19 @@ function! s:check_python(version) abort
   if exists(loaded_var) && !exists('*provider#'.pyname.'#Call')
     call health#report_info('Disabled. '.loaded_var.'='.eval(loaded_var))
     return
+  endif
+
+  if !empty(pyenv)
+    if empty(pyenv_root)
+      call health#report_warn(
+            \ 'pyenv was found, but $PYENV_ROOT is not set.',
+            \ ['Did you follow the final install instructions?',
+            \  'If you use a shell "framework" like Prezto or Oh My Zsh, try without.',
+            \  'Try a different shell (bash).']
+            \ )
+    else
+      call health#report_ok(printf('pyenv found: "%s"', pyenv))
+    endif
   endif
 
   if exists('g:'.host_prog_var)
@@ -271,15 +295,6 @@ function! s:check_python(version) abort
     endif
 
     if !empty(pyenv)
-      if empty(pyenv_root)
-        call health#report_warn(
-              \ 'pyenv was found, but $PYENV_ROOT is not set.',
-              \ ['Did you follow the final install instructions?']
-              \ )
-      else
-        call health#report_ok(printf('pyenv found: "%s"', pyenv))
-      endif
-
       let python_bin = s:trim(s:system([pyenv, 'which', pyname], '', 1))
 
       if empty(python_bin)
@@ -309,9 +324,8 @@ function! s:check_python(version) abort
 
         if python_bin =~# '\<shims\>'
           call health#report_warn(printf('`%s` appears to be a pyenv shim.', python_bin), [
-                      \ 'The `pyenv` executable is not in $PATH,',
-                      \ 'Your pyenv installation is broken. You should set '
-                      \ . '`g:'.host_prog_var.'` to avoid surprises.',
+                      \ '`pyenv` is not in $PATH, your pyenv installation is broken. '
+                      \ .'Set `g:'.host_prog_var.'` to avoid surprises.',
                       \ ])
         endif
       endif
@@ -324,7 +338,7 @@ function! s:check_python(version) abort
       call health#report_warn('pyenv is not set up optimally.', [
             \ printf('Create a virtualenv specifically '
             \ . 'for Neovim using pyenv, and set `g:%s`.  This will avoid '
-            \ . 'the need to install Neovim''s Python module in each '
+            \ . 'the need to install the Neovim Python module in each '
             \ . 'version/virtualenv.', host_prog_var)
             \ ])
     elseif !empty(venv) && exists('g:'.host_prog_var)
@@ -453,7 +467,7 @@ function! s:check_ruby() abort
           \  'Are you behind a firewall or proxy?'])
     return
   endif
-  let latest_gem = get(split(latest_gem, ' (\|, \|)$' ), 1, 'not found')
+  let latest_gem = get(split(latest_gem, 'neovim (\|, \|)$' ), 1, 'not found')
 
   let current_gem_cmd = host .' --version'
   let current_gem = s:system(current_gem_cmd)

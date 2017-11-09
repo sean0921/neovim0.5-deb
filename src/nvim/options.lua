@@ -7,7 +7,7 @@
 --    enable_if=nil,
 --    defaults={condition=nil, if_true={vi=224, vim=0}, if_false=nil},
 --    secure=nil, gettext=nil, noglob=nil, normal_fname_chars=nil,
---    pri_mkrc=nil, deny_in_modelines=nil,
+--    pri_mkrc=nil, deny_in_modelines=nil, normal_dname_chars=nil,
 --    expand=nil, nodefault=nil, no_mkrc=nil, vi_def=true, vim=true,
 --    alloced=nil,
 --    save_pv_indir=nil,
@@ -32,6 +32,11 @@ end
 local macros=function(s)
   return function()
     return s
+  end
+end
+local imacros=function(s)
+  return function()
+    return '(intptr_t)' .. s
   end
 end
 local N_=function(s)
@@ -570,6 +575,7 @@ return {
       full_name='dictionary', abbreviation='dict',
       type='string', list='onecomma', scope={'global', 'buffer'},
       deny_duplicates=true,
+      normal_dname_chars=true,
       vi_def=true,
       expand=true,
       varname='p_dict',
@@ -1745,6 +1751,7 @@ return {
     {
       full_name='printexpr', abbreviation='pexpr',
       type='string', scope={'global'},
+      secure=true,
       vi_def=true,
       varname='p_pexpr',
       defaults={if_true={vi=""}}
@@ -2444,6 +2451,7 @@ return {
       full_name='thesaurus', abbreviation='tsr',
       type='string', list='onecomma', scope={'global', 'buffer'},
       deny_duplicates=true,
+      normal_dname_chars=true,
       vi_def=true,
       expand=true,
       varname='p_tsr',
@@ -2493,7 +2501,7 @@ return {
       no_mkrc=true,
       vi_def=true,
       varname='p_titleold',
-      defaults={if_true={vi=N_("Thanks for flying Vim")}}
+      defaults={if_true={vi=N_("")}}
     },
     {
       full_name='titlestring',
@@ -2508,14 +2516,14 @@ return {
       vi_def=true,
       vim=true,
       varname='p_ttimeout',
-      defaults={if_true={vi=false}}
+      defaults={if_true={vi=true}}
     },
     {
       full_name='ttimeoutlen', abbreviation='ttm',
       type='number', scope={'global'},
       vi_def=true,
       varname='p_ttm',
-      defaults={if_true={vi=-1}}
+      defaults={if_true={vi=50}}
     },
     {
       full_name='ttyfast', abbreviation='tf',
@@ -2648,7 +2656,7 @@ return {
       type='number', scope={'global'},
       vim=true,
       varname='p_wc',
-      defaults={if_true={vi=macros('Ctrl_E'), vim=macros('TAB')}}
+      defaults={if_true={vi=imacros('Ctrl_E'), vim=imacros('TAB')}}
     },
     {
       full_name='wildcharm', abbreviation='wcm',
@@ -2700,6 +2708,14 @@ return {
       vi_def=true,
       varname='p_wak',
       defaults={if_true={vi="menu"}}
+    },
+    {
+      full_name='winhighlight', abbreviation='winhl',
+      type='string', scope={'window'},
+      vi_def=true,
+      alloced=true,
+      redraw={'current_window'},
+      defaults={if_true={vi=""}}
     },
     {
       full_name='window', abbreviation='wi',

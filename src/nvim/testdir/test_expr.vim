@@ -78,7 +78,7 @@ endfunc
 func Test_loop_over_null_list()
   let null_list = submatch(1, 1)
   for i in null_list
-    call assert_true(0, 'should not get here')
+    call assert_report('should not get here')
   endfor
 endfunc
 
@@ -96,6 +96,35 @@ endfunc
 func Test_special_char()
   " The failure is only visible using valgrind.
   call assert_fails('echo "\<C-">')
+endfunc
+
+func Test_option_value()
+  " boolean
+  set bri
+  call assert_equal(1, &bri)
+  set nobri
+  call assert_equal(0, &bri)
+
+  " number
+  set ts=1
+  call assert_equal(1, &ts)
+  set ts=8
+  call assert_equal(8, &ts)
+
+  " string
+  exe "set cedit=\<Esc>"
+  call assert_equal("\<Esc>", &cedit)
+  set cpo=
+  call assert_equal("", &cpo)
+  set cpo=abcdefi
+  call assert_equal("abcdefi", &cpo)
+  set cpo&vim
+endfunc
+
+function Test_printf_64bit()
+  if has('num64')
+    call assert_equal("123456789012345", printf('%d', 123456789012345))
+  endif
 endfunc
 
 func Test_setmatches()
@@ -355,9 +384,10 @@ func Test_substitute_expr()
 	\ {-> submatch(2) . submatch(3) . submatch(1)}, ''))
 
   func Recurse()
-    return substitute('yyy', 'y*', {-> g:val}, '')
+    return substitute('yyy', 'y\(.\)y', {-> submatch(1)}, '')
   endfunc
-  call assert_equal('--', substitute('xxx', 'x*', {-> '-' . Recurse() . '-'}, ''))
+  " recursive call works
+  call assert_equal('-y-x-', substitute('xxx', 'x\(.\)x', {-> '-' . Recurse() . '-' . submatch(1) . '-'}, ''))
 endfunc
 
 func Test_invalid_submatch()
@@ -389,6 +419,9 @@ func Test_function_with_funcref()
   let s:fref = function(s:f)
   call assert_equal(v:t_string, s:fref('x'))
   call assert_fails("call function('s:f')", 'E700:')
+
+  call assert_fails("call function('foo()')", 'E475:')
+  call assert_fails("call function('foo()')", 'foo()')
 endfunc
 
 func Test_funcref()

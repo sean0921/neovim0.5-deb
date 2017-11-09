@@ -14,15 +14,16 @@
 #include "nvim/event/libuv_process.h"
 #include "nvim/os/pty_process.h"
 #include "nvim/globals.h"
+#include "nvim/macros.h"
 #include "nvim/log.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "event/process.c.generated.h"
 #endif
 
-// Time (ns) for a process to exit cleanly before we send TERM/KILL.
-#define TERM_TIMEOUT 1000000000
-#define KILL_TIMEOUT (TERM_TIMEOUT * 2)
+// Time for a process to exit cleanly before we send KILL.
+// For pty processes SIGTERM is sent first (in case SIGHUP was not enough).
+#define KILL_TIMEOUT_MS 2000
 
 #define CLOSE_PROC_STREAM(proc, stream) \
   do { \
@@ -82,7 +83,8 @@ int process_spawn(Process *proc) FUNC_ATTR_NONNULL_ALL
   }
 
   if (proc->in) {
-    stream_init(NULL, proc->in, -1, (uv_stream_t *)&proc->in->uv.pipe);
+    stream_init(NULL, proc->in, -1,
+                STRUCT_CAST(uv_stream_t, &proc->in->uv.pipe));
     proc->in->events = proc->events;
     proc->in->internal_data = proc;
     proc->in->internal_close_cb = on_process_stream_close;
@@ -90,7 +92,8 @@ int process_spawn(Process *proc) FUNC_ATTR_NONNULL_ALL
   }
 
   if (proc->out) {
-    stream_init(NULL, proc->out, -1, (uv_stream_t *)&proc->out->uv.pipe);
+    stream_init(NULL, proc->out, -1,
+                STRUCT_CAST(uv_stream_t, &proc->out->uv.pipe));
     proc->out->events = proc->events;
     proc->out->internal_data = proc;
     proc->out->internal_close_cb = on_process_stream_close;
@@ -98,7 +101,8 @@ int process_spawn(Process *proc) FUNC_ATTR_NONNULL_ALL
   }
 
   if (proc->err) {
-    stream_init(NULL, proc->err, -1, (uv_stream_t *)&proc->err->uv.pipe);
+    stream_init(NULL, proc->err, -1,
+                STRUCT_CAST(uv_stream_t, &proc->err->uv.pipe));
     proc->err->events = proc->events;
     proc->err->internal_data = proc;
     proc->err->internal_close_cb = on_process_stream_close;
@@ -121,8 +125,6 @@ void process_teardown(Loop *loop) FUNC_ATTR_NONNULL_ALL
       // Close handles to process without killing it.
       CREATE_EVENT(loop->events, process_close_handles, 1, proc);
     } else {
-      uv_kill(proc->pid, SIGTERM);
-      proc->term_sent = true;
       process_stop(proc);
     }
   }
@@ -231,9 +233,10 @@ void process_stop(Process *proc) FUNC_ATTR_NONNULL_ALL
   switch (proc->type) {
     case kProcessTypeUv:
       // Close the process's stdin. If the process doesn't close its own
-      // stdout/stderr, they will be closed when it exits(possibly due to being
-      // terminated after a timeout)
+      // stdout/stderr, they will be closed when it exits (voluntarily or not).
       process_close_in(proc);
+      ILOG("Sending SIGTERM to pid %d", proc->pid);
+      uv_kill(proc->pid, SIGTERM);
       break;
     case kProcessTypePty:
       // close all streams for pty processes to send SIGHUP to the process
@@ -247,9 +250,10 @@ void process_stop(Process *proc) FUNC_ATTR_NONNULL_ALL
   Loop *loop = proc->loop;
   if (!loop->children_stop_requests++) {
     // When there's at least one stop request pending, start a timer that
-    // will periodically check if a signal should be send to a to the job
-    DLOG("Starting job kill timer");
-    uv_timer_start(&loop->children_kill_timer, children_kill_cb, 100, 100);
+    // will periodically check if a signal should be send to the job.
+    ILOG("Starting job kill timer");
+    uv_timer_start(&loop->children_kill_timer, children_kill_cb,
+                   KILL_TIMEOUT_MS, KILL_TIMEOUT_MS);
   }
 }
 
@@ -265,15 +269,15 @@ static void children_kill_cb(uv_timer_t *handle)
     if (!proc->stopped_time) {
       continue;
     }
-    uint64_t elapsed = now - proc->stopped_time;
+    uint64_t elapsed = (now - proc->stopped_time) / 1000000 + 1;
 
-    if (!proc->term_sent && elapsed >= TERM_TIMEOUT) {
-      ILOG("Sending SIGTERM to pid %d", proc->pid);
-      uv_kill(proc->pid, SIGTERM);
-      proc->term_sent = true;
-    } else if (elapsed >= KILL_TIMEOUT) {
-      ILOG("Sending SIGKILL to pid %d", proc->pid);
-      uv_kill(proc->pid, SIGKILL);
+    if (elapsed >= KILL_TIMEOUT_MS) {
+      int sig = proc->type == kProcessTypePty && elapsed < KILL_TIMEOUT_MS * 2
+                    ? SIGTERM
+                    : SIGKILL;
+      ILOG("Sending %s to pid %d", sig == SIGTERM ? "SIGTERM" : "SIGKILL",
+           proc->pid);
+      uv_kill(proc->pid, sig);
     }
   }
 }

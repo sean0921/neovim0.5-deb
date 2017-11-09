@@ -571,8 +571,7 @@ In Insert or Command-line mode:
 *Q_op*		Options
 
 |:set|		:se[t]			  show all modified options
-|:set|		:se[t] all		  show all non-termcap options
-|:set|		:se[t] termcap		  show all termcap options
+|:set|		:se[t] all		  show all options
 |:set|		:se[t] {option}		  set boolean option (switch it on),
 					  show string or number option
 |:set|		:se[t] no{option}	  reset boolean option (switch it off)
@@ -722,7 +721,6 @@ Short explanation of each option:		*option-list*
 'helpheight'	  'hh'	    minimum height of a new help window
 'helplang'	  'hlg'     preferred help languages
 'hidden'	  'hid'     don't unload buffer when it is |abandon|ed
-'highlight'	  'hl'	    sets highlighting mode for various occasions
 'hlsearch'	  'hls'     highlight matches with last search pattern
 'history'	  'hi'	    number of command-lines that are remembered
 'hkmap'		  'hk'	    Hebrew keyboard mapping
@@ -1255,6 +1253,7 @@ Context-sensitive completion on the command-line:
 
 |:sfind|	:sf[ind] {file}		split window, find {file} in 'path'
 					   and edit it
+|:terminal|	:terminal {cmd}		open a terminal window
 |CTRL-W_]|	CTRL-W ]		split window and jump to tag under
 					   cursor
 |CTRL-W_f|	CTRL-W f		split window and edit file name under

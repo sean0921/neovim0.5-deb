@@ -19,6 +19,7 @@
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "api/ui.c.generated.h"
+# include "ui_events_remote.generated.h"
 #endif
 
 typedef struct {
@@ -29,13 +30,13 @@ typedef struct {
 static PMap(uint64_t) *connected_uis = NULL;
 
 void remote_ui_init(void)
-    FUNC_API_NOEXPORT
+  FUNC_API_NOEXPORT
 {
   connected_uis = pmap_new(uint64_t)();
 }
 
 void remote_ui_disconnect(uint64_t channel_id)
-    FUNC_API_NOEXPORT
+  FUNC_API_NOEXPORT
 {
   UI *ui = pmap_get(uint64_t)(connected_uis, channel_id);
   if (!ui) {
@@ -52,7 +53,7 @@ void remote_ui_disconnect(uint64_t channel_id)
 
 void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
                     Dictionary options, Error *err)
-    FUNC_API_SINCE(1) FUNC_API_NOEVAL
+  FUNC_API_SINCE(1) FUNC_API_REMOTE_ONLY
 {
   if (pmap_has(uint64_t)(connected_uis, channel_id)) {
     api_set_error(err, kErrorTypeException, "UI already attached for channel");
@@ -124,7 +125,7 @@ void ui_attach(uint64_t channel_id, Integer width, Integer height,
 }
 
 void nvim_ui_detach(uint64_t channel_id, Error *err)
-    FUNC_API_SINCE(1) FUNC_API_NOEVAL
+  FUNC_API_SINCE(1) FUNC_API_REMOTE_ONLY
 {
   if (!pmap_has(uint64_t)(connected_uis, channel_id)) {
     api_set_error(err, kErrorTypeException, "UI is not attached for channel");
@@ -136,7 +137,7 @@ void nvim_ui_detach(uint64_t channel_id, Error *err)
 
 void nvim_ui_try_resize(uint64_t channel_id, Integer width,
                         Integer height, Error *err)
-    FUNC_API_SINCE(1) FUNC_API_NOEVAL
+  FUNC_API_SINCE(1) FUNC_API_REMOTE_ONLY
 {
   if (!pmap_has(uint64_t)(connected_uis, channel_id)) {
     api_set_error(err, kErrorTypeException, "UI is not attached for channel");
@@ -157,7 +158,7 @@ void nvim_ui_try_resize(uint64_t channel_id, Integer width,
 
 void nvim_ui_set_option(uint64_t channel_id, String name,
                         Object value, Error *error)
-    FUNC_API_SINCE(1) FUNC_API_NOEVAL
+  FUNC_API_SINCE(1) FUNC_API_REMOTE_ONLY
 {
   if (!pmap_has(uint64_t)(connected_uis, channel_id)) {
     api_set_error(error, kErrorTypeException, "UI is not attached for channel");
@@ -214,6 +215,7 @@ static void ui_set_option(UI *ui, String name, Object value, Error *error)
 #undef UI_EXT_OPTION
 }
 
+/// Pushes data into UI.UIData, to be consumed later by remote_ui_flush().
 static void push_call(UI *ui, char *name, Array args)
 {
   Array call = ARRAY_DICT_INIT;
@@ -236,181 +238,14 @@ static void push_call(UI *ui, char *name, Array args)
   kv_A(data->buffer, kv_size(data->buffer) - 1).data.array = call;
 }
 
-static void remote_ui_resize(UI *ui, int width, int height)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(width));
-  ADD(args, INTEGER_OBJ(height));
-  push_call(ui, "resize", args);
-}
-
-static void remote_ui_clear(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "clear", args);
-}
-
-static void remote_ui_eol_clear(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "eol_clear", args);
-}
-
-static void remote_ui_cursor_goto(UI *ui, int row, int col)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(row));
-  ADD(args, INTEGER_OBJ(col));
-  push_call(ui, "cursor_goto", args);
-}
-
-static void remote_ui_update_menu(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "update_menu", args);
-}
-
-static void remote_ui_busy_start(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "busy_start", args);
-}
-
-static void remote_ui_busy_stop(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "busy_stop", args);
-}
-
-static void remote_ui_mouse_on(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "mouse_on", args);
-}
-
-static void remote_ui_mouse_off(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "mouse_off", args);
-}
-
-static void remote_ui_mode_change(UI *ui, int mode_idx)
-{
-  Array args = ARRAY_DICT_INIT;
-
-  char *full_name = shape_table[mode_idx].full_name;
-  ADD(args, STRING_OBJ(cstr_to_string(full_name)));
-
-  ADD(args, INTEGER_OBJ(mode_idx));
-  push_call(ui, "mode_change", args);
-}
-
-static void remote_ui_set_scroll_region(UI *ui, int top, int bot, int left,
-                                        int right)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(top));
-  ADD(args, INTEGER_OBJ(bot));
-  ADD(args, INTEGER_OBJ(left));
-  ADD(args, INTEGER_OBJ(right));
-  push_call(ui, "set_scroll_region", args);
-}
-
-static void remote_ui_scroll(UI *ui, int count)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(count));
-  push_call(ui, "scroll", args);
-}
-
-static void remote_ui_mode_info_set(UI *ui, bool guicursor_enabled, Array data)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, BOOLEAN_OBJ(guicursor_enabled));
-  ADD(args, copy_object(ARRAY_OBJ(data)));
-  push_call(ui, "mode_info_set", args);
-}
 
 static void remote_ui_highlight_set(UI *ui, HlAttrs attrs)
 {
   Array args = ARRAY_DICT_INIT;
-  Dictionary hl = ARRAY_DICT_INIT;
-
-  if (attrs.bold) {
-    PUT(hl, "bold", BOOLEAN_OBJ(true));
-  }
-
-  if (attrs.underline) {
-    PUT(hl, "underline", BOOLEAN_OBJ(true));
-  }
-
-  if (attrs.undercurl) {
-    PUT(hl, "undercurl", BOOLEAN_OBJ(true));
-  }
-
-  if (attrs.italic) {
-    PUT(hl, "italic", BOOLEAN_OBJ(true));
-  }
-
-  if (attrs.reverse) {
-    PUT(hl, "reverse", BOOLEAN_OBJ(true));
-  }
-
-  if (attrs.foreground != -1) {
-    PUT(hl, "foreground", INTEGER_OBJ(attrs.foreground));
-  }
-
-  if (attrs.background != -1) {
-    PUT(hl, "background", INTEGER_OBJ(attrs.background));
-  }
-
-  if (attrs.special != -1) {
-    PUT(hl, "special", INTEGER_OBJ(attrs.special));
-  }
+  Dictionary hl = hlattrs2dict(attrs);
 
   ADD(args, DICTIONARY_OBJ(hl));
   push_call(ui, "highlight_set", args);
-}
-
-static void remote_ui_put(UI *ui, uint8_t *data, size_t size)
-{
-  Array args = ARRAY_DICT_INIT;
-  String str = { .data = xmemdupz(data, size), .size = size };
-  ADD(args, STRING_OBJ(str));
-  push_call(ui, "put", args);
-}
-
-static void remote_ui_bell(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "bell", args);
-}
-
-static void remote_ui_visual_bell(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "visual_bell", args);
-}
-
-static void remote_ui_update_fg(UI *ui, int fg)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(fg));
-  push_call(ui, "update_fg", args);
-}
-
-static void remote_ui_update_bg(UI *ui, int bg)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(bg));
-  push_call(ui, "update_bg", args);
-}
-
-static void remote_ui_update_sp(UI *ui, int sp)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, INTEGER_OBJ(sp));
-  push_call(ui, "update_sp", args);
 }
 
 static void remote_ui_flush(UI *ui)
@@ -420,26 +255,6 @@ static void remote_ui_flush(UI *ui)
     channel_send_event(data->channel_id, "redraw", data->buffer);
     data->buffer = (Array)ARRAY_DICT_INIT;
   }
-}
-
-static void remote_ui_suspend(UI *ui)
-{
-  Array args = ARRAY_DICT_INIT;
-  push_call(ui, "suspend", args);
-}
-
-static void remote_ui_set_title(UI *ui, char *title)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, STRING_OBJ(cstr_to_string(title)));
-  push_call(ui, "set_title", args);
-}
-
-static void remote_ui_set_icon(UI *ui, char *icon)
-{
-  Array args = ARRAY_DICT_INIT;
-  ADD(args, STRING_OBJ(cstr_to_string(icon)));
-  push_call(ui, "set_icon", args);
 }
 
 static void remote_ui_event(UI *ui, char *name, Array args, bool *args_consumed)

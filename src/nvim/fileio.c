@@ -247,6 +247,7 @@ void filemess(buf_T *buf, char_u *name, char_u *s, int attr)
  *		stdin)
  * READ_DUMMY	read into a dummy buffer (to check if file contents changed)
  * READ_KEEP_UNDO  don't clear undo info or read it from a file
+ * READ_FIFO	read from fifo/socket instead of a file
  *
  * return FAIL for failure, NOTDONE for directory (failure), or OK
  */
@@ -267,6 +268,7 @@ readfile (
   int filtering = (flags & READ_FILTER);
   int read_stdin = (flags & READ_STDIN);
   int read_buffer = (flags & READ_BUFFER);
+  int read_fifo = (flags & READ_FIFO);
   int set_options = newfile || read_buffer
                     || (eap != NULL && eap->read_edit);
   linenr_T read_buf_lnum = 1;           /* next line to read from curbuf */
@@ -281,8 +283,8 @@ readfile (
   colnr_T len;
   long size = 0;
   char_u      *p = NULL;
-  off_t filesize = 0;
-  int skip_read = FALSE;
+  off_T filesize = 0;
+  int skip_read = false;
   context_sha256_T sha_ctx;
   int read_undo_file = FALSE;
   int split = 0;                        /* number of split lines */
@@ -426,7 +428,7 @@ readfile (
     }
   }
 
-  if (!read_buffer && !read_stdin) {
+  if (!read_buffer && !read_stdin && !read_fifo) {
     perm = os_getperm((const char *)fname);
 #ifdef UNIX
     // On Unix it is possible to read a directory, so we have to
@@ -468,8 +470,8 @@ readfile (
   if (check_readonly && !readonlymode)
     curbuf->b_p_ro = FALSE;
 
-  if (newfile && !read_stdin && !read_buffer) {
-    /* Remember time of file. */
+  if (newfile && !read_stdin && !read_buffer && !read_fifo) {
+    // Remember time of file.
     FileInfo file_info;
     if (os_fileinfo((char *)fname, &file_info)) {
       buf_store_file_info(curbuf, &file_info);
@@ -777,9 +779,9 @@ retry:
     if (read_buffer) {
       read_buf_lnum = 1;
       read_buf_col = 0;
-    } else if (read_stdin || lseek(fd, (off_t)0L, SEEK_SET) != 0) {
-      /* Can't rewind the file, give up. */
-      error = TRUE;
+    } else if (read_stdin || vim_lseek(fd, (off_T)0L, SEEK_SET) != 0) {
+      // Can't rewind the file, give up.
+      error = true;
       goto failed;
     }
     /* Delete the previously read lines. */
@@ -895,6 +897,7 @@ retry:
      * and we can't do it internally or with iconv().
      */
     if (fio_flags == 0 && !read_stdin && !read_buffer && *p_ccv != NUL
+        && !read_fifo
 #  ifdef USE_ICONV
         && iconv_fd == (iconv_t)-1
 #  endif
@@ -935,7 +938,7 @@ retry:
   /* Set "can_retry" when it's possible to rewind the file and try with
    * another "fenc" value.  It's FALSE when no other "fenc" to try, reading
    * stdin or fixed at a specific encoding. */
-  can_retry = (*fenc != NUL && !read_stdin && !keep_dest_enc);
+  can_retry = (*fenc != NUL && !read_stdin && !keep_dest_enc && !read_fifo);
 
   if (!skip_read) {
     linerest = 0;
@@ -947,6 +950,7 @@ retry:
                       && curbuf->b_ffname != NULL
                       && curbuf->b_p_udf
                       && !filtering
+                      && !read_fifo
                       && !read_stdin
                       && !read_buffer);
     if (read_undo_file)
@@ -1614,19 +1618,16 @@ rewind_retry:
             if (fileformat == EOL_DOS) {
               if (ptr[-1] == CAR) {             /* remove CR */
                 ptr[-1] = NUL;
-                --len;
-              }
-              /*
-               * Reading in Dos format, but no CR-LF found!
-               * When 'fileformats' includes "unix", delete all
-               * the lines read so far and start all over again.
-               * Otherwise give an error message later.
-               */
-              else if (ff_error != EOL_DOS) {
-                if (   try_unix
-                       && !read_stdin
-                       && (read_buffer
-                           || lseek(fd, (off_t)0L, SEEK_SET) == 0)) {
+                len--;
+              } else if (ff_error != EOL_DOS) {
+                // Reading in Dos format, but no CR-LF found!
+                // When 'fileformats' includes "unix", delete all
+                // the lines read so far and start all over again.
+                // Otherwise give an error message later.
+                if (try_unix
+                    && !read_stdin
+                    && (read_buffer
+                        || vim_lseek(fd, (off_T)0L, SEEK_SET) == 0)) {
                   fileformat = EOL_UNIX;
                   if (set_options)
                     set_fileformat(EOL_UNIX, OPT_LOCAL);
@@ -1922,7 +1923,7 @@ failed:
     u_read_undo(NULL, hash, fname);
   }
 
-  if (!read_stdin && !read_buffer) {
+  if (!read_stdin && !read_fifo && (!read_buffer || sfname != NULL)) {
     int m = msg_scroll;
     int n = msg_scrolled;
 
@@ -1940,7 +1941,7 @@ failed:
     if (filtering) {
       apply_autocmds_exarg(EVENT_FILTERREADPOST, NULL, sfname,
                            false, curbuf, eap);
-    } else if (newfile) {
+    } else if (newfile || (read_buffer && sfname != NULL)) {
       apply_autocmds_exarg(EVENT_BUFREADPOST, NULL, sfname,
                            false, curbuf, eap);
       if (!au_did_filetype && *curbuf->b_p_ft != NUL) {
@@ -1973,7 +1974,7 @@ failed:
 /// Do not accept "/dev/fd/[012]", opening these may hang Vim.
 ///
 /// @param fname file name to check
-static bool is_dev_fd_file(char_u *fname)
+bool is_dev_fd_file(char_u *fname)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
 {
   return STRNCMP(fname, "/dev/fd/", 8) == 0
@@ -2569,11 +2570,9 @@ buf_write (
       perm = -1;
     }
   }
-#else /* win32 */
-      /*
-       * Check for a writable device name.
-       */
-  c = os_nodetype((char *)fname);
+#else  // win32
+  // Check for a writable device name.
+  c = fname == NULL ? NODE_OTHER : os_nodetype((char *)fname);
   if (c == NODE_OTHER) {
     SET_ERRMSG_NUM("E503", _("is not a file or writable device"));
     goto fail;
@@ -2593,9 +2592,8 @@ buf_write (
     if (overwriting) {
       os_fileinfo((char *)fname, &file_info_old);
     }
-
   }
-#endif /* !UNIX */
+#endif  // !UNIX
 
   if (!device && !newfile) {
     /*
@@ -3161,8 +3159,8 @@ nobackup:
 #ifdef UNIX
       FileInfo file_info;
 
-      /* Don't delete the file when it's a hard or symbolic link. */
-      if ((!newfile && os_fileinfo_hardlinks(&file_info) > 1)
+      // Don't delete the file when it's a hard or symbolic link.
+      if ((!newfile && os_fileinfo_hardlinks(&file_info_old) > 1)
           || (os_fileinfo_link((char *)fname, &file_info)
               && !os_fileinfo_id_equal(&file_info, &file_info_old))) {
         SET_ERRMSG(_("E166: Can't open linked file for writing"));
@@ -3833,7 +3831,7 @@ static bool msg_add_fileformat(int eol_type)
 /*
  * Append line and character count to IObuff.
  */
-void msg_add_lines(int insert_space, long lnum, off_t nchars)
+void msg_add_lines(int insert_space, long lnum, off_T nchars)
 {
   char_u  *p;
 
@@ -4546,6 +4544,7 @@ int put_time(FILE *fd, time_t time_)
 ///
 /// @return -1 for failure, 0 for success
 int vim_rename(const char_u *from, const char_u *to)
+  FUNC_ATTR_NONNULL_ALL
 {
   int fd_in;
   int fd_out;
@@ -4821,6 +4820,7 @@ buf_check_timestamp (
     buf_T *buf,
     int focus               /* called for GUI focus event */
 )
+  FUNC_ATTR_NONNULL_ALL
 {
   int retval = 0;
   char_u      *path;
@@ -6870,8 +6870,8 @@ static bool apply_autocmds_group(event_T event, char_u *fname, char_u *fname_io,
     patcmd.next = active_apc_list;
     active_apc_list = &patcmd;
 
-    /* set v:cmdarg (only when there is a matching pattern) */
-    save_cmdbang = get_vim_var_nr(VV_CMDBANG);
+    // set v:cmdarg (only when there is a matching pattern)
+    save_cmdbang = (long)get_vim_var_nr(VV_CMDBANG);
     if (eap != NULL) {
       save_cmdarg = set_cmdarg(eap, NULL);
       set_vim_var_nr(VV_CMDBANG, (long)eap->forceit);

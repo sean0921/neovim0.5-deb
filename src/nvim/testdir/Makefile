@@ -3,10 +3,12 @@
 #
 
 NVIM_PRG ?= ../../../build/bin/nvim
+TMPDIR ?= Xtest-tmpdir
 SCRIPTSOURCE := ../../../runtime
 
 export SHELL := sh
 export NVIM_PRG := $(NVIM_PRG)
+export TMPDIR
 
 SCRIPTS ?= \
            test13.out             \
@@ -45,6 +47,7 @@ NEW_TESTS ?= \
 	    test_gn.res \
 	    test_hardcopy.res \
 	    test_help_tagjump.res \
+	    test_hide.res \
 	    test_history.res \
 	    test_hlsearch.res \
 	    test_increment.res \
@@ -55,11 +58,19 @@ NEW_TESTS ?= \
 	    test_match.res \
 	    test_matchadd_conceal.res \
 	    test_matchadd_conceal_utf8.res \
+	    test_mksession.res \
+	    test_mksession_utf8.res \
 	    test_nested_function.res \
 	    test_normal.res \
+	    test_profile.res \
 	    test_quickfix.res \
+	    test_retab.res \
+	    test_search.res \
 	    test_signs.res \
 	    test_smartindent.res \
+	    test_stat.res \
+	    test_startup.res \
+	    test_startup_utf8.res \
 	    test_substitute.res \
 	    test_syntax.res \
 	    test_tabpage.res \
@@ -67,7 +78,7 @@ NEW_TESTS ?= \
 	    test_timers.res \
 	    test_undo.res \
 	    test_usercommands.res \
-	    test_viml.res \
+	    test_vimscript.res \
 	    test_visual.res \
 	    test_window_id.res \
 	    test_writefile.res \
@@ -144,10 +155,12 @@ clean:
 	        .*.swp         \
 	        .*.swo         \
 	        .gdbinit       \
+	        $(TMPDIR)      \
 	        del
 
 test1.out: .gdbinit test1.in
 	-rm -rf $*.failed $(RM_ON_RUN) $(RM_ON_START) wrongtermsize
+	mkdir -p $(TMPDIR)
 	$(RUN_VIM) $*.in
 	@/bin/sh -c "if test -e wrongtermsize; then                                 \
 	                 echo;                                                      \
@@ -165,6 +178,7 @@ test1.out: .gdbinit test1.in
 
 %.out: %.in .gdbinit
 	-rm -rf $*.failed test.ok $(RM_ON_RUN)
+	mkdir -p $(TMPDIR)
 	cp $*.ok test.ok
 	# Sleep a moment to avoid that the xterm title is messed up.
 	# 200 msec is sufficient, but only modern sleep supports a fraction of
@@ -197,7 +211,7 @@ nolog:
 # New style of tests uses Vim script with assert calls.  These are easier
 # to write and a lot easier to read and debug.
 # Limitation: Only works with the +eval feature.
-RUN_VIMTEST = VIMRUNTIME=$(SCRIPTSOURCE); export VIMRUNTIME; $(VALGRIND) $(NVIM_PRG) -u unix.vim -U NONE --headless --noplugin
+RUN_VIMTEST = VIMRUNTIME=$(SCRIPTSOURCE); export VIMRUNTIME; $(TOOL) $(NVIM_PRG) -u unix.vim -U NONE --headless --noplugin
 
 newtests: newtestssilent
 	@/bin/sh -c "if test -f messages && grep -q 'FAILED' messages; then \
@@ -207,4 +221,5 @@ newtests: newtestssilent
 newtestssilent: $(NEW_TESTS)
 
 %.res: %.vim .gdbinit
+	mkdir -p $(TMPDIR)
 	$(RUN_VIMTEST) -u NONE -S runtest.vim $*.vim

@@ -4,13 +4,10 @@ function! s:check_config() abort
   let ok = v:true
   call health#report_start('Configuration')
 
-  if get(g:, 'loaded_sensible', 0)
+  " If $VIM is empty we don't care. Else make sure it is valid.
+  if !empty($VIM) && !filereadable($VIM.'/runtime/doc/nvim.txt')
     let ok = v:false
-    let sensible_pi = globpath(&runtimepath, '**/sensible.vim', 1, 1)
-    call health#report_info("found sensible.vim plugin:\n".join(sensible_pi, "\n"))
-    call health#report_error("sensible.vim plugin is not needed; Nvim has the same defaults built-in."
-      \ ." Also, sensible.vim sets 'ttimeoutlen' to a sub-optimal value.",
-      \ ["Remove sensible.vim plugin, or wrap it in a `if !has('nvim')` check."])
+    call health#report_error("$VIM is invalid: ".$VIM)
   endif
 
   if exists('$NVIM_TUI_ENABLE_CURSOR_SHAPE')
@@ -18,6 +15,13 @@ function! s:check_config() abort
     call health#report_warn("$NVIM_TUI_ENABLE_CURSOR_SHAPE is ignored in Nvim 0.2+",
           \ [ "Use the 'guicursor' option to configure cursor shape. :help 'guicursor'",
           \   'https://github.com/neovim/neovim/wiki/Following-HEAD#20170402' ])
+  endif
+
+  if &paste
+    let ok = v:false
+    call health#report_error("'paste' is enabled. This option is only for pasting text.\nIt should not be set in your config.",
+          \ [ 'Remove `set paste` from your init.vim, if applicable.',
+          \   'Check `:verbose set paste?` to see if a plugin or script set the option.', ])
   endif
 
   if ok
@@ -169,6 +173,11 @@ function! s:check_terminal() abort
     call health#report_info('key_dc (kdch1) terminfo entry: '
         \ .(empty(kbs_entry) ? '? (not found)' : kdch1_entry))
   endif
+  for env_var in ['XTERM_VERSION', 'VTE_VERSION', 'TERM_PROGRAM', 'COLORTERM', 'SSH_TTY']
+    if !exists('$'.env_var)
+      call health#report_info(printf("$%s='%s'", env_var, eval('$'.env_var)))
+    endif
+  endfor
 endfunction
 
 function! health#nvim#check() abort

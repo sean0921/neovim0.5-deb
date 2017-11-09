@@ -545,18 +545,8 @@ void transchar_nonprint(char_u *buf, int c)
     buf[1] = (char_u)(c ^ 0x40);
 
     buf[2] = NUL;
-  } else if (c >= 0x80) {
-    transchar_hex(buf, c);
-  } else if ((c >= ' ' + 0x80) && (c <= '~' + 0x80)) {
-    // 0xa0 - 0xfe
-    buf[0] = '|';
-    buf[1] = (char_u)(c - 0x80);
-    buf[2] = NUL;
   } else {
-    // 0x80 - 0x9f and 0xff
-    buf[0] = '~';
-    buf[1] = (char_u)((c - 0x80) ^ 0x40);
-    buf[2] = NUL;
+    transchar_hex(buf, c);
   }
 }
 
@@ -772,7 +762,7 @@ bool vim_isIDc(int c)
 }
 
 /// Check that "c" is a keyword character:
-/// Letters and characters from 'iskeyword' option for current buffer.
+/// Letters and characters from 'iskeyword' option for the current buffer.
 /// For multi-byte characters mb_get_class() is used (builtin rules).
 ///
 /// @param  c  character to check
@@ -991,10 +981,8 @@ int win_lbr_chartabsize(win_T *wp, char_u *line, char_u *s, colnr_T col, int *he
       mb_ptr_adv(s);
       c = *s;
 
-      if (!((c != NUL)
-            && (vim_isbreak(c)
-                || (!vim_isbreak(c)
-                    && ((col2 == col) || !vim_isbreak(*ps)))))) {
+      if (!(c != NUL
+            && (vim_isbreak(c) || col2 == col || !vim_isbreak(*ps)))) {
         break;
       }
 
@@ -1631,13 +1619,13 @@ bool vim_isblankline(char_u *lbuf)
 /// @param unptr Returns the unsigned result.
 /// @param maxlen Max length of string to check.
 void vim_str2nr(const char_u *const start, int *const prep, int *const len,
-                const int what, long *const nptr, unsigned long *const unptr,
-                const int maxlen)
+                const int what, varnumber_T *const nptr,
+                uvarnumber_T *const unptr, const int maxlen)
 {
   const char_u *ptr = start;
   int pre = 0;  // default is decimal
   bool negative = false;
-  unsigned long un = 0;
+  uvarnumber_T un = 0;
 
   if (ptr[0] == '-') {
     negative = true;
@@ -1693,7 +1681,12 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
       n += 2;  // skip over "0b"
     }
     while ('0' <= *ptr && *ptr <= '1') {
-      un = 2 * un + (unsigned long)(*ptr - '0');
+      // avoid ubsan error for overflow
+      if (un < UVARNUMBER_MAX / 2) {
+        un = 2 * un + (uvarnumber_T)(*ptr - '0');
+      } else {
+        un = UVARNUMBER_MAX;
+      }
       ptr++;
       if (n++ == maxlen) {
         break;
@@ -1702,7 +1695,12 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
   } else if ((pre == '0') || what == STR2NR_OCT + STR2NR_FORCE) {
     // octal
     while ('0' <= *ptr && *ptr <= '7') {
-      un = 8 * un + (unsigned long)(*ptr - '0');
+      // avoid ubsan error for overflow
+      if (un < UVARNUMBER_MAX / 8) {
+        un = 8 * un + (uvarnumber_T)(*ptr - '0');
+      } else {
+        un = UVARNUMBER_MAX;
+      }
       ptr++;
       if (n++ == maxlen) {
         break;
@@ -1715,7 +1713,12 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
       n += 2;  // skip over "0x"
     }
     while (ascii_isxdigit(*ptr)) {
-      un = 16 * un + (unsigned long)hex2nr(*ptr);
+      // avoid ubsan error for overflow
+      if (un < UVARNUMBER_MAX / 16) {
+        un = 16 * un + (uvarnumber_T)hex2nr(*ptr);
+      } else {
+        un = UVARNUMBER_MAX;
+      }
       ptr++;
       if (n++ == maxlen) {
         break;
@@ -1724,7 +1727,12 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
   } else {
     // decimal
     while (ascii_isdigit(*ptr)) {
-      un = 10 * un + (unsigned long)(*ptr - '0');
+      // avoid ubsan error for overflow
+      if (un < UVARNUMBER_MAX / 10) {
+        un = 10 * un + (uvarnumber_T)(*ptr - '0');
+      } else {
+        un = UVARNUMBER_MAX;
+      }
       ptr++;
       if (n++ == maxlen) {
         break;
@@ -1741,11 +1749,18 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
   }
 
   if (nptr != NULL) {
-    if (negative) {
-      // account for leading '-' for decimal numbers
-      *nptr = -(long)un;
+    if (negative) {  // account for leading '-' for decimal numbers
+      // avoid ubsan error for overflow
+      if (un > VARNUMBER_MAX) {
+        *nptr = VARNUMBER_MIN;
+      } else {
+        *nptr = -(varnumber_T)un;
+      }
     } else {
-      *nptr = (long)un;
+      if (un > VARNUMBER_MAX) {
+        un = VARNUMBER_MAX;
+      }
+      *nptr = (varnumber_T)un;
     }
   }
 

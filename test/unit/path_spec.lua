@@ -18,7 +18,7 @@ local cimp = cimport('./src/nvim/os/os.h', './src/nvim/path.h')
 local length = 0
 local buffer = nil
 
-describe('path function', function()
+describe('path.c', function()
   describe('path_full_dir_name', function()
     setup(function()
       lfs.mkdir('unit-test-directory')
@@ -293,6 +293,59 @@ describe('path_shorten_fname_if_possible', function()
   end)
 end)
 
+describe('path.c path_guess_exepath', function()
+  local cwd = lfs.currentdir()
+
+  for _,name in ipairs({'./nvim', '.nvim', 'foo/nvim'}) do
+    itp('"'..name..'" returns name catenated with CWD', function()
+      local bufsize = 255
+      local buf = cstr(bufsize, '')
+      cimp.path_guess_exepath(name, buf, bufsize)
+      eq(cwd..'/'..name, ffi.string(buf))
+    end)
+  end
+
+  itp('absolute path returns the name unmodified', function()
+    local name = '/foo/bar/baz'
+    local bufsize = 255
+    local buf = cstr(bufsize, '')
+    cimp.path_guess_exepath(name, buf, bufsize)
+    eq(name, ffi.string(buf))
+  end)
+
+  itp('returns the name unmodified if not found in $PATH', function()
+    local name = '23u0293_not_in_path'
+    local bufsize = 255
+    local buf = cstr(bufsize, '')
+    cimp.path_guess_exepath(name, buf, bufsize)
+    eq(name, ffi.string(buf))
+  end)
+
+  itp('does not crash if $PATH item exceeds MAXPATHL', function()
+    local orig_path_env = os.getenv('PATH')
+    local name = 'cat'  -- Some executable in $PATH.
+    local bufsize = 255
+    local buf = cstr(bufsize, '')
+    local insane_path = orig_path_env..':'..(("x/"):rep(4097))
+
+    cimp.os_setenv('PATH', insane_path, true)
+    cimp.path_guess_exepath(name, buf, bufsize)
+    eq('bin/' .. name, ffi.string(buf):sub(-#('bin/' .. name), -1))
+
+    -- Restore $PATH.
+    cimp.os_setenv('PATH', orig_path_env, true)
+  end)
+
+  itp('returns full path found in $PATH', function()
+    local name = 'cat'  -- Some executable in $PATH.
+    local bufsize = 255
+    local buf = cstr(bufsize, '')
+    cimp.path_guess_exepath(name, buf, bufsize)
+    -- Usually "/bin/cat" on unix, "/path/to/nvim/cat" on Windows.
+    eq('bin/' .. name, ffi.string(buf):sub(-#('bin/' .. name), -1))
+  end)
+end)
+
 describe('path.c', function()
   setup(function()
     lfs.mkdir('unit-test-directory');
@@ -427,6 +480,20 @@ describe('path.c', function()
       local result = cimp.vim_FullName(filename, buffer, length, force_expansion)
       eq('/tmp', ffi.string(buffer))
       eq(OK, result)
+    end)
+
+    itp('expands "./" to the current directory #7117', function()
+      local force_expansion = 1
+      local result = vim_FullName('./unit-test-directory/test.file', buffer, length, force_expansion)
+      eq(OK, result)
+      eq(lfs.currentdir() .. '/unit-test-directory/test.file', (ffi.string(buffer)))
+    end)
+
+    itp('collapses "foo/../foo" to "foo" #7117', function()
+      local force_expansion = 1
+      local result = vim_FullName('unit-test-directory/../unit-test-directory/test.file', buffer, length, force_expansion)
+      eq(OK, result)
+      eq(lfs.currentdir() .. '/unit-test-directory/test.file', (ffi.string(buffer)))
     end)
   end)
 

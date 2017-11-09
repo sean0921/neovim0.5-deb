@@ -198,8 +198,9 @@ function Screen:expect(expected, attr_ids, attr_ignore, condition, any)
     condition = expected
     expected = nil
   else
-    -- Remove the last line and dedent.
-    expected = dedent(expected:gsub('\n[ ]+$', ''))
+    -- Remove the last line and dedent. Note that gsub returns more then one
+    -- value.
+    expected = dedent(expected:gsub('\n[ ]+$', ''), 0)
     for row in expected:gmatch('[^\n]+') do
       row = row:sub(1, #row - 1) -- Last char must be the screen delimiter.
       table.insert(expected_rows, row)
@@ -250,7 +251,7 @@ function Screen:expect(expected, attr_ids, attr_ignore, condition, any)
             ..'Expected:\n  |'..table.concat(msg_expected_rows, '|\n  |')..'|\n'
             ..'Actual:\n  |'..table.concat(actual_rows, '|\n  |')..'|\n\n'..[[
 To print the expect() call that would assert the current screen state, use
-screen:snaphot_util(). In case of non-deterministic failures, use
+screen:snapshot_util(). In case of non-deterministic failures, use
 screen:redraw_debug() to show all intermediate screen states.  ]])
         end
       end

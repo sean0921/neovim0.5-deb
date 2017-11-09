@@ -447,7 +447,7 @@ static void out_data_append_to_screen(char *output, size_t remaining,
   size_t off = 0;
   int last_row = (int)Rows - 1;
 
-  while (off < remaining) {
+  while (output != NULL && off < remaining) {
     // Found end of line?
     if (output[off] == NL) {
       // Can we start a new line or do we need to continue the last one?
@@ -464,15 +464,16 @@ static void out_data_append_to_screen(char *output, size_t remaining,
       continue;
     }
 
-    // Translate NUL to SOH
-    if (output[off] == NUL) {
-      output[off] = 1;
+    // TODO(bfredl): using msg_puts would be better until
+    // terminal emulation is implemented.
+    if (output[off] < 0x20) {
+      output[off] = ' ';
     }
 
     off++;
   }
 
-  if (remaining) {
+  if (output != NULL && remaining) {
     if (last_col == 0) {
       screen_del_lines(0, 0, 1, (int)Rows, NULL);
     }
@@ -684,7 +685,7 @@ static void shell_write_cb(Stream *stream, void *data, int status)
                        uv_err_name(status));
   }
   if (stream->closed) {  // Process may have exited before this write.
-    ELOG("stream was already closed");
+    WLOG("stream was already closed");
     return;
   }
   stream_close(stream, NULL, NULL);

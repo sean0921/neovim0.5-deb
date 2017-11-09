@@ -1751,6 +1751,55 @@ describe('typval.c', function()
           eq('2', s)
         end)
       end)
+      describe('get_string_buf_chk()', function()
+        local function tv_dict_get_string_buf_chk(d, key, len, buf, def, emsg)
+          buf = buf or ffi.gc(lib.xmalloc(lib.NUMBUFLEN), lib.xfree)
+          def = def or ffi.gc(lib.xstrdup('DEFAULT'), lib.xfree)
+          len = len or #key
+          alloc_log:clear()
+          local ret = check_emsg(function() return lib.tv_dict_get_string_buf_chk(d, key, len, buf, def) end,
+                                 emsg)
+          local s_ret = (ret ~= nil) and ffi.string(ret) or nil
+          if not emsg then
+            alloc_log:check({})
+          end
+          return s_ret, ret, buf, def
+        end
+        itp('works with NULL dict', function()
+          eq('DEFAULT', tv_dict_get_string_buf_chk(nil, 'test'))
+        end)
+        itp('works', function()
+          local lua_d = {
+            ['']={},
+            t=1,
+            te=int(2),
+            tes=empty_list,
+            test='tset',
+            testt=5,
+          }
+          local d = dict(lua_d)
+          alloc_log:clear()
+          eq(lua_d, dct2tbl(d))
+          alloc_log:check({})
+          local s, r, b, def
+          s, r, b, def = tv_dict_get_string_buf_chk(d, 'test')
+          neq(r, b)
+          neq(r, def)
+          eq('tset', s)
+          s, r, b, def = tv_dict_get_string_buf_chk(d, 'test', 1, nil, nil, 'E806: using Float as a String')
+          neq(r, b)
+          neq(r, def)
+          eq(nil, s)
+          s, r, b, def = tv_dict_get_string_buf_chk(d, 'te')
+          eq(r, b)
+          neq(r, def)
+          eq('2', s)
+          s, r, b, def = tv_dict_get_string_buf_chk(d, 'TEST')
+          eq(r, def)
+          neq(r, b)
+          eq('DEFAULT', s)
+        end)
+      end)
       describe('get_callback()', function()
         local function tv_dict_get_callback(d, key, key_len, emsg)
           key_len = key_len or #key
@@ -1899,8 +1948,8 @@ describe('typval.c', function()
           eq(OK, lib.tv_dict_add_str(d, 'testt', 3, 'TEST'))
           local dis = dict_items(d)
           alloc_log:check({
+            a.str(dis.tes.di_tv.vval.v_string, 'TEST'),
             a.di(dis.tes, 'tes'),
-            a.str(dis.tes.di_tv.vval.v_string, 'TEST')
           })
           eq({test=10, tes='TEST'}, dct2tbl(d))
           eq(FAIL, check_emsg(function() return lib.tv_dict_add_str(d, 'testt', 3, 'TEST') end,
@@ -1912,6 +1961,38 @@ describe('typval.c', function()
           lib.emsg_skip = lib.emsg_skip - 1
           alloc_log:clear_tmp_allocs()
           alloc_log:check({})
+        end)
+      end)
+      describe('allocated_str()', function()
+        itp('works', function()
+          local d = dict({test=10})
+          eq({test=10}, dct2tbl(d))
+          alloc_log:clear()
+          local s1 = lib.xstrdup('TEST')
+          local s2 = lib.xstrdup('TEST')
+          local s3 = lib.xstrdup('TEST')
+          alloc_log:check({
+            a.str(s1, 'TEST'),
+            a.str(s2, 'TEST'),
+            a.str(s3, 'TEST'),
+          })
+          eq(OK, lib.tv_dict_add_allocated_str(d, 'testt', 3, s1))
+          local dis = dict_items(d)
+          alloc_log:check({
+            a.di(dis.tes, 'tes'),
+          })
+          eq({test=10, tes='TEST'}, dct2tbl(d))
+          eq(FAIL, check_emsg(function() return lib.tv_dict_add_allocated_str(d, 'testt', 3, s2) end,
+                              'E685: Internal error: hash_add()'))
+          alloc_log:clear()
+          lib.emsg_skip = lib.emsg_skip + 1
+          eq(FAIL, check_emsg(function() return lib.tv_dict_add_allocated_str(d, 'testt', 3, s3) end,
+                              nil))
+          lib.emsg_skip = lib.emsg_skip - 1
+          alloc_log:clear_tmp_allocs()
+          alloc_log:check({
+            a.freed(s3),
+          })
         end)
       end)
     end)
@@ -1926,7 +2007,7 @@ describe('typval.c', function()
         local dis = dict_items(d)
         local di = dis.TES
         local di_s = di.di_tv.vval.v_string
-        alloc_log:check({a.di(di), a.str(di_s)})
+        alloc_log:check({a.str(di_s), a.di(di)})
         eq({TES='tEsT'}, dct2tbl(d))
         lib.tv_dict_clear(d)
         alloc_log:check({a.freed(di_s), a.freed(di)})

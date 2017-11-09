@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <inttypes.h>
 
 #include "nvim/vim.h"
@@ -70,6 +71,7 @@
 #include "nvim/event/rstream.h"
 #include "nvim/event/wstream.h"
 #include "nvim/shada.h"
+#include "nvim/lua/executor.h"
 #include "nvim/globals.h"
 
 static int quitmore = 0;
@@ -339,12 +341,13 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline,
   msg_list = &private_msg_list;
   private_msg_list = NULL;
 
-  /* It's possible to create an endless loop with ":execute", catch that
-   * here.  The value of 200 allows nested function calls, ":source", etc. */
-  if (call_depth == 200) {
+  // It's possible to create an endless loop with ":execute", catch that
+  // here.  The value of 200 allows nested function calls, ":source", etc.
+  // Allow 200 or 'maxfuncdepth', whatever is larger.
+  if (call_depth >= 200 && call_depth >= p_mfd) {
     EMSG(_("E169: Command too recursive"));
-    /* When converting to an exception, we do not include the command name
-     * since this is not an error of the specific command. */
+    // When converting to an exception, we do not include the command name
+    // since this is not an error of the specific command.
     do_errthrow((struct condstack *)NULL, (char_u *)NULL);
     msg_list = saved_msg_list;
     return FAIL;
@@ -843,8 +846,6 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline,
         break;
       case ET_INTERRUPT:
         break;
-      default:
-        p = vim_strsave((char_u *)_(e_internal));
       }
 
       saved_sourcing_name = sourcing_name;
@@ -1666,11 +1667,15 @@ static char_u * do_one_cmd(char_u **cmdlinep,
     ea.addr_count++;
 
     if (*ea.cmd == ';') {
-      if (!ea.skip)
+      if (!ea.skip) {
         curwin->w_cursor.lnum = ea.line2;
-    } else if (*ea.cmd != ',')
+        // don't leave the cursor on an illegal line or column
+        check_cursor();
+      }
+    } else if (*ea.cmd != ',') {
       break;
-    ++ea.cmd;
+    }
+    ea.cmd++;
   }
 
   /* One address given: set start and end lines */
@@ -1680,9 +1685,6 @@ static char_u * do_one_cmd(char_u **cmdlinep,
     if (lnum == MAXLNUM)
       ea.addr_count = 0;
   }
-
-  /* Don't leave the cursor on an illegal line (caused by ';') */
-  check_cursor_lnum();
 
   /*
    * 5. Parse the command.
@@ -1812,7 +1814,7 @@ static char_u * do_one_cmd(char_u **cmdlinep,
     if (text_locked() && !(ea.argt & CMDWIN)
         && !IS_USER_CMDIDX(ea.cmdidx)) {
       // Command not allowed when editing the command line.
-      errormsg = get_text_locked_msg();
+      errormsg = (char_u *)_(get_text_locked_msg());
       goto doend;
     }
     /* Disallow editing another buffer when "curbuf_lock" is set.
@@ -2687,7 +2689,7 @@ const char * set_one_cmd_context(
 
   // 2. skip comment lines and leading space, colons or bars
   const char *cmd;
-  for (cmd = buff; strchr(" \t:|", *cmd) != NULL; cmd++) {
+  for (cmd = buff; vim_strchr((const char_u *)" \t:|", *cmd) != NULL; cmd++) {
   }
   xp->xp_pattern = (char_u *)cmd;
 
@@ -2748,7 +2750,7 @@ const char * set_one_cmd_context(
       }
     }
     // check for non-alpha command
-    if (p == cmd && strchr("@*!=><&~#", *p) != NULL) {
+    if (p == cmd && vim_strchr((const char_u *)"@*!=><&~#", *p) != NULL) {
       p++;
     }
     len = (size_t)(p - cmd);
@@ -2779,7 +2781,7 @@ const char * set_one_cmd_context(
     return NULL;
 
   if (ea.cmdidx == CMD_SIZE) {
-    if (*cmd == 's' && strchr("cgriI", cmd[1]) != NULL) {
+    if (*cmd == 's' && vim_strchr((const char_u *)"cgriI", cmd[1]) != NULL) {
       ea.cmdidx = CMD_substitute;
       p = cmd + 1;
     } else if (cmd[0] >= 'A' && cmd[0] <= 'Z') {
@@ -3439,6 +3441,11 @@ const char * set_one_cmd_context(
     xp->xp_pattern = (char_u *)arg;
     break;
 
+  case CMD_messages:
+    xp->xp_context = EXPAND_MESSAGES;
+    xp->xp_pattern = (char_u *)arg;
+    break;
+
   case CMD_history:
     xp->xp_context = EXPAND_HISTORY;
     xp->xp_pattern = (char_u *)arg;
@@ -3807,10 +3814,12 @@ void ex_ni(exarg_T *eap)
 /// Skips over ":perl <<EOF" constructs.
 static void ex_script_ni(exarg_T *eap)
 {
-  if (!eap->skip)
+  if (!eap->skip) {
     ex_ni(eap);
-  else
-    xfree(script_get(eap, eap->arg));
+  } else {
+    size_t len;
+    xfree(script_get(eap, &len));
+  }
 }
 
 /*
@@ -4667,17 +4676,17 @@ char_u *find_nextcmd(const char_u *p)
   return (char_u *)p + 1;
 }
 
-/*
- * Check if *p is a separator between Ex commands.
- * Return NULL if it isn't, (p + 1) if it is.
- */
+/// Check if *p is a separator between Ex commands, skipping over white space.
+/// Return NULL if it isn't, the following character if it is.
 char_u *check_nextcmd(char_u *p)
 {
-  p = skipwhite(p);
-  if (*p == '|' || *p == '\n')
-    return p + 1;
-  else
-    return NULL;
+    char_u *s = skipwhite(p);
+
+    if (*s == '|' || *s == '\n') {
+        return (s + 1);
+    } else {
+        return NULL;
+    }
 }
 
 /*
@@ -4744,7 +4753,7 @@ static int uc_add_command(char_u *name, size_t name_len, char_u *rep,
   char_u      *rep_buf = NULL;
   garray_T    *gap;
 
-  replace_termcodes(rep, STRLEN(rep), &rep_buf, false, false, false,
+  replace_termcodes(rep, STRLEN(rep), &rep_buf, false, false, true,
                     CPO_TO_CPO_FLAGS);
   if (rep_buf == NULL) {
     /* Can't replace termcodes - try using the string as is */
@@ -4871,6 +4880,7 @@ static struct {
 #endif
   { EXPAND_MAPPINGS, "mapping" },
   { EXPAND_MENUS, "menu" },
+  { EXPAND_MESSAGES, "messages" },
   { EXPAND_OWNSYNTAX, "syntax" },
   { EXPAND_SYNTIME, "syntime" },
   { EXPAND_SETTINGS, "option" },
@@ -5816,10 +5826,10 @@ int parse_addr_type_arg(char_u *value, int vallen, uint32_t *argt,
  * copied to allocated memory and stored in "*compl_arg".
  * Returns FAIL if something is wrong.
  */
-int parse_compl_arg(char_u *value, int vallen, int *complp,
+int parse_compl_arg(const char_u *value, int vallen, int *complp,
                     uint32_t *argt, char_u **compl_arg)
 {
-  char_u      *arg = NULL;
+  const char_u *arg = NULL;
   size_t arglen = 0;
   int i;
   int valend = vallen;
@@ -5973,7 +5983,7 @@ static void ex_quit(exarg_T *eap)
     // specified. Example:
     // :h|wincmd w|1q     - don't quit
     // :h|wincmd w|q      - quit
-    if (only_one_window() && (firstwin == lastwin || eap->addr_count == 0)) {
+    if (only_one_window() && (ONE_WINDOW || eap->addr_count == 0)) {
       getout(0);
     }
     /* close window; may free buffer */
@@ -5986,7 +5996,7 @@ static void ex_quit(exarg_T *eap)
  */
 static void ex_cquit(exarg_T *eap)
 {
-  getout(1);
+  getout(eap->addr_count > 0 ? (int)eap->line2 : EXIT_FAILURE);
 }
 
 /*
@@ -6171,12 +6181,14 @@ static void ex_tabonly(exarg_T *eap)
  */
 void tabpage_close(int forceit)
 {
-  /* First close all the windows but the current one.  If that worked then
-   * close the last window in this tab, that will close it. */
-  if (lastwin != firstwin)
-    close_others(TRUE, forceit);
-  if (lastwin == firstwin)
+  // First close all the windows but the current one.  If that worked then
+  // close the last window in this tab, that will close it.
+  if (!ONE_WINDOW) {
+    close_others(true, forceit);
+  }
+  if (ONE_WINDOW) {
     ex_win_close(forceit, curwin, NULL);
+  }
 }
 
 /*
@@ -6244,31 +6256,27 @@ void ex_all(exarg_T *eap)
 
 static void ex_hide(exarg_T *eap)
 {
-  if (*eap->arg != NUL && check_nextcmd(eap->arg) == NULL)
-    eap->errmsg = e_invarg;
-  else {
-    /* ":hide" or ":hide | cmd": hide current window */
-    eap->nextcmd = check_nextcmd(eap->arg);
+    // ":hide" or ":hide | cmd": hide current window
     if (!eap->skip) {
-      if (eap->addr_count == 0)
-        win_close(curwin, FALSE); /* don't free buffer */
-      else {
-        int winnr = 0;
-        win_T *win = NULL;
+        if (eap->addr_count == 0) {
+            win_close(curwin, false);  // don't free buffer
+        } else {
+            int winnr = 0;
+            win_T *win = NULL;
 
-        FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-          winnr++;
-          if (winnr == eap->line2) {
-            win = wp;
-            break;
-          }
+            FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+                winnr++;
+                if (winnr == eap->line2) {
+                    win = wp;
+                    break;
+                }
+            }
+            if (win == NULL) {
+                win = lastwin;
+            }
+            win_close(win, false);
         }
-        if (win == NULL)
-          win = lastwin;
-        win_close(win, FALSE);
-      }
     }
-  }
 }
 
 /*
@@ -6282,13 +6290,14 @@ static void ex_stop(exarg_T *eap)
       autowrite_all();
     }
     ui_cursor_goto((int)Rows - 1, 0);
-    ui_putc('\n');
+    ui_linefeed();
     ui_flush();
-    ui_suspend();               /* call machine specific function */
+    ui_call_suspend();  // call machine specific function
+    ui_flush();
     maketitle();
-    resettitle();               /* force updating the title */
+    resettitle();  // force updating the title
     redraw_later_clear();
-    ui_refresh();            /* may have resized window */
+    ui_refresh();  // may have resized window
   }
 }
 
@@ -7682,6 +7691,7 @@ static void ex_redraw(exarg_T *eap)
 
   RedrawingDisabled = 0;
   p_lz = FALSE;
+  validate_cursor();
   update_topline();
   update_screen(eap->forceit ? CLEAR :
       VIsual_active ? INVERTED :
@@ -8311,7 +8321,7 @@ static void ex_tag_cmd(exarg_T *eap, char_u *name)
     break;
   default:                              /* ":tag" */
     if (p_cst && *eap->arg != NUL) {
-      do_cstag(eap);
+      ex_cstag(eap);
       return;
     }
     cmd = DT_TAG;
@@ -8801,11 +8811,12 @@ makeopens (
         && buf->b_fname != NULL
         && buf->b_p_bl) {
       if (fprintf(fd, "badd +%" PRId64 " ",
-                  buf->b_wininfo == NULL ?
-                    (int64_t)1L :
-                    (int64_t)buf->b_wininfo->wi_fpos.lnum) < 0
-          || ses_fname(fd, buf, &ssop_flags) == FAIL)
+                  buf->b_wininfo == NULL
+                  ? (int64_t)1L
+                  : (int64_t)buf->b_wininfo->wi_fpos.lnum) < 0
+          || ses_fname(fd, buf, &ssop_flags, true) == FAIL) {
         return FAIL;
+      }
     }
   }
 
@@ -8843,15 +8854,16 @@ makeopens (
    */
   tab_firstwin = firstwin;      /* first window in tab page "tabnr" */
   tab_topframe = topframe;
-  for (tabnr = 1;; ++tabnr) {
+  for (tabnr = 1;; tabnr++) {
+    tabpage_T *tp = find_tabpage(tabnr);
+    if (tp == NULL) {
+      break;  // done all tab pages
+    }
+
     int need_tabnew = false;
     int cnr = 1;
 
     if ((ssop_flags & SSOP_TABPAGES)) {
-      tabpage_T *tp = find_tabpage(tabnr);
-
-      if (tp == NULL)
-        break;                  /* done all tab pages */
       if (tp == curtab) {
         tab_firstwin = firstwin;
         tab_topframe = topframe;
@@ -8875,11 +8887,13 @@ makeopens (
           && !bt_nofile(wp->w_buffer)
           ) {
         if (fputs(need_tabnew ? "tabedit " : "edit ", fd) < 0
-            || ses_fname(fd, wp->w_buffer, &ssop_flags) == FAIL)
+            || ses_fname(fd, wp->w_buffer, &ssop_flags, true) == FAIL) {
           return FAIL;
-        need_tabnew = FALSE;
-        if (!wp->w_arg_idx_invalid)
+        }
+        need_tabnew = false;
+        if (!wp->w_arg_idx_invalid) {
           edited_win = wp;
+        }
         break;
       }
     }
@@ -8923,6 +8937,8 @@ makeopens (
     // resized when moving between windows.
     // Do this before restoring the view, so that the topline and the
     // cursor can be set.  This is done again below.
+    // winminheight and winminwidth need to be set to avoid an error if the
+    // user has set winheight or winwidth.
     if (put_line(fd, "set winminheight=1 winminwidth=1 winheight=1 winwidth=1")
         == FAIL) {
       return FAIL;
@@ -8963,6 +8979,16 @@ makeopens (
      */
     if (nr > 1 && ses_winsizes(fd, restore_size, tab_firstwin) == FAIL)
       return FAIL;
+
+    // Take care of tab-local working directories if applicable
+    if (tp->tp_localdir) {
+      if (fputs("if has('nvim') | tcd ", fd) < 0
+          || ses_put_fname(fd, tp->tp_localdir, &ssop_flags) == FAIL
+          || fputs(" | endif", fd) < 0
+          || put_eol(fd) == FAIL) {
+        return FAIL;
+      }
+    }
 
     /* Don't continue in another tab page when doing only the current one
      * or when at the last tab page. */
@@ -9201,24 +9227,35 @@ put_view (
     if (wp->w_buffer->b_ffname != NULL
         && (!bt_nofile(wp->w_buffer) || wp->w_buffer->terminal)
         ) {
-      /*
-       * Editing a file in this buffer: use ":edit file".
-       * This may have side effects! (e.g., compressed or network file).
-       */
-      if (fputs("edit ", fd) < 0
-          || ses_fname(fd, wp->w_buffer, flagp) == FAIL)
+      // Editing a file in this buffer: use ":edit file".
+      // This may have side effects! (e.g., compressed or network file).
+      //
+      // Note, if a buffer for that file already exists, use :badd to
+      // edit that buffer, to not lose folding information (:edit resets
+      // folds in other buffers)
+      if (fputs("if bufexists('", fd) < 0
+          || ses_fname(fd, wp->w_buffer, flagp, false) == FAIL
+          || fputs("') | buffer ", fd) < 0
+          || ses_fname(fd, wp->w_buffer, flagp, false) == FAIL
+          || fputs(" | else | edit ", fd) < 0
+          || ses_fname(fd, wp->w_buffer, flagp, false) == FAIL
+          || fputs(" | endif", fd) < 0
+          || put_eol(fd) == FAIL) {
         return FAIL;
-    } else {
-      /* No file in this buffer, just make it empty. */
-      if (put_line(fd, "enew") == FAIL)
-        return FAIL;
-      if (wp->w_buffer->b_ffname != NULL) {
-        /* The buffer does have a name, but it's not a file name. */
-        if (fputs("file ", fd) < 0
-            || ses_fname(fd, wp->w_buffer, flagp) == FAIL)
-          return FAIL;
       }
-      do_cursor = FALSE;
+    } else {
+      // No file in this buffer, just make it empty.
+      if (put_line(fd, "enew") == FAIL) {
+        return FAIL;
+      }
+      if (wp->w_buffer->b_ffname != NULL) {
+        // The buffer does have a name, but it's not a file name.
+        if (fputs("file ", fd) < 0
+            || ses_fname(fd, wp->w_buffer, flagp, true) == FAIL) {
+          return FAIL;
+        }
+      }
+      do_cursor = false;
     }
   }
 
@@ -9358,7 +9395,7 @@ ses_arglist (
         (void)vim_FullName((char *)s, (char *)buf, MAXPATHL, FALSE);
         s = buf;
       }
-      if (fputs("argadd ", fd) < 0 || ses_put_fname(fd, s, flagp) == FAIL
+      if (fputs("$argadd ", fd) < 0 || ses_put_fname(fd, s, flagp) == FAIL
           || put_eol(fd) == FAIL) {
         xfree(buf);
         return FAIL;
@@ -9369,12 +9406,10 @@ ses_arglist (
   return OK;
 }
 
-/*
- * Write a buffer name to the session file.
- * Also ends the line.
- * Returns FAIL if writing fails.
- */
-static int ses_fname(FILE *fd, buf_T *buf, unsigned *flagp)
+/// Write a buffer name to the session file.
+/// Also ends the line, if "add_eol" is true.
+/// Returns FAIL if writing fails.
+static int ses_fname(FILE *fd, buf_T *buf, unsigned *flagp, bool add_eol)
 {
   char_u      *name;
 
@@ -9391,8 +9426,10 @@ static int ses_fname(FILE *fd, buf_T *buf, unsigned *flagp)
     name = buf->b_sfname;
   else
     name = buf->b_ffname;
-  if (ses_put_fname(fd, name, flagp) == FAIL || put_eol(fd) == FAIL)
+  if (ses_put_fname(fd, name, flagp) == FAIL
+      || (add_eol && put_eol(fd) == FAIL)) {
     return FAIL;
+  }
   return OK;
 }
 
@@ -9575,6 +9612,16 @@ char_u *get_behave_arg(expand_T *xp, int idx)
     return (char_u *)"mswin";
   if (idx == 1)
     return (char_u *)"xterm";
+  return NULL;
+}
+
+// Function given to ExpandGeneric() to obtain the possible arguments of the
+// ":messages {clear}" command.
+char_u *get_messages_arg(expand_T *xp FUNC_ATTR_UNUSED, int idx)
+{
+  if (idx == 0) {
+    return (char_u *)"clear";
+  }
   return NULL;
 }
 
@@ -9805,7 +9852,7 @@ static void ex_terminal(exarg_T *eap)
   if (*eap->arg != NUL) {  // Run {cmd} in 'shell'.
     char *name = (char *)vim_strsave_escaped(eap->arg, (char_u *)"\"\\");
     snprintf(ex_cmd, sizeof(ex_cmd),
-             ":enew%s | call termopen(\"%s\") | startinsert",
+             ":enew%s | call termopen(\"%s\")",
              eap->forceit ? "!" : "", name);
     xfree(name);
   } else {  // No {cmd}: run the job with tokenized 'shell'.
@@ -9827,7 +9874,7 @@ static void ex_terminal(exarg_T *eap)
     shell_free_argv(argv);
 
     snprintf(ex_cmd, sizeof(ex_cmd),
-             ":enew%s | call termopen([%s]) | startinsert",
+             ":enew%s | call termopen([%s])",
              eap->forceit ? "!" : "", shell_argv + 1);
   }
 
@@ -9836,13 +9883,19 @@ static void ex_terminal(exarg_T *eap)
 
 /// Checks if `cmd` is "previewable" (i.e. supported by 'inccommand').
 ///
-/// @param[in] cmd Commandline to check. May start with a range.
+/// @param[in] cmd Commandline to check. May start with a range or modifier.
 ///
 /// @return true if `cmd` is previewable
 bool cmd_can_preview(char_u *cmd)
 {
   if (cmd == NULL) {
     return false;
+  }
+
+  // Ignore any leading modifiers (:keeppatterns, :verbose, etc.)
+  for (int len = modifier_len(cmd); len != 0; len = modifier_len(cmd)) {
+    cmd += len;
+    cmd = skipwhite(cmd);
   }
 
   exarg_T ea;

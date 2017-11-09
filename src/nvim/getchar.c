@@ -18,6 +18,7 @@
 #include "nvim/vim.h"
 #include "nvim/ascii.h"
 #include "nvim/getchar.h"
+#include "nvim/buffer_defs.h"
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/edit.h"
@@ -47,6 +48,7 @@
 #include "nvim/event/loop.h"
 #include "nvim/os/input.h"
 #include "nvim/os/os.h"
+#include "nvim/api/private/handle.h"
 
 /*
  * These buffers are used for storing:
@@ -90,23 +92,20 @@ static int typeahead_char = 0;          /* typeahead char that's not flushed */
  */
 static int block_redo = FALSE;
 
-/*
- * Make a hash value for a mapping.
- * "mode" is the lower 4 bits of the State for the mapping.
- * "c1" is the first character of the "lhs".
- * Returns a value between 0 and 255, index in maphash.
- * Put Normal/Visual mode mappings mostly separately from Insert/Cmdline mode.
- */
+// Make a hash value for a mapping.
+// "mode" is the lower 4 bits of the State for the mapping.
+// "c1" is the first character of the "lhs".
+// Returns a value between 0 and 255, index in maphash.
+// Put Normal/Visual mode mappings mostly separately from Insert/Cmdline mode.
 #define MAP_HASH(mode, \
                  c1) (((mode) & \
                        (NORMAL + VISUAL + SELECTMODE + \
-                        OP_PENDING)) ? (c1) : ((c1) ^ 0x80))
+                        OP_PENDING + TERM_FOCUS)) ? (c1) : ((c1) ^ 0x80))
 
-/*
- * Each mapping is put in one of the 256 hash lists, to speed up finding it.
- */
-static mapblock_T       *(maphash[256]);
-static int maphash_valid = FALSE;
+// Each mapping is put in one of the MAX_MAPHASH hash lists,
+// to speed up finding it.
+static mapblock_T *(maphash[MAX_MAPHASH]);
+static bool maphash_valid = false;
 
 /*
  * List used for abbreviations.
@@ -869,20 +868,15 @@ int ins_typebuf(char_u *str, int noremap, int offset, int nottyped, bool silent)
 
   addlen = (int)STRLEN(str);
 
-  /*
-   * Easy case: there is room in front of typebuf.tb_buf[typebuf.tb_off]
-   */
   if (offset == 0 && addlen <= typebuf.tb_off) {
+    // Easy case: there is room in front of typebuf.tb_buf[typebuf.tb_off]
     typebuf.tb_off -= addlen;
     memmove(typebuf.tb_buf + typebuf.tb_off, str, (size_t)addlen);
-  }
-  /*
-   * Need to allocate a new buffer.
-   * In typebuf.tb_buf there must always be room for 3 * MAXMAPLEN + 4
-   * characters.  We add some extra room to avoid having to allocate too
-   * often.
-   */
-  else {
+  } else {
+    // Need to allocate a new buffer.
+    // In typebuf.tb_buf there must always be room for 3 * MAXMAPLEN + 4
+    // characters.  We add some extra room to avoid having to allocate too
+    // often.
     newoff = MAXMAPLEN + 4;
     newlen = typebuf.tb_len + addlen + newoff + 4 * (MAXMAPLEN + 4);
     if (newlen < 0) {               /* string is getting too long */
@@ -1664,10 +1658,10 @@ static int vgetorpeek(int advance)
     }
     if (c != NUL && !got_int) {
       if (advance) {
-        /* KeyTyped = FALSE;  When the command that stuffed something
-         * was typed, behave like the stuffed command was typed.
-         * needed for CTRL-W CTRl-] to open a fold, for example. */
-        KeyStuffed = TRUE;
+        // KeyTyped = FALSE;  When the command that stuffed something
+        // was typed, behave like the stuffed command was typed.
+        // needed for CTRL-W CTRL-] to open a fold, for example.
+        KeyStuffed = true;
       }
       if (typebuf.tb_no_abbr_cnt == 0)
         typebuf.tb_no_abbr_cnt = 1;             /* no abbreviations now */
@@ -1805,7 +1799,7 @@ static int vgetorpeek(int advance)
                  * <M-a> and then changing 'encoding'. Beware
                  * that 0x80 is escaped. */
                 char_u *p1 = mp->m_keys;
-                char_u *p2 = mb_unescape(&p1);
+                char_u *p2 = (char_u *)mb_unescape((const char **)&p1);
 
                 if (has_mbyte && p2 != NULL && MB_BYTE2LEN(c1) > MB_PTR2LEN(p2))
                   mlen = 0;
@@ -1907,7 +1901,7 @@ static int vgetorpeek(int advance)
           }
 
           if ((mp == NULL || max_mlen >= mp_match_len)
-              && keylen != KEYLEN_PART_MAP && keylen != KEYLEN_PART_KEY) {
+              && keylen != KEYLEN_PART_MAP) {
             // No matching mapping found or found a non-matching mapping that
             // matches at least what the matching mapping matched
             keylen = 0;
@@ -2536,7 +2530,6 @@ do_map (
   bool unique = false;
   bool nowait = false;
   bool silent = false;
-  bool special = false;
   bool expr = false;
   int noremap;
   char_u      *orig_rhs;
@@ -2582,12 +2575,9 @@ do_map (
       continue;
     }
 
-    /*
-     * Check for "<special>": accept special keys in <>
-     */
+    // Ignore obsolete "<special>" modifier.
     if (STRNCMP(keys, "<special>", 9) == 0) {
       keys = skipwhite(keys + 9);
-      special = true;
       continue;
     }
 
@@ -2656,7 +2646,7 @@ do_map (
   // needs to be freed later (*keys_buf and *arg_buf).
   // replace_termcodes() also removes CTRL-Vs and sometimes backslashes.
   if (haskey) {
-    keys = replace_termcodes(keys, STRLEN(keys), &keys_buf, true, true, special,
+    keys = replace_termcodes(keys, STRLEN(keys), &keys_buf, true, true, true,
                              CPO_TO_CPO_FLAGS);
   }
   orig_rhs = rhs;
@@ -2664,7 +2654,7 @@ do_map (
     if (STRICMP(rhs, "<nop>") == 0) {  // "<Nop>" means nothing
       rhs = (char_u *)"";
     } else {
-      rhs = replace_termcodes(rhs, STRLEN(rhs), &arg_buf, false, true, special,
+      rhs = replace_termcodes(rhs, STRLEN(rhs), &arg_buf, false, true, true,
                               CPO_TO_CPO_FLAGS);
     }
   }
@@ -3244,7 +3234,7 @@ bool map_to_exists(const char *const str, const char *const modechars,
 
   char_u *buf;
   char_u *const rhs = replace_termcodes((const char_u *)str, strlen(str), &buf,
-                                        false, true, false,
+                                        false, true, true,
                                         CPO_TO_CPO_FLAGS);
 
 #define MAPMODE(mode, modechars, chr, modeflags) \
@@ -3596,8 +3586,8 @@ int check_abbr(int c, char_u *ptr, int col, int mincol)
       char_u *q = mp->m_keys;
       int match;
 
-      if (vim_strbyte(mp->m_keys, K_SPECIAL) != NULL) {
-        /* might have CSI escaped mp->m_keys */
+      if (strchr((const char *)mp->m_keys, K_SPECIAL) != NULL) {
+        // Might have CSI escaped mp->m_keys.
         q = vim_strsave(mp->m_keys);
         vim_unescape_csi(q);
         qlen = (int)STRLEN(q);
@@ -3794,8 +3784,7 @@ makemap (
   char        *cmd;
   int abbr;
   int hash;
-  int did_cpo = FALSE;
-  int i;
+  bool did_cpo = false;
 
   validate_maphash();
 
@@ -3923,13 +3912,15 @@ makemap (
           /* When outputting <> form, need to make sure that 'cpo'
            * is set to the Vim default. */
           if (!did_cpo) {
-            if (*mp->m_str == NUL)                      /* will use <Nop> */
-              did_cpo = TRUE;
-            else
-              for (i = 0; i < 2; ++i)
-                for (p = (i ? mp->m_str : mp->m_keys); *p; ++p)
-                  if (*p == K_SPECIAL || *p == NL)
-                    did_cpo = TRUE;
+            if (*mp->m_str == NUL) {  // Will use <Nop>.
+              did_cpo = true;
+            } else {
+              const char specials[] = { (char)(uint8_t)K_SPECIAL, NL, NUL };
+              if (strpbrk((const char *)mp->m_str, specials) != NULL
+                  || strpbrk((const char *)mp->m_keys, specials) != NULL) {
+                did_cpo = true;
+              }
+            }
             if (did_cpo) {
               if (fprintf(fd, "let s:cpo_save=&cpo") < 0
                   || put_eol(fd) < 0
@@ -3997,12 +3988,10 @@ int put_escstr(FILE *fd, char_u *strstart, int what)
     return OK;
   }
 
-  for (; *str != NUL; ++str) {
-    char_u  *p;
-
-    /* Check for a multi-byte character, which may contain escaped
-     * K_SPECIAL and CSI bytes */
-    p = mb_unescape(&str);
+  for (; *str != NUL; str++) {
+    // Check for a multi-byte character, which may contain escaped
+    // K_SPECIAL and CSI bytes.
+    const char *p = mb_unescape((const char **)&str);
     if (p != NULL) {
       while (*p != NUL)
         if (fputc(*p++, fd) < 0)
@@ -4158,8 +4147,7 @@ void add_map(char_u *map, int mode)
 }
 
 // Translate an internal mapping/abbreviation representation into the
-// corresponding external one recognized by :map/:abbrev commands;
-// respects the current B/k/< settings of 'cpoption'.
+// corresponding external one recognized by :map/:abbrev commands.
 //
 // This function is called when expanding mappings/abbreviations on the
 // command-line, and for building the "Ambiguous mapping..." error message.
@@ -4179,7 +4167,6 @@ static char_u * translate_mapping (
   ga_init(&ga, 1, 40);
 
   bool cpo_bslash = !(cpo_flags&FLAG_CPO_BSLASH);
-  bool cpo_special = !(cpo_flags&FLAG_CPO_SPECI);
 
   for (; *str; ++str) {
     int c = *str;
@@ -4192,7 +4179,7 @@ static char_u * translate_mapping (
       }
       
       if (c == K_SPECIAL && str[1] != NUL && str[2] != NUL) {
-        if (expmap && cpo_special) {
+        if (expmap) {
           ga_clear(&ga);
           return NULL;
         }
@@ -4203,8 +4190,8 @@ static char_u * translate_mapping (
         }
         str += 2;
       }
-      if (IS_SPECIAL(c) || modifiers) {         /* special key */
-        if (expmap && cpo_special) {
+      if (IS_SPECIAL(c) || modifiers) {         // special key
+        if (expmap) {
           ga_clear(&ga);
           return NULL;
         }
@@ -4214,7 +4201,7 @@ static char_u * translate_mapping (
     }
 
     if (c == ' ' || c == '\t' || c == Ctrl_J || c == Ctrl_V
-        || (c == '<' && !cpo_special) || (c == '\\' && !cpo_bslash)) {
+        || (c == '\\' && !cpo_bslash)) {
       ga_append(&ga, cpo_bslash ? Ctrl_V : '\\');
     }
 
@@ -4235,4 +4222,18 @@ static bool typebuf_match_len(const uint8_t *str, int *mlen)
   }
   *mlen = i;
   return str[i] == NUL;  // matched the whole string
+}
+
+/// Retrieve the mapblock at the index either globally or for a certain buffer
+///
+/// @param  index  The index in the maphash[]
+/// @param  buf  The buffer to get the maphash from. NULL for global
+mapblock_T *get_maphash(int index, buf_T *buf)
+    FUNC_ATTR_PURE
+{
+  if (index > MAX_MAPHASH) {
+    return NULL;
+  }
+
+  return (buf == NULL) ? maphash[index] : buf->b_maphash[index];
 }

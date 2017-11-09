@@ -76,8 +76,8 @@ end
 
 local session, loop_running, last_error
 
-local function set_session(s)
-  if session then
+local function set_session(s, keep)
+  if session and not keep then
     session:close()
   end
   session = s
@@ -174,7 +174,7 @@ local os_name = (function()
 end)()
 
 local function iswin()
-  return os_name() == 'windows'
+  return package.config:sub(1,1) == '\\'
 end
 
 -- Executes a VimL function.
@@ -319,7 +319,14 @@ end
 -- Dedent the given text and write it to the file name.
 local function write_file(name, text, dont_dedent)
   local file = io.open(name, 'w')
-  if not dont_dedent then
+  if type(text) == 'table' then
+    -- Byte blob
+    local bytes = text
+    text = ''
+    for _, char in ipairs(bytes) do
+      text = ('%s%c'):format(text, char)
+    end
+  elseif not dont_dedent then
     text = dedent(text)
   end
   file:write(text)
@@ -337,18 +344,30 @@ local function read_file(name)
   return ret
 end
 
+local sourced_fnames = {}
 local function source(code)
   local fname = tmpname()
   write_file(fname, code)
   nvim_command('source '..fname)
-  os.remove(fname)
+  -- DO NOT REMOVE FILE HERE.
+  -- do_source() has a habit of checking whether files are “same” by using inode
+  -- and device IDs. If you run two source() calls in quick succession there is
+  -- a good chance that underlying filesystem will reuse the inode, making files
+  -- appear as “symlinks” to do_source when it checks FileIDs. With current
+  -- setup linux machines (both QB, travis and mine(ZyX-I) with XFS) do reuse
+  -- inodes, Mac OS machines (again, both QB and travis) do not.
+  --
+  -- Files appearing as “symlinks” mean that both the first and the second
+  -- source() calls will use same SID, which may fail some tests which check for
+  -- exact numbers after `<SNR>` in e.g. function names.
+  sourced_fnames[#sourced_fnames + 1] = fname
   return fname
 end
 
 local function set_shell_powershell()
   source([[
     set shell=powershell shellquote=\" shellpipe=\| shellredir=>
-    set shellcmdflag=\ -NoProfile\ -ExecutionPolicy\ RemoteSigned\ -Command
+    set shellcmdflag=\ -NoLogo\ -NoProfile\ -ExecutionPolicy\ RemoteSigned\ -Command
     let &shellxquote=' '
   ]])
 end
@@ -492,17 +511,6 @@ local exc_exec = function(cmd)
   return ret
 end
 
-local function redir_exec(cmd)
-  nvim_command(([[
-    redir => g:__output
-      silent! execute "%s"
-    redir END
-  ]]):format(cmd:gsub('\n', '\\n'):gsub('[\\"]', '\\%0')))
-  local ret = nvim_eval('get(g:, "__output", 0)')
-  nvim_command('unlet! g:__output')
-  return ret
-end
-
 local function create_callindex(func)
   local table = {}
   setmetatable(table, {
@@ -562,11 +570,55 @@ local curbufmeths = create_callindex(curbuf)
 local curwinmeths = create_callindex(curwin)
 local curtabmeths = create_callindex(curtab)
 
+local function redir_exec(cmd)
+  meths.set_var('__redir_exec_cmd', cmd)
+  nvim_command([[
+    redir => g:__redir_exec_output
+      silent! execute g:__redir_exec_cmd
+    redir END
+  ]])
+  local ret = meths.get_var('__redir_exec_output')
+  meths.del_var('__redir_exec_output')
+  meths.del_var('__redir_exec_cmd')
+  return ret
+end
+
 local function get_pathsep()
   return funcs.fnamemodify('.', ':p'):sub(-1)
 end
 
-local M = {
+local function missing_provider(provider)
+  if provider == 'ruby' then
+    local prog = funcs['provider#' .. provider .. '#Detect']()
+    return prog == '' and (provider .. ' not detected') or false
+  elseif provider == 'python' or provider == 'python3' then
+    local py_major_version = (provider == 'python3' and 3 or 2)
+    local errors = funcs['provider#pythonx#Detect'](py_major_version)[2]
+    return errors ~= '' and errors or false
+  else
+    assert(false, 'Unknown provider: ' .. provider)
+  end
+end
+
+local function alter_slashes(obj)
+  if not iswin() then
+    return obj
+  end
+  if type(obj) == 'string' then
+    local ret = obj:gsub('/', '\\')
+    return ret
+  elseif type(obj) == 'table' then
+    local ret = {}
+    for k, v in pairs(obj) do
+      ret[k] = alter_slashes(v)
+    end
+    return ret
+  else
+    assert(false, 'Could only alter slashes for tables of strings and strings')
+  end
+end
+
+local module = {
   prepend_argv = prepend_argv,
   clear = clear,
   connect = connect,
@@ -596,6 +648,7 @@ local M = {
   nvim = nvim,
   nvim_async = nvim_async,
   nvim_prog = nvim_prog,
+  nvim_argv = nvim_argv,
   nvim_set = nvim_set,
   nvim_dir = nvim_dir,
   buffer = buffer,
@@ -632,14 +685,19 @@ local M = {
   meth_pcall = meth_pcall,
   NIL = mpack.NIL,
   get_pathsep = get_pathsep,
+  missing_provider = missing_provider,
+  alter_slashes = alter_slashes,
 }
 
 return function(after_each)
   if after_each then
     after_each(function()
+      for _, fname in ipairs(sourced_fnames) do
+        os.remove(fname)
+      end
       check_logs()
       check_cores('build/bin/nvim')
     end)
   end
-  return M
+  return module
 end

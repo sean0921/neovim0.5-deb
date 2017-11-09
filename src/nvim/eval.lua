@@ -2,10 +2,10 @@
 --
 -- Keys:
 --
--- args  Number of arguments, list with maximum and minimum number of arguments 
---       or list with a minimum number of arguments only. Defaults to zero 
+-- args  Number of arguments, list with maximum and minimum number of arguments
+--       or list with a minimum number of arguments only. Defaults to zero
 --       arguments.
--- func  Name of the C function which implements the VimL function. Defaults to 
+-- func  Name of the C function which implements the VimL function. Defaults to
 --       `f_{funcname}`.
 
 local varargs = function(nr)
@@ -29,10 +29,11 @@ return {
     assert_exception={args={1, 2}},
     assert_fails={args={1, 2}},
     assert_false={args={1, 2}},
-    assert_inrange={args={2, 3}},
+    assert_inrange={args={3, 4}},
     assert_match={args={2, 3}},
     assert_notequal={args={2, 3}},
     assert_notmatch={args={2, 3}},
+    assert_report={args=1},
     assert_true={args={1, 2}},
     atan={args=1, func="float_op_wrapper", data="&atan"},
     atan2={args=2},
@@ -193,6 +194,7 @@ return {
     localtime={},
     log={args=1, func="float_op_wrapper", data="&log"},
     log10={args=1, func="float_op_wrapper", data="&log10"},
+    luaeval={args={1, 2}},
     map={args=2},
     maparg={args={1, 4}},
     mapcheck={args={1, 3}},
@@ -206,6 +208,7 @@ return {
     matchstr={args={2, 4}},
     matchstrpos={args={2,4}},
     max={args=1},
+    menu_get={args={1, 2}},
     min={args=1},
     mkdir={args={1, 3}},
     mode={args={0, 1}},
@@ -267,6 +270,7 @@ return {
     simplify={args=1},
     sin={args=1, func="float_op_wrapper", data="&sin"},
     sinh={args=1, func="float_op_wrapper", data="&sinh"},
+    sockconnect={args={2,3}},
     sort={args={1, 3}},
     soundfold={args=1},
     spellbadword={args={0, 1}},

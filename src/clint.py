@@ -182,6 +182,7 @@ _ERROR_CATEGORIES = [
     'build/include_order',
     'build/printf_format',
     'build/storage_class',
+    'build/useless_fattr',
     'readability/alt_tokens',
     'readability/bool',
     'readability/braces',
@@ -1225,6 +1226,10 @@ def CheckForHeaderGuard(filename, lines, error):
       lines: An array of strings, each representing a line of the file.
       error: The function to call with any errors found.
     """
+    if filename.endswith('.c.h') or FileInfo(filename).RelativePath() in set((
+        'func_attr.h',
+    )):
+        return
 
     cppvar = GetHeaderGuardCPPVariable(filename)
 
@@ -2524,6 +2529,9 @@ def CheckSpacing(filename, clean_lines, linenum, nesting_state, error):
                    r'(?<!\bklist_t)'
                    r'(?<!\bkliter_t)'
                    r'(?<!\bkhash_t)'
+                   r'(?<!\bkbtree_t)'
+                   r'(?<!\bkbitr_t)'
+                   r'(?<!\bPMap)'
                    r'\((?:const )?(?:struct )?[a-zA-Z_]\w*(?: *\*(?:const)?)*\)'
                    r' +'
                    r'-?(?:\*+|&)?(?:\w+|\+\+|--|\()', cast_line)
@@ -2595,16 +2603,24 @@ def CheckBraces(filename, clean_lines, linenum, error):
         else:
             func_start_linenum = end_linenum + 1
             while not clean_lines.lines[func_start_linenum] == '{':
-                if not Match(r'^(?:\s*\b(?:FUNC_ATTR|REAL_FATTR)_\w+\b(?:\(\d+(, \d+)*\))?)+$',
-                             clean_lines.lines[func_start_linenum]):
-                    if clean_lines.lines[func_start_linenum].endswith('{'):
+                attrline = Match(r'^((?!# *define).*?)(?:FUNC_ATTR|FUNC_API|REAL_FATTR)_\w+(?:\(\d+(, \d+)*\))?',
+                                 clean_lines.lines[func_start_linenum])
+                if attrline:
+                    if len(attrline.group(1)) != 2:
+                        error(filename, func_start_linenum,
+                              'whitespace/indent', 5,
+                              'Function attribute line should have 2-space '
+                              'indent')
+
+                    func_start_linenum += 1
+                else:
+                    func_start = clean_lines.lines[func_start_linenum]
+                    if not func_start.startswith('enum ') and func_start.endswith('{'):
                         error(filename, func_start_linenum,
                               'readability/braces', 5,
                               'Brace starting function body must be placed '
                               'after the function signature')
                     break
-                else:
-                    func_start_linenum += 1
 
     # An else clause should be on the same line as the preceding closing brace.
     # If there is no preceding closing brace, there should be one.

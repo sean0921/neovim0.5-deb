@@ -2,7 +2,7 @@
 
 func Test_complete_tab()
   call writefile(['testfile'], 'Xtestfile')
-  call feedkeys(":e Xtest\t\r", "tx")
+  call feedkeys(":e Xtestf\t\r", "tx")
   call assert_equal('testfile', getline(1))
   call delete('Xtestfile')
 endfunc
@@ -17,7 +17,7 @@ func Test_complete_wildmenu()
   call writefile(['testfile1'], 'Xtestfile1')
   call writefile(['testfile2'], 'Xtestfile2')
   set wildmenu
-  call feedkeys(":e Xtest\t\t\r", "tx")
+  call feedkeys(":e Xtestf\t\t\r", "tx")
   call assert_equal('testfile2', getline(1))
 
   call delete('Xtestfile1')
@@ -130,6 +130,11 @@ func Test_getcompletion()
   let l = getcompletion('dark', 'highlight')
   call assert_equal([], l)
 
+  let l = getcompletion('', 'messages')
+  call assert_true(index(l, 'clear') >= 0)
+  let l = getcompletion('not', 'messages')
+  call assert_equal([], l)
+
   if has('cscope')
     let l = getcompletion('', 'cscope')
     let cmds = ['add', 'find', 'help', 'kill', 'reset', 'show']
@@ -204,3 +209,62 @@ func Test_expand_star_star()
   bwipe!
   call delete('a', 'rf')
 endfunc
+
+func Test_paste_in_cmdline()
+  let @a = "def"
+  call feedkeys(":abc \<C-R>a ghi\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"abc def ghi', @:)
+
+  new
+  call setline(1, 'asdf.x /tmp/some verylongword a;b-c*d ')
+
+  call feedkeys(":aaa \<C-R>\<C-W> bbb\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"aaa asdf bbb', @:)
+
+  call feedkeys("ft:aaa \<C-R>\<C-F> bbb\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"aaa /tmp/some bbb', @:)
+
+  set incsearch
+  call feedkeys("fy:aaa veryl\<C-R>\<C-W> bbb\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"aaa verylongword bbb', @:)
+
+  call feedkeys("f;:aaa \<C-R>\<C-A> bbb\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"aaa a;b-c*d bbb', @:)
+
+  call feedkeys(":\<C-\>etoupper(getline(1))\<CR>\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"ASDF.X /TMP/SOME VERYLONGWORD A;B-C*D ', @:)
+  bwipe!
+endfunc
+
+func Test_remove_char_in_cmdline()
+    call feedkeys(":abc def\<S-Left>\<Del>\<C-B>\"\<CR>", 'tx')
+    call assert_equal('"abc ef', @:)
+
+    call feedkeys(":abc def\<S-Left>\<BS>\<C-B>\"\<CR>", 'tx')
+    call assert_equal('"abcdef', @:)
+
+    call feedkeys(":abc def ghi\<S-Left>\<C-W>\<C-B>\"\<CR>", 'tx')
+    call assert_equal('"abc ghi', @:)
+
+    call feedkeys(":abc def\<S-Left>\<C-U>\<C-B>\"\<CR>", 'tx')
+    call assert_equal('"def', @:)
+endfunc
+
+func Test_illegal_address1()
+  new
+  2;'(
+  2;')
+  quit
+endfunc
+
+func Test_illegal_address2()
+  call writefile(['c', 'x', '  x', '.', '1;y'], 'Xtest.vim')
+  new
+  source Xtest.vim
+  " Trigger calling validate_cursor()
+  diffsp Xtest.vim
+  quit!
+  bwipe!
+  call delete('Xtest.vim')
+endfunc
+

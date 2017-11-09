@@ -10,8 +10,11 @@ source test_expr_utf8.vim
 source test_feedkeys.vim
 source test_filter_cmd.vim
 source test_filter_map.vim
+source test_float_func.vim
+source test_functions.vim
 source test_goto.vim
 source test_jumps.vim
+source test_fileformat.vim
 source test_lambda.vim
 source test_menu.vim
 source test_mapping.vim
@@ -31,4 +34,5 @@ source test_taglist.vim
 source test_true_false.vim
 source test_unlet.vim
 source test_utf8.vim
+source test_virtualedit.vim
 source test_window_cmd.vim

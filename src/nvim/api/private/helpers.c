@@ -24,6 +24,7 @@
 #include "nvim/option_defs.h"
 #include "nvim/version.h"
 #include "nvim/lib/kvec.h"
+#include "nvim/getchar.h"
 
 /// Helper structure for vim_to_object
 typedef struct {
@@ -33,9 +34,75 @@ typedef struct {
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "api/private/helpers.c.generated.h"
 # include "api/private/funcs_metadata.generated.h"
+# include "api/private/ui_events_metadata.generated.h"
 #endif
 
+/// Start block that may cause VimL exceptions while evaluating another code
+///
+/// Used when caller is supposed to be operating when other VimL code is being
+/// processed and that “other VimL code” must not be affected.
+///
+/// @param[out]  tstate  Location where try state should be saved.
+void try_enter(TryState *const tstate)
+{
+  *tstate = (TryState) {
+    .current_exception = current_exception,
+    .msg_list = (const struct msglist *const *)msg_list,
+    .private_msg_list = NULL,
+    .trylevel = trylevel,
+    .got_int = got_int,
+    .did_throw = did_throw,
+    .need_rethrow = need_rethrow,
+    .did_emsg = did_emsg,
+  };
+  msg_list = &tstate->private_msg_list;
+  current_exception = NULL;
+  trylevel = 1;
+  got_int = false;
+  did_throw = false;
+  need_rethrow = false;
+  did_emsg = false;
+}
+
+/// End try block, set the error message if any and restore previous state
+///
+/// @warning Return is consistent with most functions (false on error), not with
+///          try_end (true on error).
+///
+/// @param[in]  tstate  Previous state to restore.
+/// @param[out]  err  Location where error should be saved.
+///
+/// @return false if error occurred, true otherwise.
+bool try_leave(const TryState *const tstate, Error *const err)
+  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
+{
+  const bool ret = !try_end(err);
+  assert(trylevel == 0);
+  assert(!need_rethrow);
+  assert(!got_int);
+  assert(!did_throw);
+  assert(!did_emsg);
+  assert(msg_list == &tstate->private_msg_list);
+  assert(*msg_list == NULL);
+  assert(current_exception == NULL);
+  msg_list = (struct msglist **)tstate->msg_list;
+  current_exception = tstate->current_exception;
+  trylevel = tstate->trylevel;
+  got_int = tstate->got_int;
+  did_throw = tstate->did_throw;
+  need_rethrow = tstate->need_rethrow;
+  did_emsg = tstate->did_emsg;
+  return ret;
+}
+
 /// Start block that may cause vimscript exceptions
+///
+/// Each try_start() call should be mirrored by try_end() call.
+///
+/// To be used as a replacement of `:try … catch … endtry` in C code, in cases
+/// when error flag could not already be set. If there may be pending error
+/// state at the time try_start() is executed which needs to be preserved,
+/// try_enter()/try_leave() pair should be used instead.
 void try_start(void)
 {
   ++trylevel;
@@ -48,7 +115,9 @@ void try_start(void)
 /// @return true if an error occurred
 bool try_end(Error *err)
 {
-  --trylevel;
+  // Note: all globals manipulated here should be saved/restored in
+  // try_enter/try_leave.
+  trylevel--;
 
   // Without this it stops processing all subsequent VimL commands and
   // generates strange error messages if I e.g. try calling Test() in a
@@ -93,7 +162,7 @@ Object dict_get_value(dict_T *dict, String key, Error *err)
   dictitem_T *const di = tv_dict_find(dict, key.data, (ptrdiff_t)key.size);
 
   if (di == NULL) {
-    api_set_error(err, kErrorTypeValidation, "Key not found");
+    api_set_error(err, kErrorTypeValidation, "Key '%s' not found", key.data);
     return (Object)OBJECT_INIT;
   }
 
@@ -353,7 +422,7 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
 #define TYPVAL_ENCODE_CONV_UNSIGNED_NUMBER TYPVAL_ENCODE_CONV_NUMBER
 
 #define TYPVAL_ENCODE_CONV_FLOAT(tv, flt) \
-    kv_push(edata->stack, FLOATING_OBJ((Float)(flt)))
+    kv_push(edata->stack, FLOAT_OBJ((Float)(flt)))
 
 #define TYPVAL_ENCODE_CONV_STRING(tv, str, len) \
     do { \
@@ -598,6 +667,22 @@ tabpage_T *find_tab_by_handle(Tabpage tabpage, Error *err)
   return rv;
 }
 
+/// Allocates a String consisting of a single char. Does not support multibyte
+/// characters. The resulting string is also NUL-terminated, to facilitate
+/// interoperating with code using C strings.
+///
+/// @param char the char to convert
+/// @return the resulting String, if the input char was NUL, an
+///         empty String is returned
+String cchar_to_string(char c)
+{
+  char buf[] = { c, NUL };
+  return (String) {
+    .data = xmemdupz(buf, 1),
+    .size = (c != NUL) ? 1 : 0
+  };
+}
+
 /// Copies a C string into a String (binary safe string, characters + length).
 /// The resulting string is also NUL-terminated, to facilitate interoperating
 /// with code using C strings.
@@ -616,6 +701,23 @@ String cstr_to_string(const char *str)
         .data = xmemdupz(str, len),
         .size = len
     };
+}
+
+/// Copies buffer to an allocated String.
+/// The resulting string is also NUL-terminated, to facilitate interoperating
+/// with code using C strings.
+///
+/// @param buf the buffer to copy
+/// @param size length of the buffer
+/// @return the resulting String, if the input string was NULL, an
+///         empty String is returned
+String cbuf_to_string(const char *buf, size_t size)
+  FUNC_ATTR_NONNULL_ALL
+{
+  return (String) {
+    .data = xmemdupz(buf, size),
+    .size = size
+  };
 }
 
 /// Creates a String using the given C string. Unlike
@@ -820,6 +922,7 @@ Dictionary api_metadata(void)
   if (!metadata.size) {
     PUT(metadata, "version", DICTIONARY_OBJ(version_dict()));
     init_function_metadata(&metadata);
+    init_ui_event_metadata(&metadata);
     init_error_type_metadata(&metadata);
     init_type_metadata(&metadata);
   }
@@ -843,6 +946,22 @@ static void init_function_metadata(Dictionary *metadata)
   PUT(*metadata, "functions", functions);
 }
 
+static void init_ui_event_metadata(Dictionary *metadata)
+{
+  msgpack_unpacked unpacked;
+  msgpack_unpacked_init(&unpacked);
+  if (msgpack_unpack_next(&unpacked,
+                          (const char *)ui_events_metadata,
+                          sizeof(ui_events_metadata),
+                          NULL) != MSGPACK_UNPACK_SUCCESS) {
+    abort();
+  }
+  Object ui_events;
+  msgpack_rpc_to_object(&unpacked.data, &ui_events);
+  msgpack_unpacked_destroy(&unpacked);
+  PUT(*metadata, "ui_events", ui_events);
+}
+
 static void init_error_type_metadata(Dictionary *metadata)
 {
   Dictionary types = ARRAY_DICT_INIT;
@@ -864,15 +983,18 @@ static void init_type_metadata(Dictionary *metadata)
   Dictionary types = ARRAY_DICT_INIT;
 
   Dictionary buffer_metadata = ARRAY_DICT_INIT;
-  PUT(buffer_metadata, "id", INTEGER_OBJ(kObjectTypeBuffer));
+  PUT(buffer_metadata, "id",
+      INTEGER_OBJ(kObjectTypeBuffer - EXT_OBJECT_TYPE_SHIFT));
   PUT(buffer_metadata, "prefix", STRING_OBJ(cstr_to_string("nvim_buf_")));
 
   Dictionary window_metadata = ARRAY_DICT_INIT;
-  PUT(window_metadata, "id", INTEGER_OBJ(kObjectTypeWindow));
+  PUT(window_metadata, "id",
+      INTEGER_OBJ(kObjectTypeWindow - EXT_OBJECT_TYPE_SHIFT));
   PUT(window_metadata, "prefix", STRING_OBJ(cstr_to_string("nvim_win_")));
 
   Dictionary tabpage_metadata = ARRAY_DICT_INIT;
-  PUT(tabpage_metadata, "id", INTEGER_OBJ(kObjectTypeTabpage));
+  PUT(tabpage_metadata, "id",
+      INTEGER_OBJ(kObjectTypeTabpage - EXT_OBJECT_TYPE_SHIFT));
   PUT(tabpage_metadata, "prefix", STRING_OBJ(cstr_to_string("nvim_tabpage_")));
 
   PUT(types, "Buffer", DICTIONARY_OBJ(buffer_metadata));
@@ -880,6 +1002,24 @@ static void init_type_metadata(Dictionary *metadata)
   PUT(types, "Tabpage", DICTIONARY_OBJ(tabpage_metadata));
 
   PUT(*metadata, "types", DICTIONARY_OBJ(types));
+}
+
+String copy_string(String str)
+{
+  if (str.data != NULL) {
+    return (String){ .data = xmemdupz(str.data, str.size), .size = str.size };
+  } else {
+    return (String)STRING_INIT;
+  }
+}
+
+Array copy_array(Array array)
+{
+  Array rv = ARRAY_DICT_INIT;
+  for (size_t i = 0; i < array.size; i++) {
+    ADD(rv, copy_object(array.items[i]));
+  }
+  return rv;
 }
 
 /// Creates a deep clone of an object
@@ -893,15 +1033,10 @@ Object copy_object(Object obj)
       return obj;
 
     case kObjectTypeString:
-      return STRING_OBJ(cstr_to_string(obj.data.string.data));
+      return STRING_OBJ(copy_string(obj.data.string));
 
-    case kObjectTypeArray: {
-      Array rv = ARRAY_DICT_INIT;
-      for (size_t i = 0; i < obj.data.array.size; i++) {
-        ADD(rv, copy_object(obj.data.array.items[i]));
-      }
-      return ARRAY_OBJ(rv);
-    }
+    case kObjectTypeArray:
+      return ARRAY_OBJ(copy_array(obj.data.array));
 
     case kObjectTypeDictionary: {
       Dictionary rv = ARRAY_DICT_INIT;
@@ -926,7 +1061,7 @@ static void set_option_value_for(char *key,
 {
   win_T *save_curwin = NULL;
   tabpage_T *save_curtab = NULL;
-  bufref_T save_curbuf =  { NULL, 0 };
+  bufref_T save_curbuf =  { NULL, 0, 0 };
 
   try_start();
   switch (opt_type)
@@ -999,4 +1134,42 @@ void api_set_error(Error *err, ErrorType errType, const char *format, ...)
   va_end(args2);
 
   err->type = errType;
+}
+
+/// Get an array containing dictionaries describing mappings
+/// based on mode and buffer id
+///
+/// @param  mode  The abbreviation for the mode
+/// @param  buf  The buffer to get the mapping array. NULL for global
+/// @returns An array of maparg() like dictionaries describing mappings
+ArrayOf(Dictionary) keymap_array(String mode, buf_T *buf)
+{
+  Array mappings = ARRAY_DICT_INIT;
+  dict_T *const dict = tv_dict_alloc();
+
+  // Convert the string mode to the integer mode
+  // that is stored within each mapblock
+  char_u *p = (char_u *)mode.data;
+  int int_mode = get_map_mode(&p, 0);
+
+  // Determine the desired buffer value
+  long buffer_value = (buf == NULL) ? 0 : buf->handle;
+
+  for (int i = 0; i < MAX_MAPHASH; i++) {
+    for (const mapblock_T *current_maphash = get_maphash(i, buf);
+         current_maphash;
+         current_maphash = current_maphash->m_next) {
+      // Check for correct mode
+      if (int_mode & current_maphash->m_mode) {
+        mapblock_fill_dict(dict, current_maphash, buffer_value, false);
+        ADD(mappings, vim_to_object(
+            (typval_T[]) { { .v_type = VAR_DICT, .vval.v_dict = dict } }));
+
+        tv_dict_clear(dict);
+      }
+    }
+  }
+  tv_dict_free(dict);
+
+  return mappings;
 }

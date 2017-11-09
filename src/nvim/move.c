@@ -1763,7 +1763,7 @@ int onepage(int dir, long count)
 
     loff.fill = 0;
     if (dir == FORWARD) {
-      if (firstwin == lastwin && p_window > 0 && p_window < Rows - 1) {
+      if (ONE_WINDOW && p_window > 0 && p_window < Rows - 1) {
         /* Vi compatible scrolling */
         if (p_window <= 2)
           ++curwin->w_topline;
@@ -1797,7 +1797,7 @@ int onepage(int dir, long count)
         max_topfill();
         continue;
       }
-      if (firstwin == lastwin && p_window > 0 && p_window < Rows - 1) {
+      if (ONE_WINDOW && p_window > 0 && p_window < Rows - 1) {
         /* Vi compatible scrolling (sort of) */
         if (p_window <= 2)
           --curwin->w_topline;
@@ -2147,14 +2147,12 @@ void do_check_cursorbind(void)
     curbuf = curwin->w_buffer;
     /* skip original window  and windows with 'noscrollbind' */
     if (curwin != old_curwin && curwin->w_p_crb) {
-      if (curwin->w_p_diff)
-        curwin->w_cursor.lnum
-          = diff_get_corresponding_line(old_curbuf,
-            line,
-            curbuf,
-            curwin->w_cursor.lnum);
-      else
+      if (curwin->w_p_diff) {
+        curwin->w_cursor.lnum =
+          diff_get_corresponding_line(old_curbuf, line);
+      } else {
         curwin->w_cursor.lnum = line;
+      }
       curwin->w_cursor.col = col;
       curwin->w_cursor.coladd = coladd;
       curwin->w_curswant = curswant;
@@ -2166,16 +2164,21 @@ void do_check_cursorbind(void)
         int restart_edit_save = restart_edit;
         restart_edit = true;
         check_cursor();
+        if (curwin->w_p_cul || curwin->w_p_cuc) {
+          validate_cursor();
+        }
         restart_edit = restart_edit_save;
       }
-      /* Correct cursor for multi-byte character. */
-      if (has_mbyte)
+      // Correct cursor for multi-byte character.
+      if (has_mbyte) {
         mb_adjust_cursor();
+      }
       redraw_later(VALID);
 
-      /* Only scroll when 'scrollbind' hasn't done this. */
-      if (!curwin->w_p_scb)
+      // Only scroll when 'scrollbind' hasn't done this.
+      if (!curwin->w_p_scb) {
         update_topline();
+      }
       curwin->w_redr_status = true;
     }
   }

@@ -751,7 +751,7 @@ open_line (
     // Skip mark_adjust when adding a line after the last one, there can't
     // be marks there.
     if (curwin->w_cursor.lnum + 1 < curbuf->b_ml.ml_line_count) {
-      mark_adjust(curwin->w_cursor.lnum + 1, (linenr_T)MAXLNUM, 1L, 0L);
+      mark_adjust(curwin->w_cursor.lnum + 1, (linenr_T)MAXLNUM, 1L, 0L, false);
     }
     did_append = true;
   } else {
@@ -1273,8 +1273,8 @@ int plines_win_nofold(win_T *wp, linenr_T lnum)
    * Add column offset for 'number', 'relativenumber' and 'foldcolumn'.
    */
   width = wp->w_width - win_col_off(wp);
-  if (width <= 0) {
-    return 32000;  // bigger than the number of lines of the screen
+  if (width <= 0 || col > 32000) {
+    return 32000;  // bigger than the number of screen columns
   }
   if (col <= (unsigned int)width) {
     return 1;
@@ -1866,7 +1866,7 @@ void appended_lines_mark(linenr_T lnum, long count)
   // Skip mark_adjust when adding a line after the last one, there can't
   // be marks there.
   if (lnum + count < curbuf->b_ml.ml_line_count) {
-    mark_adjust(lnum + 1, (linenr_T)MAXLNUM, count, 0L);
+    mark_adjust(lnum + 1, (linenr_T)MAXLNUM, count, 0L, false);
   }
   changed_lines(lnum + 1, 0, lnum + 1, count);
 }
@@ -1888,7 +1888,7 @@ void deleted_lines(linenr_T lnum, long count)
  */
 void deleted_lines_mark(linenr_T lnum, long count)
 {
-  mark_adjust(lnum, (linenr_T)(lnum + count - 1), (long)MAXLNUM, -count);
+  mark_adjust(lnum, (linenr_T)(lnum + count - 1), (long)MAXLNUM, -count, false);
   changed_lines(lnum, 0, lnum + count, -count);
 }
 
@@ -2203,7 +2203,7 @@ change_warning (
     set_vim_var_string(VV_WARNINGMSG, _(w_readonly), -1);
     msg_clr_eos();
     (void)msg_end();
-    if (msg_silent == 0 && !silent_mode) {
+    if (msg_silent == 0 && !silent_mode && ui_active()) {
       ui_flush();
       os_delay(1000L, true);       /* give the user time to think about it */
     }
@@ -2536,9 +2536,9 @@ void vim_beep(unsigned val)
   if (emsg_silent == 0) {
     if (!((bo_flags & val) || (bo_flags & BO_ALL))) {
       if (p_vb) {
-        ui_visual_bell();
+        ui_call_visual_bell();
       } else {
-        ui_putc(BELL);
+        ui_call_bell();
       }
     }
 
@@ -2691,7 +2691,7 @@ int call_shell(char_u *cmd, ShellOpts opts, char_u *extra_shell_arg)
   if (p_verbose > 3) {
     verbose_enter();
     smsg(_("Calling shell to execute: \"%s\""), cmd == NULL ? p_sh : cmd);
-    ui_putc('\n');
+    ui_linefeed();
     verbose_leave();
   }
 

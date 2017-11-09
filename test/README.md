@@ -1,29 +1,48 @@
-# Tests
+Tests
+=====
 
 Tests are run by `/cmake/RunTests.cmake` file, using busted.
 
-## Directory structure
+For some failures, `.nvimlog` (or `$NVIM_LOG_FILE`) may provide insight.
 
-Directories with tests: `/test/benchmark` for benchmarks, `/test/functional` for 
-functional tests, `/test/unit` for unit tests. `/test/config` contains `*.in` 
-files (currently a single one) which are transformed into `*.lua` files using 
-`configure_file` CMake command: this is for acessing CMake variables in lua 
-tests. `/test/includes` contains include files for use by luajit `ffi.cdef` 
-C definitions parser: normally used to make macros not accessible via this 
-mechanism accessible the other way.
+Lint
+----
 
-Files `/test/*/preload.lua` contain modules which will be preloaded by busted, 
-via `--helper` option. `/test/**/helpers.lua` contain various “library” 
-functions, (intended to be) used by a number of tests and not just a single one.
+`make lint` (and `make testlint`) runs [luacheck](https://github.com/mpeterv/luacheck)
+on the test code.
 
-`/test/*/**/*_spec.lua` are files containing actual tests. Files that do not end 
-with a `_spec.lua` are libraries like `/test/**/helpers.lua`, except that they 
-have some common topic.
+If a luacheck warning must be ignored, specify the warning code. Example:
 
-Tests inside `/test/unit` and `/test/functional` are normally divided into 
-groups by the semantic component they are testing.
+    -- luacheck: ignore 621
 
-## Environment variables
+http://luacheck.readthedocs.io/en/stable/warnings.html
+
+Ignore the smallest applicable scope (e.g. inside a function, not at the top of
+the file).
+
+Layout
+------
+
+- `/test/benchmark` : benchmarks
+- `/test/functional` : functional tests
+- `/test/unit` : unit tests
+- `/test/config` : contains `*.in` files which are transformed into `*.lua`
+  files using `configure_file` CMake command: this is for acessing CMake
+  variables in lua tests.
+- `/test/includes` : include-files for use by luajit `ffi.cdef` C definitions
+  parser: normally used to make macros not accessible via this mechanism
+  accessible the other way.
+- `/test/*/preload.lua` : modules preloaded by busted `--helper` option
+- `/test/**/helpers.lua` : common utility functions for test code
+- `/test/*/**/*_spec.lua` : actual tests. Files that do not end with
+  `_spec.lua` are libraries like `/test/**/helpers.lua`, except that they have
+  some common topic.
+
+Tests in `/test/unit` and `/test/functional` are normally divided into groups
+by the semantic component they are testing.
+
+Environment variables
+---------------------
 
 Test behaviour is affected by environment variables. Currently supported 
 (Functional, Unit, Benchmarks) (when Defined; when set to _1_; when defined, 

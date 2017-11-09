@@ -193,7 +193,7 @@ newwindow:
   /* cursor to previous window with wrap around */
   case 'W':
     CHECK_CMDWIN
-    if (firstwin == lastwin && Prenum != 1)             /* just one window */
+    if (ONE_WINDOW && Prenum != 1)             /* just one window */
       beep_flush();
     else {
       if (Prenum) {                             /* go to specified window */
@@ -574,7 +574,7 @@ int win_split_ins(int size, int flags, win_T *new_wp, int dir)
     oldwin = curwin;
 
   /* add a status line when p_ls == 1 and splitting the first window */
-  if (lastwin == firstwin && p_ls == 1 && oldwin->w_status_height == 0) {
+  if (ONE_WINDOW && p_ls == 1 && oldwin->w_status_height == 0) {
     if (oldwin->w_height <= p_wmh && new_wp == NULL) {
       EMSG(_(e_noroom));
       return FAIL;
@@ -1043,7 +1043,7 @@ static void win_init(win_T *newp, win_T *oldp, int flags)
 
   win_init_some(newp, oldp);
 
-  check_colorcolumn(newp);
+  didset_window_options(newp);
 }
 
 /*
@@ -1182,7 +1182,7 @@ static void win_exchange(long Prenum)
   win_T       *wp2;
   int temp;
 
-  if (lastwin == firstwin) {        /* just one window */
+  if (ONE_WINDOW) {        /* just one window */
     beep_flush();
     return;
   }
@@ -1271,7 +1271,7 @@ static void win_rotate(int upwards, int count)
   frame_T     *frp;
   int n;
 
-  if (firstwin == lastwin) {            /* nothing to do */
+  if (ONE_WINDOW) {            /* nothing to do */
     beep_flush();
     return;
   }
@@ -1343,7 +1343,7 @@ static void win_totop(int size, int flags)
   int dir;
   int height = curwin->w_height;
 
-  if (lastwin == firstwin) {
+  if (ONE_WINDOW) {
     beep_flush();
     return;
   }
@@ -1728,7 +1728,7 @@ void close_windows(buf_T *buf, int keep_curwin)
 
   ++RedrawingDisabled;
 
-  for (win_T *wp = firstwin; wp != NULL && lastwin != firstwin; ) {
+  for (win_T *wp = firstwin; wp != NULL && !ONE_WINDOW; ) {
     if (wp->w_buffer == buf && (!keep_curwin || wp != curwin)
         && !(wp->w_closing || wp->w_buffer->b_locked > 0)) {
       if (win_close(wp, false) == FAIL) {
@@ -1810,7 +1810,7 @@ static bool close_last_window_tabpage(win_T *win, bool free_buf,
                                       tabpage_T *prev_curtab)
   FUNC_ATTR_NONNULL_ARG(1)
 {
-  if (firstwin != lastwin) {
+  if (!ONE_WINDOW) {
     return false;
   }
   buf_T   *old_curbuf = curbuf;
@@ -1878,6 +1878,7 @@ int win_close(win_T *win, int free_buf)
   int dir;
   int help_window = FALSE;
   tabpage_T   *prev_curtab = curtab;
+  frame_T *win_frame = win->w_frame->fr_parent;
 
   if (last_window()) {
     EMSG(_("E444: Cannot close last window"));
@@ -2027,7 +2028,9 @@ int win_close(win_T *win, int free_buf)
     check_cursor();
   }
   if (p_ea && (*p_ead == 'b' || *p_ead == dir)) {
-    win_equal(curwin, true, dir);
+    // If the frame of the closed window contains the new current window,
+    // only resize that frame.  Otherwise resize all windows.
+    win_equal(curwin, curwin->w_frame->fr_parent == win_frame, dir);
   } else {
     win_comp_pos();
   }
@@ -2194,7 +2197,7 @@ winframe_remove (
   /*
    * If there is only one window there is nothing to remove.
    */
-  if (tp == NULL ? firstwin == lastwin : tp->tp_firstwin == tp->tp_lastwin)
+  if (tp == NULL ? ONE_WINDOW : tp->tp_firstwin == tp->tp_lastwin)
     return NULL;
 
   /*
@@ -2331,7 +2334,7 @@ win_altframe (
   frame_T     *frp;
   int b;
 
-  if (tp == NULL ? firstwin == lastwin : tp->tp_firstwin == tp->tp_lastwin)
+  if (tp == NULL ? ONE_WINDOW : tp->tp_firstwin == tp->tp_lastwin)
     /* Last window in this tab page, will go to next tab page. */
     return alt_tabpage()->tp_curwin->w_frame;
 
@@ -2851,7 +2854,7 @@ close_others (
     win_close(wp, !P_HID(wp->w_buffer) && !bufIsChanged(wp->w_buffer));
   }
 
-  if (message && lastwin != firstwin)
+  if (message && !ONE_WINDOW)
     EMSG(_("E445: Other window contains changes"));
 }
 
@@ -3722,6 +3725,12 @@ static void win_enter_ext(win_T *wp, bool undo_sync, int curwin_invalid,
   if (restart_edit)
     redraw_later(VALID);        /* causes status line redraw */
 
+  if (hl_attr(HLF_INACTIVE)
+      || (prevwin && prevwin->w_hl_ids[HLF_INACTIVE])
+      || curwin->w_hl_ids[HLF_INACTIVE]) {
+    redraw_all_later(NOT_VALID);
+  }
+
   /* set window height to desired minimal value */
   if (curwin->w_height < p_wh && !curwin->w_p_wfh)
     win_setheight((int)p_wh);
@@ -3738,7 +3747,9 @@ static void win_enter_ext(win_T *wp, bool undo_sync, int curwin_invalid,
   do_autochdir();
 
   if (curbuf->terminal) {
-    terminal_resize(curbuf->terminal, curwin->w_width, curwin->w_height);
+    terminal_resize(curbuf->terminal,
+                    (uint16_t)(MAX(0, curwin->w_width - win_col_off(curwin))),
+                    (uint16_t)curwin->w_height);
   }
 }
 
@@ -4937,7 +4948,9 @@ void win_new_width(win_T *wp, int width)
 
   if (wp->w_buffer->terminal) {
     if (wp->w_height != 0) {
-      terminal_resize(wp->w_buffer->terminal, wp->w_width, 0);
+      terminal_resize(wp->w_buffer->terminal,
+                      (uint16_t)(MAX(0, curwin->w_width - win_col_off(curwin))),
+                      0);
     }
   }
 }
@@ -5167,7 +5180,7 @@ last_status (
 {
   /* Don't make a difference between horizontal or vertical split. */
   last_status_rec(topframe, (p_ls == 2
-                             || (p_ls == 1 && (morewin || lastwin != firstwin))));
+                             || (p_ls == 1 && (morewin || !ONE_WINDOW))));
 }
 
 static void last_status_rec(frame_T *fr, int statusline)
@@ -5506,11 +5519,14 @@ void restore_buffer(bufref_T *save_curbuf)
 }
 
 
-// Add match to the match list of window 'wp'.  The pattern 'pat' will be
-// highlighted with the group 'grp' with priority 'prio'.
-// Optionally, a desired ID 'id' can be specified (greater than or equal to 1).
-// If no particular ID is desired, -1 must be specified for 'id'.
-// Return ID of added match, -1 on failure.
+/// Add match to the match list of window 'wp'.  The pattern 'pat' will be
+/// highlighted with the group 'grp' with priority 'prio'.
+/// Optionally, a desired ID 'id' can be specified (greater than or equal to 1).
+///
+/// @param[in] id a desired ID 'id' can be specified
+///               (greater than or equal to 1). -1 must be specified if no
+///               particular ID is desired
+/// @return ID of added match, -1 on failure.
 int match_add(win_T *wp, const char *const grp, const char *const pat,
               int prio, int id, list_T *pos_list,
               const char *const conceal_char)
@@ -5526,8 +5542,8 @@ int match_add(win_T *wp, const char *const grp, const char *const pat,
     return -1;
   }
   if (id < -1 || id == 0) {
-    EMSGN("E799: Invalid ID: %" PRId64
-          " (must be greater than or equal to 1)",
+    EMSGN(_("E799: Invalid ID: %" PRId64
+            " (must be greater than or equal to 1)"),
           id);
     return -1;
   }
@@ -5535,7 +5551,7 @@ int match_add(win_T *wp, const char *const grp, const char *const pat,
     cur = wp->w_match_head;
     while (cur != NULL) {
       if (cur->id == id) {
-        EMSGN("E801: ID already taken: %" PRId64, id);
+        EMSGN(_("E801: ID already taken: %" PRId64), id);
         return -1;
       }
       cur = cur->next;
@@ -5688,10 +5704,9 @@ fail:
   return -1;
 }
 
-/*
- * Delete match with ID 'id' in the match list of window 'wp'.
- * Print error messages if 'perr' is TRUE.
- */
+
+/// Delete match with ID 'id' in the match list of window 'wp'.
+/// Print error messages if 'perr' is TRUE.
 int match_delete(win_T *wp, int id, int perr)
 {
   matchitem_T *cur = wp->w_match_head;
@@ -5699,10 +5714,11 @@ int match_delete(win_T *wp, int id, int perr)
   int rtype = SOME_VALID;
 
   if (id < 1) {
-    if (perr == TRUE)
-      EMSGN("E802: Invalid ID: %" PRId64
-            " (must be greater than or equal to 1)",
+    if (perr) {
+      EMSGN(_("E802: Invalid ID: %" PRId64
+              " (must be greater than or equal to 1)"),
             id);
+    }
     return -1;
   }
   while (cur != NULL && cur->id != id) {
@@ -5710,8 +5726,9 @@ int match_delete(win_T *wp, int id, int perr)
     cur = cur->next;
   }
   if (cur == NULL) {
-    if (perr == TRUE)
-      EMSGN("E803: ID not found: %" PRId64, id);
+    if (perr) {
+      EMSGN(_("E803: ID not found: %" PRId64), id);
+    }
     return -1;
   }
   if (cur == prev)

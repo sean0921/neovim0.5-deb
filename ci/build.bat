@@ -9,6 +9,10 @@ if "%CONFIGURATION%" == "MINGW_32" (
   set ARCH=x86_64
   set BITS=64
 )
+if "%CONFIGURATION%" == "MINGW_64-gcov" (
+  set USE_GCOV="-DUSE_GCOV=ON"
+)
+
 :: We cannot have sh.exe in the PATH (MinGW)
 set PATH=%PATH:C:\Program Files\Git\usr\bin;=%
 set PATH=C:\msys64\mingw%BITS%\bin;C:\Windows\System32;C:\Windows;%PATH%
@@ -17,7 +21,7 @@ set PATH=C:\Program Files (x86)\CMake\bin\cpack.exe;%PATH%
 
 :: Build third-party dependencies
 C:\msys64\usr\bin\bash -lc "pacman --verbose --noconfirm -Su" || goto :error
-C:\msys64\usr\bin\bash -lc "pacman --verbose --noconfirm --needed -S mingw-w64-%ARCH%-cmake mingw-w64-%ARCH%-perl mingw-w64-%ARCH%-diffutils gperf" || goto :error
+C:\msys64\usr\bin\bash -lc "pacman --verbose --noconfirm --needed -S mingw-w64-%ARCH%-cmake mingw-w64-%ARCH%-perl mingw-w64-%ARCH%-diffutils mingw-w64-%ARCH%-unibilium gperf" || goto :error
 
 :: Setup python (use AppVeyor system python)
 C:\Python27\python.exe -m pip install neovim || goto :error
@@ -31,23 +35,27 @@ python3 -c "import neovim; print(str(neovim))" || goto :error
 
 mkdir .deps
 cd .deps
-cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ..\third-party\ || goto :error
+cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo ..\third-party\ || goto :error
 mingw32-make VERBOSE=1 || goto :error
 cd ..
 
 :: Build Neovim
 mkdir build
 cd build
-cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUSTED_OUTPUT_TYPE=nvim -DGPERF_PRG="C:\msys64\usr\bin\gperf.exe" .. || goto :error
+cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUSTED_OUTPUT_TYPE=nvim %USE_GCOV% -DGPERF_PRG="C:\msys64\usr\bin\gperf.exe" .. || goto :error
 mingw32-make VERBOSE=1 || goto :error
 bin\nvim --version || goto :error
 
 :: Functional tests
 mingw32-make functionaltest VERBOSE=1 || goto :error
 
+if defined USE_GCOV (
+  C:\msys64\usr\bin\bash -lc "cd /c/projects/neovim; bash <(curl -s https://codecov.io/bash) || echo 'codecov upload failed.'"
+)
+
 :: Build artifacts
-cpack -G ZIP -C Release
-if defined APPVEYOR_REPO_TAG_NAME cpack -G NSIS -C Release
+cpack -G ZIP -C RelWithDebInfo
+if defined APPVEYOR_REPO_TAG_NAME cpack -G NSIS -C RelWithDebInfo
 
 goto :EOF
 :error
