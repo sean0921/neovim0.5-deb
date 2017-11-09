@@ -58,9 +58,11 @@ debian/fakehome:
 
 override_dh_auto_test-indep:
 
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 override_dh_auto_test-arch: debian/passwd debian/fakehome
 	env "HOME=$(CURDIR)/debian/fakehome" $(MAKE) -C src/nvim/testdir clean
 	env "HOME=$(CURDIR)/debian/fakehome" TERM=xterm $(MAKE) -C src/nvim/testdir "NVIM_PRG=$(CURDIR)/build/bin/nvim"
 ifneq (,$(UNITTEST)$(FUNCTIONALTEST))
 	env TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(UNITTEST) $(FUNCTIONALTEST)
+endif
 endif
