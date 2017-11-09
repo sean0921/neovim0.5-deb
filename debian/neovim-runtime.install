@@ -1,3 +1,5 @@
-debian/tmp/usr/share/locale
-debian/tmp/usr/share/man/man1/nvim.1
-debian/tmp/usr/share/nvim/
+usr/share/locale
+usr/share/man/man1/nvim.1
+usr/share/nvim/
+usr/share/applications/nvim.desktop
+usr/share/pixmaps/nvim.png
