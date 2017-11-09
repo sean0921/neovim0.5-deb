@@ -1,3 +1,12 @@
+neovim (0.2.1-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+    + Lua(JIT) is always available for scripting.
+    + cmdline and wildmenu can be implemented by a UI.
+    + Support using tmux as the clipboard provider.
+
+ -- James McCoy <jamessan@debian.org>  Wed, 08 Nov 2017 19:46:45 -0500
+
 neovim (0.2.0-4) unstable; urgency=medium
 
   [ Jason Pleau ]

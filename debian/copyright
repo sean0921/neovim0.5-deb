@@ -15,7 +15,7 @@ Files: runtime/*
        test/functional/legacy/*
 Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
            2006 Benji Fisher <benji@member.ams.org>
-           1999-2016 Charles E. Campbell, Jr.
+           1999-2017 Charles E. Campbell, Jr.
            2003 Fred Barnes
            2003 Mario Schweigler
            2004-2008 Michael Geddes
@@ -24,20 +24,28 @@ Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
            2014 David Necas (Yeti)
            2009-2013 Steven Oliver
            2012 Hong Xu
+           2017 Eugene Ciurana
 License: Vim
 
 Files: src/nvim/api/*
+       src/nvim/aucmd.*
        src/nvim/bufhl_defs.h
+       src/nvim/CMakeLists.txt
+       src/nvim/cursor_shape.*
        src/nvim/eval/*
        src/nvim/event/*
        src/nvim/func_attr.h
+       src/nvim/generators/*
+       src/nvim/highlight_defs.h
        src/nvim/log.*
+       src/nvim/lua/*
        src/nvim/map.*
        src/nvim/memory.*
        src/nvim/msgpack_rpc/*
        src/nvim/os/fileio.*
        src/nvim/os/pty_process*
        src/nvim/os/stdpaths.*
+       src/nvim/README.md
        src/nvim/rbuffer.*
        src/nvim/shada.*
        src/nvim/state.*
@@ -49,12 +57,15 @@ Files: src/nvim/api/*
        runtime/autoload/health.vim
        runtime/autoload/health/*
        runtime/autoload/msgpack.vim
+       runtime/autoload/provider.vim
        runtime/autoload/provider/*
        runtime/autoload/remote/*
        runtime/autoload/shada.vim
+       runtime/autoload/tutor.vim
        runtime/autoload/vimexpect.vim
        runtime/doc/api.txt
        runtime/doc/deprecated.txt
+       runtime/doc/if_lua.txt
        runtime/doc/if_ruby.txt
        runtime/doc/job_control.txt
        runtime/doc/msgpack_rpc.txt
@@ -62,18 +73,29 @@ Files: src/nvim/api/*
        runtime/doc/pi_health.txt
        runtime/doc/provider.txt
        runtime/doc/remote_plugin.txt
+       runtime/doc/term.txt
+       runtime/doc/ui.txt
        runtime/doc/vim_diff.txt
+       runtime/ftplugin/tutor.vim
        runtime/nvim.desktop
        runtime/nvim.png
        runtime/plugin/gui_shim.vim
        runtime/plugin/health.vim
        runtime/plugin/man.vim
+       runtime/syntax/tutor.vim
+       runtime/tutor/*
 Copyright: Neovim contributors
 License: Apache
 
 Files: src/clint.py
 Copyright: 2009 Google Inc.
-License: BSD-3-clause
+License: clint
+
+Files: cmake/FindLua.cmake
+       runtime/indent/cmake.vim
+       runtime/syntax/cmake.vim
+Copyright: 2000-2017 Kitware, Inc. and Contributors
+License: Kitware
 
 Files: runtime/plugin/tarPlugin.vim
        runtime/syntax/initng.vim
@@ -105,6 +127,13 @@ License: Expat
 Files: src/nvim/regexp.c
 Copyright: 1986 University of Toronto
 License: Vim-Regexp
+
+Files: runtime/syntax/tmux.vim
+       src/nvim/lib/kbtree.h
+Copyright: Eric Pruitt <eric.pruitt@gmail.com>
+           1997-1999, 2001 John-Mark Gurney
+           2008-2009 Attractive Chaos <attractor@live.co.uk>
+License: BSD-2-clause
 
 License: Apache
  Copyright Neovim contributors. All rights reserved.
@@ -226,7 +255,7 @@ License: Vim
       license for previous Vim releases instead of the license that they came
       with, at your option.
 
-License: BSD-3-clause
+License: clint
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are
  met:
@@ -246,6 +275,34 @@ License: BSD-3-clause
  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: Kitware
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ .
+ * Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+ .
+ * Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+ .
+ * Neither the name of Kitware, Inc. nor the names of Contributors
+   may be used to endorse or promote products derived from this
+   software without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
@@ -323,3 +380,25 @@ License: Vim-Regexp
  .
  3. Altered versions must be plainly marked as such, and must not
         be misrepresented as being the original software.
+
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ .
+ 1. Redistributions of source code must retain the above copyright notice, this
+    list of conditions and the following disclaimer.
+ .
+ 2. Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
