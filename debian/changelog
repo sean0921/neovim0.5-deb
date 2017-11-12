@@ -1,6 +1,8 @@
 neovim (0.2.1-3) UNRELEASED; urgency=medium
 
   * Add .nvimlog to debian/clean
+  * Switch back to Lua on mips64el, since there are sporadic test failures
+    with LuaJIT
 
  -- James McCoy <jamessan@debian.org>  Sat, 11 Nov 2017 12:25:00 -0500
 
