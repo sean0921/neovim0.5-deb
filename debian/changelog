@@ -1,4 +1,4 @@
-neovim (0.2.1-3) UNRELEASED; urgency=medium
+neovim (0.2.1-3) unstable; urgency=medium
 
   * Add .nvimlog to debian/clean
   * Switch back to Lua on mips64el, since there are sporadic test failures
@@ -9,7 +9,7 @@ neovim (0.2.1-3) UNRELEASED; urgency=medium
   * Cherry-pick cf75de710, 0407ddb36, and b63cde97f from upstream to fix test
     failures seen on the buildds
 
- -- James McCoy <jamessan@debian.org>  Sat, 11 Nov 2017 12:25:00 -0500
+ -- James McCoy <jamessan@debian.org>  Sun, 12 Nov 2017 21:47:38 -0500
 
 neovim (0.2.1-2) unstable; urgency=medium
 
