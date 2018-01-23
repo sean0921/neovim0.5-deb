@@ -10,7 +10,7 @@ Build-Depends:
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
  libkvm-dev [kfreebsd-any],
- libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 powerpc] | liblua5.1-dev,
+ libluajit-5.1-dev [amd64 armel armhf hurd-i386 i386 powerpc] | liblua5.1-dev,
  libluajit-5.1-dev (>= 2.1.0~beta3) [mips mipsel] | liblua5.1-dev,
  libmsgpack-dev (>= 1.0.0),
  libnss-wrapper <!nocheck>,
@@ -23,7 +23,7 @@ Build-Depends:
  lua-lpeg,
  lua-mpack,
  lua-nvim (>= 0.0.1-26-1~) [!powerpcspe !hurd-i386] <!nocheck>,
- luajit [amd64 armel armhf hurd-i386 i386 kfreebsd-i386 powerpc] | lua5.1,
+ luajit [amd64 armel armhf hurd-i386 i386 powerpc] | lua5.1,
  luajit (>= 2.1.0~beta3) [mips mipsel] | lua5.1,
  ninja-build,
  pkg-config
