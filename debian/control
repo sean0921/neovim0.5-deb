@@ -5,7 +5,7 @@ Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends:
  cmake,
- debhelper (>= 10),
+ debhelper (>= 11),
  gperf,
  libacl1-dev,
  libjemalloc-dev [!hurd-any],
