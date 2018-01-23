@@ -7,7 +7,7 @@ Copyright: Neovim contributors
 License: Apache
 
 Files: debian/*
-Copyright: 2016 James McCoy <jamessan@debian.org>
+Copyright: 2016-2018 James McCoy <jamessan@debian.org>
 License: Apache
 
 Files: runtime/*
