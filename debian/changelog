@@ -1,11 +1,14 @@
-neovim (0.2.2-2) UNRELEASED; urgency=medium
+neovim (0.2.2-2) unstable; urgency=medium
 
   * Use lua for build/test on kfreebsd-*
   * Exclude lua-nvim B-D on ia64 to bootstrap neovim
   * Cherry pick "unittest: Ignore _Float128 types in ffi" from upstream
     to fix unit test failures with new GCC
+  * Bump debhelper compat to 11
+  * Declare compliance with Policy 4.1.3, no changes needed
+  * Change Vcs-* to salsa.d.o
 
- -- James McCoy <jamessan@debian.org>  Mon, 22 Jan 2018 22:50:34 -0500
+ -- James McCoy <jamessan@debian.org>  Tue, 23 Jan 2018 22:52:38 -0500
 
 neovim (0.2.2-1) unstable; urgency=medium
 
