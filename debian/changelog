@@ -1,3 +1,10 @@
+neovim (0.2.2-3) UNRELEASED; urgency=medium
+
+  * Avoid jemalloc on architectures which can vary page size
+  * Disable lua-nvim exclusion on ia64/powerpcspe
+
+ -- James McCoy <jamessan@debian.org>  Tue, 06 Feb 2018 22:56:43 -0500
+
 neovim (0.2.2-2) unstable; urgency=medium
 
   * Use lua for build/test on kfreebsd-*
