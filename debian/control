@@ -24,7 +24,7 @@ Build-Depends:
  lua-busted <!nocheck>,
  lua-lpeg,
  lua-mpack,
- lua-nvim (>= 0.0.1-26-1~) [!ia64 !powerpcspe !hurd-i386] <!nocheck>,
+ lua-nvim (>= 0.0.1-26-1~) [!hurd-i386] <!nocheck>,
  luajit [amd64 armel armhf hurd-i386 i386 powerpc] | lua5.1,
  luajit (>= 2.1.0~beta3) [mips mipsel] | lua5.1,
  ninja-build,
