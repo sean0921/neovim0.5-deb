@@ -33,7 +33,7 @@ neovim (0.2.1-3) unstable; urgency=medium
   * Add .nvimlog to debian/clean
   * Switch back to Lua on mips64el, since there are sporadic test failures
     with LuaJIT
-  * Set R³ to no
+  * Set Rules-Requires-Root to no
   * Switch lua-nvim Build-Depends to an architecture blacklist, since it's
     currently available everywhere other than powerpcspe and hurd-i386.
   * Cherry-pick cf75de710, 0407ddb36, and b63cde97f from upstream to fix test
