@@ -1,9 +1,10 @@
-neovim (0.2.2-3) UNRELEASED; urgency=medium
+neovim (0.2.2-3) unstable; urgency=medium
 
   * Avoid jemalloc on architectures which can vary page size
   * Disable lua-nvim exclusion on ia64/powerpcspe
+  * unittest: Ignore all _Float-prefixed types (Closes: #891350)
 
- -- James McCoy <jamessan@debian.org>  Tue, 06 Feb 2018 22:56:43 -0500
+ -- James McCoy <jamessan@debian.org>  Sun, 25 Feb 2018 07:52:12 -0500
 
 neovim (0.2.2-2) unstable; urgency=medium
 
