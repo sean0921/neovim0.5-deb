@@ -6,6 +6,7 @@ Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends:
  cmake,
  debhelper (>= 11),
+ gettext,
  gperf,
  libacl1-dev,
 # Avoid jemalloc on Linux archs which can vary page size until jemalloc >= 5.0
