@@ -92,6 +92,7 @@
 #include "nvim/eval.h"
 #include "nvim/fileio.h"
 #include "nvim/fold.h"
+#include "nvim/buffer_updates.h"
 #include "nvim/mark.h"
 #include "nvim/memline.h"
 #include "nvim/message.h"
@@ -972,7 +973,7 @@ static u_entry_T *unserialize_uep(bufinfo_T * bi, bool *error,
 
   char_u **array = NULL;
   if (uep->ue_size > 0) {
-    if ((size_t)uep->ue_size < SIZE_MAX / sizeof(char_u *)) {
+    if ((size_t)uep->ue_size < SIZE_MAX / sizeof(char_u *)) {  // -V547
       array = xmalloc(sizeof(char_u *) * (size_t)uep->ue_size);
       memset(array, 0, sizeof(char_u *) * (size_t)uep->ue_size);
     }
@@ -1404,7 +1405,7 @@ void u_read_undo(char *name, char_u *hash, char_u *orig_name)
   // sequence numbers of the headers.
   // When there are no headers uhp_table is NULL.
   if (num_head > 0) {
-    if ((size_t)num_head < SIZE_MAX / sizeof(*uhp_table)) {
+    if ((size_t)num_head < SIZE_MAX / sizeof(*uhp_table)) {  // -V547
       uhp_table = xmalloc((size_t)num_head * sizeof(*uhp_table));
     }
   }
@@ -1672,7 +1673,7 @@ void u_undo(int count)
     undo_undoes = TRUE;
   else
     undo_undoes = !undo_undoes;
-  u_doit(count, false);
+  u_doit(count, false, true);
 }
 
 /*
@@ -1685,7 +1686,7 @@ void u_redo(int count)
     undo_undoes = false;
   }
 
-  u_doit(count, false);
+  u_doit(count, false, true);
 }
 
 /// Undo and remove the branch from the undo tree.
@@ -1697,7 +1698,9 @@ bool u_undo_and_forget(int count)
     count = 1;
   }
   undo_undoes = true;
-  u_doit(count, true);
+  u_doit(count, true,
+         // Don't send nvim_buf_lines_event for u_undo_and_forget().
+         false);
 
   if (curbuf->b_u_curhead == NULL) {
     // nothing was undone.
@@ -1732,7 +1735,11 @@ bool u_undo_and_forget(int count)
 }
 
 /// Undo or redo, depending on `undo_undoes`, `count` times.
-static void u_doit(int startcount, bool quiet)
+///
+/// @param startcount How often to undo or redo
+/// @param quiet If `true`, don't show messages
+/// @param do_buf_event If `true`, send the changedtick with the buffer updates
+static void u_doit(int startcount, bool quiet, bool do_buf_event)
 {
   int count = startcount;
 
@@ -1768,7 +1775,7 @@ static void u_doit(int startcount, bool quiet)
         break;
       }
 
-      u_undoredo(true);
+      u_undoredo(true, do_buf_event);
     } else {
       if (curbuf->b_u_curhead == NULL || get_undolevel() <= 0) {
         beep_flush();           /* nothing to redo */
@@ -1779,7 +1786,7 @@ static void u_doit(int startcount, bool quiet)
         break;
       }
 
-      u_undoredo(FALSE);
+      u_undoredo(false, do_buf_event);
 
       /* Advance for next redo.  Set "newhead" when at the end of the
        * redoable changes. */
@@ -2026,8 +2033,8 @@ void undo_time(long step, int sec, int file, int absolute)
           || (uhp->uh_seq == target && !above))
         break;
       curbuf->b_u_curhead = uhp;
-      u_undoredo(TRUE);
-      uhp->uh_walk = nomark;            /* don't go back down here */
+      u_undoredo(true, true);
+      uhp->uh_walk = nomark;            // don't go back down here
     }
 
     /*
@@ -2082,7 +2089,7 @@ void undo_time(long step, int sec, int file, int absolute)
         break;
       }
 
-      u_undoredo(FALSE);
+      u_undoredo(false, true);
 
       /* Advance "curhead" to below the header we last used.  If it
       * becomes NULL then we need to set "newhead" to this leaf. */
@@ -2096,8 +2103,8 @@ void undo_time(long step, int sec, int file, int absolute)
 
       uhp = uhp->uh_prev.ptr;
       if (uhp == NULL || uhp->uh_walk != mark) {
-        /* Need to redo more but can't find it... */
-        EMSG2(_(e_intern2), "undo_time()");
+        // Need to redo more but can't find it...
+        internal_error("undo_time()");
         break;
       }
     }
@@ -2105,16 +2112,15 @@ void undo_time(long step, int sec, int file, int absolute)
   u_undo_end(did_undo, absolute, false);
 }
 
-/*
- * u_undoredo: common code for undo and redo
- *
- * The lines in the file are replaced by the lines in the entry list at
- * curbuf->b_u_curhead. The replaced lines in the file are saved in the entry
- * list for the next undo/redo.
- *
- * When "undo" is TRUE we go up in the tree, when FALSE we go down.
- */
-static void u_undoredo(int undo)
+/// u_undoredo: common code for undo and redo
+///
+/// The lines in the file are replaced by the lines in the entry list at
+/// curbuf->b_u_curhead. The replaced lines in the file are saved in the entry
+/// list for the next undo/redo.
+///
+/// @param undo If `true`, go up the tree. Down if `false`.
+/// @param do_buf_event If `true`, send buffer updates.
+static void u_undoredo(int undo, bool do_buf_event)
 {
   char_u      **newarray = NULL;
   linenr_T oldsize;
@@ -2163,8 +2169,8 @@ static void u_undoredo(int undo)
     if (top > curbuf->b_ml.ml_line_count || top >= bot
         || bot > curbuf->b_ml.ml_line_count + 1) {
       unblock_autocmds();
-      EMSG(_("E438: u_undo: line numbers wrong"));
-      changed();                /* don't want UNCHANGED now */
+      IEMSG(_("E438: u_undo: line numbers wrong"));
+      changed();                // don't want UNCHANGED now
       return;
     }
 
@@ -2242,7 +2248,7 @@ static void u_undoredo(int undo)
       }
     }
 
-    changed_lines(top + 1, 0, bot, newsize - oldsize);
+    changed_lines(top + 1, 0, bot, newsize - oldsize, do_buf_event);
 
     /* set '[ and '] mark */
     if (top + 1 < curbuf->b_op_start.lnum)
@@ -2268,12 +2274,21 @@ static void u_undoredo(int undo)
 
   curhead->uh_entry = newlist;
   curhead->uh_flags = new_flags;
-  if ((old_flags & UH_EMPTYBUF) && bufempty())
+  if ((old_flags & UH_EMPTYBUF) && BUFEMPTY()) {
     curbuf->b_ml.ml_flags |= ML_EMPTY;
-  if (old_flags & UH_CHANGED)
+  }
+  if (old_flags & UH_CHANGED) {
     changed();
-  else
+  } else {
     unchanged(curbuf, FALSE);
+  }
+
+  // because the calls to changed()/unchanged() above will bump b_changedtick
+  // again, we need to send a nvim_buf_lines_event with just the new value of
+  // b:changedtick
+  if (do_buf_event && kv_size(curbuf->update_channels)) {
+    buf_updates_changedtick(curbuf);
+  }
 
   /*
    * restore marks from before undo/redo
@@ -2519,7 +2534,7 @@ void ex_undolist(exarg_T *eap)
 
     msg_start();
     msg_puts_attr(_("number changes  when               saved"),
-                  hl_attr(HLF_T));
+                  HL_ATTR(HLF_T));
     for (int i = 0; i < ga.ga_len && !got_int; i++) {
       msg_putchar('\n');
       if (got_int) {
@@ -2655,7 +2670,7 @@ static void u_unch_branch(u_header_T *uhp)
 static u_entry_T *u_get_headentry(void)
 {
   if (curbuf->b_u_newhead == NULL || curbuf->b_u_newhead->uh_entry == NULL) {
-    EMSG(_("E439: undo list corrupt"));
+    IEMSG(_("E439: undo list corrupt"));
     return NULL;
   }
   return curbuf->b_u_newhead->uh_entry;
@@ -2684,11 +2699,11 @@ static void u_getbot(void)
     extra = curbuf->b_ml.ml_line_count - uep->ue_lcount;
     uep->ue_bot = uep->ue_top + uep->ue_size + 1 + extra;
     if (uep->ue_bot < 1 || uep->ue_bot > curbuf->b_ml.ml_line_count) {
-      EMSG(_("E440: undo line missing"));
-      uep->ue_bot = uep->ue_top + 1;        /* assume all lines deleted, will
-                                             * get all the old lines back
-                                             * without deleting the current
-                                             * ones */
+      IEMSG(_("E440: undo line missing"));
+      uep->ue_bot = uep->ue_top + 1;        // assume all lines deleted, will
+                                            // get all the old lines back
+                                            // without deleting the current
+                                            // ones
     }
 
     curbuf->b_u_newhead->uh_getbot_entry = NULL;
@@ -2941,17 +2956,20 @@ bool curbufIsChanged(void)
           && (curbuf->b_changed || file_ff_differs(curbuf, true)));
 }
 
-/*
- * For undotree(): Append the list of undo blocks at "first_uhp" to "list".
- * Recursive.
- */
-void u_eval_tree(u_header_T *first_uhp, list_T *list)
+/// Append the list of undo blocks to a newly allocated list
+///
+/// For use in undotree(). Recursive.
+///
+/// @param[in]  first_uhp  Undo blocks list to start with.
+///
+/// @return [allocated] List with a representation of undo blocks.
+list_T *u_eval_tree(const u_header_T *const first_uhp)
+  FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_RET
 {
-  u_header_T  *uhp = first_uhp;
-  dict_T      *dict;
+  list_T *const list = tv_list_alloc(kListLenMayKnow);
 
-  while (uhp != NULL) {
-    dict = tv_dict_alloc();
+  for (const u_header_T *uhp = first_uhp; uhp != NULL; uhp = uhp->uh_prev.ptr) {
+    dict_T *const dict = tv_dict_alloc();
     tv_dict_add_nr(dict, S_LEN("seq"), (varnumber_T)uhp->uh_seq);
     tv_dict_add_nr(dict, S_LEN("time"), (varnumber_T)uhp->uh_time);
     if (uhp == curbuf->b_u_newhead) {
@@ -2965,14 +2983,12 @@ void u_eval_tree(u_header_T *first_uhp, list_T *list)
     }
 
     if (uhp->uh_alt_next.ptr != NULL) {
-      list_T *alt_list = tv_list_alloc();
-
       // Recursive call to add alternate undo tree.
-      u_eval_tree(uhp->uh_alt_next.ptr, alt_list);
-      tv_dict_add_list(dict, S_LEN("alt"), alt_list);
+      tv_dict_add_list(dict, S_LEN("alt"), u_eval_tree(uhp->uh_alt_next.ptr));
     }
 
     tv_list_append_dict(list, dict);
-    uhp = uhp->uh_prev.ptr;
   }
+
+  return list;
 }

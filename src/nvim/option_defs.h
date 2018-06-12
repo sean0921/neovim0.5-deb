@@ -3,6 +3,7 @@
 
 #include "nvim/types.h"
 #include "nvim/macros.h"  // For EXTERN
+#include "eval/typval.h"  // For scid_T
 
 // option_defs.h: definition of global variables for settable options
 
@@ -394,11 +395,13 @@ EXTERN char_u   *p_dir;         /* 'directory' */
 EXTERN char_u   *p_dy;          /* 'display' */
 EXTERN unsigned dy_flags;
 #ifdef IN_OPTION_C
-static char *(p_dy_values[]) = { "lastline", "truncate", "uhex", NULL };
+static char *(p_dy_values[]) = { "lastline", "truncate", "uhex", "msgsep",
+                                  NULL };
 #endif
 #define DY_LASTLINE             0x001
 #define DY_TRUNCATE             0x002
 #define DY_UHEX                 0x004
+#define DY_MSGSEP               0x008
 EXTERN int p_ed;                // 'edcompatible'
 EXTERN int p_emoji;             // 'emoji'
 EXTERN char_u   *p_ead;         // 'eadirection'
@@ -447,13 +450,13 @@ EXTERN char_u   *p_popt;        // 'printoptions'
 EXTERN char_u   *p_header;      // 'printheader'
 EXTERN int p_prompt;            // 'prompt'
 EXTERN char_u   *p_guicursor;   // 'guicursor'
+EXTERN char_u   *p_guifont;     // 'guifont'
+EXTERN char_u   *p_guifontset;  // 'guifontset'
+EXTERN char_u   *p_guifontwide;  // 'guifontwide'
 EXTERN char_u   *p_hf;          // 'helpfile'
 EXTERN long p_hh;               // 'helpheight'
 EXTERN char_u   *p_hlg;         // 'helplang'
 EXTERN int p_hid;               // 'hidden'
-// Use P_HID to check if a buffer is to be hidden when it is no longer
-// visible in a window.
-# define P_HID(buf) (buf_hide(buf))
 EXTERN char_u   *p_hl;          // 'highlight'
 EXTERN int p_hls;               // 'hlsearch'
 EXTERN long p_hi;               // 'history'
@@ -478,6 +481,7 @@ EXTERN char_u   *p_langmap;     // 'langmap'
 EXTERN int p_lnr;               // 'langnoremap'
 EXTERN int p_lrm;               // 'langremap'
 EXTERN char_u   *p_lm;          // 'langmenu'
+EXTERN long     *p_linespace;   // 'linespace'
 EXTERN char_u   *p_lispwords;   // 'lispwords'
 EXTERN long p_ls;               // 'laststatus'
 EXTERN long p_stal;             // 'showtabline'
@@ -486,6 +490,7 @@ EXTERN char_u   *p_lcs;         // 'listchars'
 EXTERN int p_lz;                // 'lazyredraw'
 EXTERN int p_lpl;               // 'loadplugins'
 EXTERN int p_magic;             // 'magic'
+EXTERN char_u   *p_menc;        // 'makeencoding'
 EXTERN char_u   *p_mef;         // 'makeef'
 EXTERN char_u   *p_mp;          // 'makeprg'
 EXTERN char_u   *p_cc;          // 'colorcolumn'
@@ -494,9 +499,7 @@ EXTERN long p_mat;              // 'matchtime'
 EXTERN long p_mco;              // 'maxcombine'
 EXTERN long p_mfd;              // 'maxfuncdepth'
 EXTERN long p_mmd;              // 'maxmapdepth'
-EXTERN long p_mm;               // 'maxmem'
 EXTERN long p_mmp;              // 'maxmempattern'
-EXTERN long p_mmt;              // 'maxmemtot'
 EXTERN long p_mis;              // 'menuitems'
 EXTERN char_u   *p_msm;         // 'mkspellmem'
 EXTERN long p_mls;              // 'modelines'
@@ -695,6 +698,7 @@ enum {
   , BV_BIN
   , BV_BL
   , BV_BOMB
+  , BV_CHANNEL
   , BV_CI
   , BV_CIN
   , BV_CINK
@@ -732,6 +736,7 @@ enum {
   , BV_KP
   , BV_LISP
   , BV_LW
+  , BV_MENC
   , BV_MA
   , BV_ML
   , BV_MOD
@@ -814,5 +819,11 @@ enum {
 #define NO_LOCAL_UNDOLEVEL -123456
 
 #define SB_MAX 100000  // Maximum 'scrollback' value.
+
+/// Stores an identifier of a script or channel that last set an option.
+typedef struct {
+  scid_T script_id;        /// Script ID or one of SID_* special values.
+  uint64_t channel_id;     /// Only used when script_id is SID_API_CLIENT.
+} LastSet;
 
 #endif // NVIM_OPTION_DEFS_H

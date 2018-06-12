@@ -382,7 +382,7 @@ CTRL-N		After using 'wildchar' which got multiple matches, go to next
 <S-Tab>							*c_CTRL-P* *c_<S-Tab>*
 CTRL-P		After using 'wildchar' which got multiple matches, go to
 		previous match.  Otherwise recall older command-line from
-		history.  <S-Tab> only works with the GUI.
+		history.
 							*c_CTRL-A*
 CTRL-A		All names that match the pattern in front of the cursor are
 		inserted.
@@ -1088,7 +1088,7 @@ Another example: >
 	:au CmdwinEnter [/?]  startinsert
 This will make Vim start in Insert mode in the command-line window.
 
-						*cmdwin-char*
+					*cmdline-char* *cmdwin-char*
 The character used for the pattern indicates the type of command-line:
 	:	normal Ex command
 	>	debug mode command |debug-mode|

@@ -26,13 +26,6 @@
 /// length of a buffer to store a number in ASCII (64 bits binary + NUL)
 enum { NUMBUFLEN = 65 };
 
-// flags for vim_str2nr()
-#define STR2NR_BIN 1
-#define STR2NR_OCT 2
-#define STR2NR_HEX 4
-#define STR2NR_ALL (STR2NR_BIN + STR2NR_OCT + STR2NR_HEX)
-#define STR2NR_FORCE 8  // only when ONE of the above is used
-
 #define MAX_TYPENR 65535
 
 #define ROOT_UID 0
@@ -162,6 +155,7 @@ enum {
   EXPAND_USER_ADDR_TYPE,
   EXPAND_PACKADD,
   EXPAND_MESSAGES,
+  EXPAND_CHECKHEALTH,
 };
 
 
@@ -278,8 +272,8 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 
 
 // Enums need a typecast to be used as array index (for Ultrix).
-#define hl_attr(n)      highlight_attr[(int)(n)]
-#define term_str(n)     term_strings[(int)(n)]
+#define HL_ATTR(n)      highlight_attr[(int)(n)]
+#define TERM_STR(n)     term_strings[(int)(n)]
 
 /// Maximum number of bytes in a multi-byte character.  It can be one 32-bit
 /// character of up to 6 bytes, or one 16-bit character of up to three bytes
@@ -314,8 +308,13 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 // Lowest number used for window ID. Cannot have this many windows per tab.
 #define LOWEST_WIN_ID 1000
 
-#if (defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) && defined(S_ISCHR)
+// BSD is supposed to cover FreeBSD and similar systems.
+#if (defined(BSD) || defined(__FreeBSD_kernel__)) && defined(S_ISCHR)
 # define OPEN_CHR_FILES
 #endif
+
+// Replacement for nchar used by nv_replace().
+#define REPLACE_CR_NCHAR    -1
+#define REPLACE_NL_NCHAR    -2
 
 #endif  // NVIM_VIM_H

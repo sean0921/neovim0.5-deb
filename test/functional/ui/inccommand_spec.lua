@@ -12,9 +12,12 @@ local insert = helpers.insert
 local meths = helpers.meths
 local neq = helpers.neq
 local ok = helpers.ok
+local retry = helpers.retry
 local source = helpers.source
 local wait = helpers.wait
 local nvim = helpers.nvim
+local iswin = helpers.iswin
+local sleep = helpers.sleep
 
 local default_text = [[
   Inc substitution on
@@ -62,6 +65,7 @@ local function common_setup(screen, inccommand, text)
     command("syntax on")
     command("set nohlsearch")
     command("hi Substitute guifg=red guibg=yellow")
+    command("set display-=msgsep")
     screen:attach()
     screen:set_default_attr_ids({
       [1]  = {foreground = Screen.colors.Fuchsia},
@@ -91,22 +95,30 @@ local function common_setup(screen, inccommand, text)
   end
 end
 
-describe(":substitute, inccommand=split does not trigger preview", function()
+describe(":substitute, inccommand=split", function()
   before_each(function()
     clear()
     common_setup(nil, "split", default_text)
   end)
 
-  it("if invoked by a script ", function()
+  -- Test the tests: verify that the `1==bufnr('$')` assertion
+  -- in the "no preview" tests (below) actually means something.
+  it("previews interactive cmdline", function()
+    feed(':%s/tw/MO/g')
+    retry(nil, 1000, function()
+      eq(2, eval("bufnr('$')"))
+    end)
+  end)
+
+  it("no preview if invoked by a script", function()
     source('%s/tw/MO/g')
     wait()
     eq(1, eval("bufnr('$')"))
-
     -- sanity check: assert the buffer state
     expect(default_text:gsub("tw", "MO"))
   end)
 
-  it("if invoked by feedkeys()", function()
+  it("no preview if invoked by feedkeys()", function()
     -- in a script...
     source([[:call feedkeys(":%s/tw/MO/g\<CR>")]])
     wait()
@@ -114,15 +126,12 @@ describe(":substitute, inccommand=split does not trigger preview", function()
     feed([[:call feedkeys(":%s/tw/MO/g\<CR>")<CR>]])
     wait()
     eq(1, eval("bufnr('$')"))
-
     -- sanity check: assert the buffer state
     expect(default_text:gsub("tw", "MO"))
   end)
 end)
 
 describe(":substitute, 'inccommand' preserves", function()
-   if helpers.pending_win32(pending) then return end
-
   before_each(clear)
 
   it('listed buffers (:ls)', function()
@@ -285,8 +294,6 @@ describe(":substitute, 'inccommand' preserves", function()
 end)
 
 describe(":substitute, 'inccommand' preserves undo", function()
-   if helpers.pending_win32(pending) then return end
-
   local cases = { "", "split", "nosplit" }
 
   local substrings = {
@@ -700,8 +707,6 @@ describe(":substitute, 'inccommand' preserves undo", function()
 end)
 
 describe(":substitute, inccommand=split", function()
-  if helpers.pending_win32(pending) then return end
-
   local screen = Screen.new(30,15)
 
   before_each(function()
@@ -1169,8 +1174,6 @@ describe(":substitute, inccommand=split", function()
 end)
 
 describe("inccommand=nosplit", function()
-  if helpers.pending_win32(pending) then return end
-
   local screen = Screen.new(20,10)
 
   before_each(function()
@@ -1353,11 +1356,26 @@ describe("inccommand=nosplit", function()
       :echo 'foo'^         |
     ]])
   end)
+
+  it("does not execute trailing bar-separated commands #7494", function()
+    feed(':%s/two/three/g|q!')
+    screen:expect([[
+      Inc substitution on |
+      {12:three} lines         |
+      Inc substitution on |
+      {12:three} lines         |
+                          |
+      {15:~                   }|
+      {15:~                   }|
+      {15:~                   }|
+      {15:~                   }|
+      :%s/two/three/g|q!^  |
+    ]])
+    eq(eval('v:null'), eval('v:exiting'))
+  end)
 end)
 
 describe(":substitute, 'inccommand' with a failing expression", function()
-  if helpers.pending_win32(pending) then return end
-
   local screen = Screen.new(20,10)
   local cases = { "", "split", "nosplit" }
 
@@ -1621,8 +1639,6 @@ describe("'inccommand' autocommands", function()
 end)
 
 describe("'inccommand' split windows", function()
-  if helpers.pending_win32(pending) then return end
-
   local screen
   local function refresh()
     clear()
@@ -1642,26 +1658,26 @@ describe("'inccommand' split windows", function()
     feed_command("split")
     feed(":%s/tw")
     screen:expect([[
-      Inc substitution on {10:|}Inc substitution on|
-      {12:tw}o lines           {10:|}{12:tw}o lines          |
-                          {10:|}                   |
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {11:[No Name] [+]       }{10:|}{15:~                  }|
-      Inc substitution on {10:|}{15:~                  }|
-      {12:tw}o lines           {10:|}{15:~                  }|
-                          {10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
+      Inc substitution on {10:│}Inc substitution on|
+      {12:tw}o lines           {10:│}{12:tw}o lines          |
+                          {10:│}                   |
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {11:[No Name] [+]       }{10:│}{15:~                  }|
+      Inc substitution on {10:│}{15:~                  }|
+      {12:tw}o lines           {10:│}{15:~                  }|
+                          {10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
       {10:[No Name] [+]        [No Name] [+]      }|
       |2| {12:tw}o lines                           |
       {15:~                                       }|
@@ -1681,20 +1697,20 @@ describe("'inccommand' split windows", function()
 
     feed(":%s/tw")
     screen:expect([[
-      Inc substitution on {10:|}Inc substitution on|
-      {12:tw}o lines           {10:|}{12:tw}o lines          |
-                          {10:|}                   |
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
-      {15:~                   }{10:|}{15:~                  }|
+      Inc substitution on {10:│}Inc substitution on|
+      {12:tw}o lines           {10:│}{12:tw}o lines          |
+                          {10:│}                   |
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
+      {15:~                   }{10:│}{15:~                  }|
       {11:[No Name] [+]        }{10:[No Name] [+]      }|
       Inc substitution on                     |
       {12:tw}o lines                               |
@@ -1830,13 +1846,12 @@ describe("'inccommand' with 'gdefault'", function()
 end)
 
 describe(":substitute", function()
-  local screen =  Screen.new(30,15)
-
+  local screen = Screen.new(30,15)
   before_each(function()
     clear()
   end)
 
-  it(", inccommand=split, highlights multiline substitutions", function()
+  it("inccommand=split, highlights multiline substitutions", function()
     common_setup(screen, "split", multiline_text)
     feed("gg")
 
@@ -1898,7 +1913,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=nosplit, highlights multiline substitutions", function()
+  it("inccommand=nosplit, highlights multiline substitutions", function()
     common_setup(screen, "nosplit", multiline_text)
     feed("gg")
 
@@ -1941,7 +1956,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, highlights multiple matches on a line", function()
+  it("inccommand=split, highlights multiple matches on a line", function()
     common_setup(screen, "split", multimatch_text)
     command("set gdefault")
     feed("gg")
@@ -1966,7 +1981,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=nosplit, highlights multiple matches on a line", function()
+  it("inccommand=nosplit, highlights multiple matches on a line", function()
     common_setup(screen, "nosplit", multimatch_text)
     command("set gdefault")
     feed("gg")
@@ -1991,7 +2006,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, with \\zs", function()
+  it("inccommand=split, with \\zs", function()
     common_setup(screen, "split", multiline_text)
     feed("gg")
 
@@ -2015,7 +2030,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=nosplit, with \\zs", function()
+  it("inccommand=nosplit, with \\zs", function()
     common_setup(screen, "nosplit", multiline_text)
     feed("gg")
 
@@ -2039,7 +2054,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, substitutions of different length",
+  it("inccommand=split, substitutions of different length",
     function()
     common_setup(screen, "split", "T T123 T2T TTT T090804\nx")
 
@@ -2063,7 +2078,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=nosplit, substitutions of different length", function()
+  it("inccommand=nosplit, substitutions of different length", function()
     common_setup(screen, "nosplit", "T T123 T2T TTT T090804\nx")
 
     feed(":%s/T\\([0-9]\\+\\)/\\1\\1/g")
@@ -2086,7 +2101,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, contraction of lines", function()
+  it("inccommand=split, contraction of lines", function()
     local text = [[
       T T123 T T123 T2T TT T23423424
       x
@@ -2135,7 +2150,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=nosplit, contraction of lines", function()
+  it("inccommand=nosplit, contraction of lines", function()
     local text = [[
       T T123 T T123 T2T TT T23423424
       x
@@ -2165,7 +2180,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, multibyte text", function()
+  it("inccommand=split, multibyte text", function()
     common_setup(screen, "split", multibyte_text)
     feed(":%s/£.*ѫ/X¥¥")
     screen:expect([[
@@ -2206,7 +2221,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=nosplit, multibyte text", function()
+  it("inccommand=nosplit, multibyte text", function()
     common_setup(screen, "nosplit", multibyte_text)
     feed(":%s/£.*ѫ/X¥¥")
     screen:expect([[
@@ -2247,7 +2262,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, small cmdwinheight", function()
+  it("inccommand=split, small cmdwinheight", function()
     common_setup(screen, "split", long_multiline_text)
     command("set cmdwinheight=2")
 
@@ -2309,7 +2324,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, large cmdwinheight", function()
+  it("inccommand=split, large cmdwinheight", function()
     common_setup(screen, "split", long_multiline_text)
     command("set cmdwinheight=11")
 
@@ -2371,7 +2386,7 @@ describe(":substitute", function()
     ]])
   end)
 
-  it(", inccommand=split, lookaround", function()
+  it("inccommand=split, lookaround", function()
     common_setup(screen, "split", "something\neverything\nsomeone")
     feed([[:%s/\(some\)\@<lt>=thing/one/]])
     screen:expect([[
@@ -2454,5 +2469,64 @@ describe(":substitute", function()
       {10:[Preview]                     }|
       :%s/some\(thing\)\@!/every/^   |
     ]])
+  end)
+end)
+
+it(':substitute with inccommand during :terminal activity', function()
+  retry(2, nil, function()
+    local screen = Screen.new(30,15)
+    clear()
+
+    command("set cmdwinheight=3")
+    if iswin() then
+      feed([[:terminal for /L \%I in (1,1,5000) do @(echo xxx & echo xxx & echo xxx)<cr>]])
+    else
+      feed([[:terminal for i in $(seq 1 5000); do printf 'xxx\nxxx\nxxx\n'; done<cr>]])
+    end
+    command('file term')
+    command('new')
+    common_setup(screen, 'split', 'foo bar baz\nbar baz fox\nbar foo baz')
+    command('wincmd =')
+
+    -- Wait for terminal output.
+    screen:expect([[
+      bar baz fox                   |
+      bar foo ba^z                   |
+      {15:~                             }|
+      {15:~                             }|
+      {15:~                             }|
+      {15:~                             }|
+      {11:[No Name] [+]                 }|
+      xxx                           |
+      xxx                           |
+      xxx                           |
+      xxx                           |
+      xxx                           |
+      xxx                           |
+      {10:term                          }|
+                                    |
+    ]])
+
+    feed('gg')
+    feed(':%s/foo/ZZZ')
+    sleep(20)  -- Allow some terminal activity.
+    screen:expect([[
+      {12:ZZZ} bar baz                   |
+      bar baz fox                   |
+      bar {12:ZZZ} baz                   |
+      {15:~                             }|
+      {15:~                             }|
+      {15:~                             }|
+      {11:[No Name] [+]                 }|
+      xxx                           |
+      xxx                           |
+      {10:term                          }|
+      |1| {12:ZZZ} bar baz               |
+      |3| bar {12:ZZZ} baz               |
+      {15:~                             }|
+      {10:[Preview]                     }|
+      :%s/foo/ZZZ^                   |
+    ]])
+
   end)
 end)

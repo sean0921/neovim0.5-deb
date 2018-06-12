@@ -12,9 +12,11 @@
 #include "nvim/api/private/handle.h"
 #include "nvim/msgpack_rpc/helpers.h"
 #include "nvim/ascii.h"
+#include "nvim/assert.h"
 #include "nvim/vim.h"
 #include "nvim/buffer.h"
 #include "nvim/window.h"
+#include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
@@ -25,6 +27,7 @@
 #include "nvim/version.h"
 #include "nvim/lib/kvec.h"
 #include "nvim/getchar.h"
+#include "nvim/ui.h"
 
 /// Helper structure for vim_to_object
 typedef struct {
@@ -45,13 +48,15 @@ typedef struct {
 /// @param[out]  tstate  Location where try state should be saved.
 void try_enter(TryState *const tstate)
 {
+  // TODO(ZyX-I): Check whether try_enter()/try_leave() may use
+  //              enter_cleanup()/leave_cleanup(). Or
+  //              save_dbg_stuff()/restore_dbg_stuff().
   *tstate = (TryState) {
     .current_exception = current_exception,
     .msg_list = (const struct msglist *const *)msg_list,
     .private_msg_list = NULL,
     .trylevel = trylevel,
     .got_int = got_int,
-    .did_throw = did_throw,
     .need_rethrow = need_rethrow,
     .did_emsg = did_emsg,
   };
@@ -59,7 +64,6 @@ void try_enter(TryState *const tstate)
   current_exception = NULL;
   trylevel = 1;
   got_int = false;
-  did_throw = false;
   need_rethrow = false;
   did_emsg = false;
 }
@@ -80,7 +84,6 @@ bool try_leave(const TryState *const tstate, Error *const err)
   assert(trylevel == 0);
   assert(!need_rethrow);
   assert(!got_int);
-  assert(!did_throw);
   assert(!did_emsg);
   assert(msg_list == &tstate->private_msg_list);
   assert(*msg_list == NULL);
@@ -89,7 +92,6 @@ bool try_leave(const TryState *const tstate, Error *const err)
   current_exception = tstate->current_exception;
   trylevel = tstate->trylevel;
   got_int = tstate->got_int;
-  did_throw = tstate->did_throw;
   need_rethrow = tstate->need_rethrow;
   did_emsg = tstate->did_emsg;
   return ret;
@@ -119,13 +121,11 @@ bool try_end(Error *err)
   // try_enter/try_leave.
   trylevel--;
 
-  // Without this it stops processing all subsequent VimL commands and
-  // generates strange error messages if I e.g. try calling Test() in a
-  // cycle
+  // Set by emsg(), affects aborting().  See also enter_cleanup().
   did_emsg = false;
 
   if (got_int) {
-    if (did_throw) {
+    if (current_exception) {
       // If we got an interrupt, discard the current exception
       discard_current_exception();
     }
@@ -144,7 +144,7 @@ bool try_end(Error *err)
     if (should_free) {
       xfree(msg);
     }
-  } else if (did_throw) {
+  } else if (current_exception) {
     api_set_error(err, kErrorTypeException, "%s", current_exception->value);
     discard_current_exception();
   }
@@ -325,7 +325,8 @@ Object get_option_from(void *from, int type, String name, Error *err)
 /// @param type One of `SREQ_GLOBAL`, `SREQ_WIN` or `SREQ_BUF`
 /// @param name The option name
 /// @param[out] err Details of an error that may have occurred
-void set_option_to(void *to, int type, String name, Object value, Error *err)
+void set_option_to(uint64_t channel_id, void *to, int type,
+                   String name, Object value, Error *err)
 {
   if (name.size == 0) {
     api_set_error(err, kErrorTypeValidation, "Empty option name");
@@ -362,7 +363,8 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
     }
   }
 
-  int opt_flags = (type == SREQ_GLOBAL) ? OPT_GLOBAL : OPT_LOCAL;
+  int numval = 0;
+  char *stringval = NULL;
 
   if (flags & SOPT_BOOL) {
     if (value.type != kObjectTypeBoolean) {
@@ -373,8 +375,7 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
       return;
     }
 
-    bool val = value.data.boolean;
-    set_option_value_for(name.data, val, NULL, opt_flags, type, to, err);
+    numval = value.data.boolean;
   } else if (flags & SOPT_NUM) {
     if (value.type != kObjectTypeInteger) {
       api_set_error(err,
@@ -392,8 +393,7 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
       return;
     }
 
-    int val = (int) value.data.integer;
-    set_option_value_for(name.data, val, NULL, opt_flags, type, to, err);
+    numval = (int)value.data.integer;
   } else {
     if (value.type != kObjectTypeString) {
       api_set_error(err,
@@ -403,9 +403,18 @@ void set_option_to(void *to, int type, String name, Object value, Error *err)
       return;
     }
 
-    set_option_value_for(name.data, 0, value.data.string.data,
-            opt_flags, type, to, err);
+    stringval = (char *)value.data.string.data;
   }
+
+  const scid_T save_current_SID = current_SID;
+  current_SID = channel_id == LUA_INTERNAL_CALL ? SID_LUA : SID_API_CLIENT;
+  current_channel_id = channel_id;
+
+  const int opt_flags = (type == SREQ_GLOBAL) ? OPT_GLOBAL : OPT_LOCAL;
+  set_option_value_for(name.data, numval, stringval,
+                       opt_flags, type, to, err);
+
+  current_SID = save_current_SID;
 }
 
 #define TYPVAL_ENCODE_ALLOW_SPECIALS false
@@ -565,7 +574,7 @@ static inline void typval_encode_dict_end(EncodedData *const edata)
     typval_encode_dict_end(edata)
 
 #define TYPVAL_ENCODE_CONV_RECURSE(val, conv_type) \
-    TYPVAL_ENCODE_CONV_NIL()
+    TYPVAL_ENCODE_CONV_NIL(val)
 
 #define TYPVAL_ENCODE_SCOPE static
 #define TYPVAL_ENCODE_NAME object
@@ -677,7 +686,7 @@ tabpage_T *find_tab_by_handle(Tabpage tabpage, Error *err)
 String cchar_to_string(char c)
 {
   char buf[] = { c, NUL };
-  return (String) {
+  return (String){
     .data = xmemdupz(buf, 1),
     .size = (c != NUL) ? 1 : 0
   };
@@ -693,13 +702,13 @@ String cchar_to_string(char c)
 String cstr_to_string(const char *str)
 {
     if (str == NULL) {
-        return (String) STRING_INIT;
+      return (String)STRING_INIT;
     }
 
     size_t len = strlen(str);
-    return (String) {
-        .data = xmemdupz(str, len),
-        .size = len
+    return (String){
+      .data = xmemdupz(str, len),
+      .size = len,
     };
 }
 
@@ -714,7 +723,7 @@ String cstr_to_string(const char *str)
 String cbuf_to_string(const char *buf, size_t size)
   FUNC_ATTR_NONNULL_ALL
 {
-  return (String) {
+  return (String){
     .data = xmemdupz(buf, size),
     .size = size
   };
@@ -729,9 +738,46 @@ String cbuf_to_string(const char *buf, size_t size)
 String cstr_as_string(char *str) FUNC_ATTR_PURE
 {
   if (str == NULL) {
-    return (String) STRING_INIT;
+    return (String)STRING_INIT;
   }
-  return (String) { .data = str, .size = strlen(str) };
+  return (String){ .data = str, .size = strlen(str) };
+}
+
+/// Collects `n` buffer lines into array `l`, optionally replacing newlines
+/// with NUL.
+///
+/// @param buf Buffer to get lines from
+/// @param n Number of lines to collect
+/// @param replace_nl Replace newlines ("\n") with NUL
+/// @param start Line number to start from
+/// @param[out] l Lines are copied here
+/// @param err[out] Error, if any
+/// @return true unless `err` was set
+bool buf_collect_lines(buf_T *buf, size_t n, int64_t start, bool replace_nl,
+                       Array *l, Error *err)
+{
+  for (size_t i = 0; i < n; i++) {
+    int64_t lnum = start + (int64_t)i;
+
+    if (lnum >= MAXLNUM) {
+      if (err != NULL) {
+        api_set_error(err, kErrorTypeValidation, "Line index is too high");
+      }
+      return false;
+    }
+
+    const char *bufstr = (char *)ml_get_buf(buf, (linenr_T)lnum, false);
+    Object str = STRING_OBJ(cstr_to_string(bufstr));
+
+    if (replace_nl) {
+      // Vim represents NULs as NLs, but this may confuse clients.
+      strchrsub(str.data.string.data, '\n', '\0');
+    }
+
+    l->items[i] = str;
+  }
+
+  return true;
 }
 
 /// Converts from type Object to a VimL value.
@@ -760,12 +806,8 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
     case kObjectTypeWindow:
     case kObjectTypeTabpage:
     case kObjectTypeInteger:
-      if (obj.data.integer > VARNUMBER_MAX
-          || obj.data.integer < VARNUMBER_MIN) {
-        api_set_error(err, kErrorTypeValidation, "Integer value outside range");
-        return false;
-      }
-
+      STATIC_ASSERT(sizeof(obj.data.integer) <= sizeof(varnumber_T),
+                    "Integer size must be <= VimL number size");
       tv->v_type = VAR_NUMBER;
       tv->vval.v_number = (varnumber_T)obj.data.integer;
       break;
@@ -786,22 +828,20 @@ bool object_to_vim(Object obj, typval_T *tv, Error *err)
       break;
 
     case kObjectTypeArray: {
-      list_T *const list = tv_list_alloc();
+      list_T *const list = tv_list_alloc((ptrdiff_t)obj.data.array.size);
 
       for (uint32_t i = 0; i < obj.data.array.size; i++) {
         Object item = obj.data.array.items[i];
-        listitem_T *li = tv_list_item_alloc();
+        typval_T li_tv;
 
-        if (!object_to_vim(item, &li->li_tv, err)) {
-          // cleanup
-          tv_list_item_free(li);
+        if (!object_to_vim(item, &li_tv, err)) {
           tv_list_free(list);
           return false;
         }
 
-        tv_list_append(list, li);
+        tv_list_append_owned_tv(list, li_tv);
       }
-      list->lv_refcount++;
+      tv_list_ref(list);
 
       tv->v_type = VAR_LIST;
       tv->vval.v_list = list;
@@ -960,6 +1000,12 @@ static void init_ui_event_metadata(Dictionary *metadata)
   msgpack_rpc_to_object(&unpacked.data, &ui_events);
   msgpack_unpacked_destroy(&unpacked);
   PUT(*metadata, "ui_events", ui_events);
+  Array ui_options = ARRAY_DICT_INIT;
+  ADD(ui_options, STRING_OBJ(cstr_to_string("rgb")));
+  for (UIExtension i = 0; i < kUIExtCount; i++) {
+    ADD(ui_options, STRING_OBJ(cstr_to_string(ui_ext_names[i])));
+  }
+  PUT(*metadata, "ui_options", ARRAY_OBJ(ui_options));
 }
 
 static void init_error_type_metadata(Dictionary *metadata)
@@ -1022,6 +1068,16 @@ Array copy_array(Array array)
   return rv;
 }
 
+Dictionary copy_dictionary(Dictionary dict)
+{
+  Dictionary rv = ARRAY_DICT_INIT;
+  for (size_t i = 0; i < dict.size; i++) {
+    KeyValuePair item = dict.items[i];
+    PUT(rv, item.key.data, copy_object(item.value));
+  }
+  return rv;
+}
+
 /// Creates a deep clone of an object
 Object copy_object(Object obj)
 {
@@ -1039,12 +1095,7 @@ Object copy_object(Object obj)
       return ARRAY_OBJ(copy_array(obj.data.array));
 
     case kObjectTypeDictionary: {
-      Dictionary rv = ARRAY_DICT_INIT;
-      for (size_t i = 0; i < obj.data.dictionary.size; i++) {
-        KeyValuePair item = obj.data.dictionary.items[i];
-        PUT(rv, item.key.data, copy_object(item.value));
-      }
-      return DICTIONARY_OBJ(rv);
+      return DICTIONARY_OBJ(copy_dictionary(obj.data.dictionary));
     }
     default:
       abort();
@@ -1141,7 +1192,7 @@ void api_set_error(Error *err, ErrorType errType, const char *format, ...)
 ///
 /// @param  mode  The abbreviation for the mode
 /// @param  buf  The buffer to get the mapping array. NULL for global
-/// @returns An array of maparg() like dictionaries describing mappings
+/// @returns Array of maparg()-like dictionaries describing mappings
 ArrayOf(Dictionary) keymap_array(String mode, buf_T *buf)
 {
   Array mappings = ARRAY_DICT_INIT;

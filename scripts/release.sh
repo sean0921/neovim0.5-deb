@@ -6,6 +6,7 @@
 #   Create the "release" commit:
 #     - CMakeLists.txt: Unset NVIM_VERSION_PRERELEASE
 #     - CMakeLists.txt: Unset NVIM_API_PRERELEASE
+#     - Create test/functional/fixtures/api_level_N.mpack
 #     - Tag the commit.
 #   Create the "version bump" commit:
 #     - CMakeLists.txt: Set NVIM_VERSION_PRERELEASE to "-dev"
@@ -74,6 +75,8 @@ nvim +'/NVIM_VERSION' +10new +'exe "norm! iUpdate version numbers!!!\<CR>"' \
 
 git add CMakeLists.txt
 git commit -m "$__BUMP_MSG"
+
+rm CMakeLists.txt.bk || true
 
 echo "
 Next steps:

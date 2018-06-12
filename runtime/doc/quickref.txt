@@ -655,7 +655,6 @@ Short explanation of each option:		*option-list*
 'cscoperelative'  'csre'    Use cscope.out path basename as prefix
 'cscopetag'       'cst'     use cscope for tag commands
 'cscopetagorder'  'csto'    determines ":cstag" search order
-'cscopeverbose'   'csverb'  give messages when adding a cscope database
 'cursorbind'	  'crb'     move cursor in window as it moves in other windows
 'cursorcolumn'	  'cuc'	    highlight the screen column of the cursor
 'cursorline'	  'cul'	    highlight the screen line of the cursor
@@ -762,15 +761,14 @@ Short explanation of each option:		*option-list*
 'loadplugins'	  'lpl'     load plugin scripts when starting up
 'magic'			    changes special characters in search patterns
 'makeef'	  'mef'     name of the errorfile for ":make"
+'makeencoding'	  'menc'    encoding of external make/grep commands
 'makeprg'	  'mp'	    program to use for the ":make" command
 'matchpairs'	  'mps'     pairs of characters that "%" can match
 'matchtime'	  'mat'     tenths of a second to show matching paren
 'maxcombine'	  'mco'     maximum nr of combining characters displayed
 'maxfuncdepth'	  'mfd'     maximum recursive depth for user functions
 'maxmapdepth'	  'mmd'     maximum recursive depth for mapping
-'maxmem'	  'mm'	    maximum memory (in Kbyte) used for one buffer
 'maxmempattern'   'mmp'     maximum memory (in Kbyte) used for pattern search
-'maxmemtot'	  'mmt'     maximum memory (in Kbyte) used for all buffers
 'menuitems'	  'mis'     maximum number of items in a menu
 'mkspellmem'	  'msm'     memory used before |:mkspell| compresses the tree
 'modeline'	  'ml'	    recognize modelines at start or end of file

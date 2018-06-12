@@ -1263,7 +1263,7 @@ static int nfa_regatom(void)
         rc_did_emsg = TRUE;
         return FAIL;
       }
-      EMSGN("INTERNAL: Unknown character class char: %" PRId64, c);
+      IEMSGN("INTERNAL: Unknown character class char: %" PRId64, c);
       return FAIL;
     }
     /* When '.' is followed by a composing char ignore the dot, so that
@@ -1711,8 +1711,9 @@ collection:
         if (emit_range) {
           endc = startc;
           startc = oldstartc;
-          if (startc > endc)
-            EMSG_RET_FAIL(_(e_invrange));
+          if (startc > endc) {
+            EMSG_RET_FAIL(_(e_reverse_range));
+          }
 
           if (endc > startc + 2) {
             /* Emit a range instead of the sequence of
@@ -1804,9 +1805,9 @@ collection:
     int plen;
 
 nfa_do_multibyte:
-    /* plen is length of current char with composing chars */
+    // plen is length of current char with composing chars
     if (enc_utf8 && ((*mb_char2len)(c)
-                     != (plen = (*mb_ptr2len)(old_regparse))
+                     != (plen = utfc_ptr2len(old_regparse))
                      || utf_iscomposing(c))) {
       int i = 0;
 
@@ -4117,7 +4118,7 @@ skip_add:
     if (state->c == NFA_ZSTART) {
       subidx = 0;
       sub = &subs->norm;
-    } else if (state->c >= NFA_ZOPEN && state->c <= NFA_ZOPEN9) {
+    } else if (state->c >= NFA_ZOPEN && state->c <= NFA_ZOPEN9) {  // -V560
       subidx = state->c - NFA_ZOPEN;
       sub = &subs->synt;
     } else {
@@ -4169,11 +4170,12 @@ skip_add:
     }
 
     subs = addstate(l, state->out, subs, pim, off_arg);
-    /* "subs" may have changed, need to set "sub" again */
-    if (state->c >= NFA_ZOPEN && state->c <= NFA_ZOPEN9)
+    // "subs" may have changed, need to set "sub" again.
+    if (state->c >= NFA_ZOPEN && state->c <= NFA_ZOPEN9) {  // -V560
       sub = &subs->synt;
-    else
+    } else {
       sub = &subs->norm;
+    }
 
     if (save_in_use == -1) {
       if (REG_MULTI) {
@@ -4217,7 +4219,7 @@ skip_add:
     if (state->c == NFA_ZEND) {
       subidx = 0;
       sub = &subs->norm;
-    } else if (state->c >= NFA_ZCLOSE && state->c <= NFA_ZCLOSE9) {
+    } else if (state->c >= NFA_ZCLOSE && state->c <= NFA_ZCLOSE9) {  // -V560
       subidx = state->c - NFA_ZCLOSE;
       sub = &subs->synt;
     } else {
@@ -4250,11 +4252,12 @@ skip_add:
     }
 
     subs = addstate(l, state->out, subs, pim, off_arg);
-    /* "subs" may have changed, need to set "sub" again */
-    if (state->c >= NFA_ZCLOSE && state->c <= NFA_ZCLOSE9)
+    // "subs" may have changed, need to set "sub" again.
+    if (state->c >= NFA_ZCLOSE && state->c <= NFA_ZCLOSE9) {  // -V560
       sub = &subs->synt;
-    else
+    } else {
       sub = &subs->norm;
+    }
 
     if (REG_MULTI) {
       sub->list.multi[subidx] = save_multipos;
@@ -4356,16 +4359,18 @@ static int check_char_class(int class, int c)
       return OK;
     break;
   case NFA_CLASS_CNTRL:
-    if (c >= 1 && c <= 255 && iscntrl(c))
+    if (c >= 1 && c <= 127 && iscntrl(c)) {
       return OK;
+    }
     break;
   case NFA_CLASS_DIGIT:
     if (ascii_isdigit(c))
       return OK;
     break;
   case NFA_CLASS_GRAPH:
-    if (c >= 1 && c <= 255 && isgraph(c))
+    if (c >= 1 && c <= 127 && isgraph(c)) {
       return OK;
+    }
     break;
   case NFA_CLASS_LOWER:
     if (mb_islower(c) && c != 170 && c != 186) {
@@ -4413,8 +4418,8 @@ static int check_char_class(int class, int c)
     break;
 
   default:
-    /* should not be here :P */
-    EMSGN(_(e_ill_char_class), class);
+    // should not be here :P
+    IEMSGN(_(e_ill_char_class), class);
     return FAIL;
   }
   return FAIL;
@@ -5992,8 +5997,9 @@ static int nfa_regmatch(nfa_regprog_T *prog, nfa_state_T *start,
         int c = t->state->c;
 
 #ifdef REGEXP_DEBUG
-        if (c < 0)
-          EMSGN("INTERNAL: Negative state char: %" PRId64, c);
+        if (c < 0) {
+          IEMSGN("INTERNAL: Negative state char: %" PRId64, c);
+        }
 #endif
         result = (c == curc);
 
@@ -6462,12 +6468,13 @@ static regprog_T *nfa_regcomp(char_u *expr, int re_flags)
    * (and count its size). */
   postfix = re2post();
   if (postfix == NULL) {
-    /* TODO: only give this error for debugging? */
-    if (post_ptr >= post_end)
-      EMSGN("Internal error: estimated max number "
-            "of states insufficient: %" PRId64,
-            post_end - post_start);
-    goto fail;              /* Cascaded (syntax?) error */
+    // TODO(vim): only give this error for debugging?
+    if (post_ptr >= post_end) {
+      IEMSGN("Internal error: estimated max number "
+             "of states insufficient: %" PRId64,
+             post_end - post_start);
+    }
+    goto fail;              // Cascaded (syntax?) error
   }
 
   /*

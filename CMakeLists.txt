@@ -1,3 +1,7 @@
+# CMAKE REFERENCE
+#   intro: https://codingnest.com/basic-cmake/
+#   best practices (3.0+): https://gist.github.com/mbinna/c61dbb39bca0e4fb7d1f73b0d66a4fd1
+
 cmake_minimum_required(VERSION 2.8.7)
 project(nvim)
 
@@ -12,7 +16,11 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(PreventInTreeBuilds)
 
 # Prefer our bundled versions of dependencies.
-set(DEPS_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/.deps/usr" CACHE PATH "Path prefix for finding dependencies")
+if(DEFINED ENV{DEPS_BUILD_DIR})
+  set(DEPS_PREFIX "$ENV{DEPS_BUILD_DIR}/usr" CACHE PATH "Path prefix for finding dependencies")
+else()
+  set(DEPS_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/.deps/usr" CACHE PATH "Path prefix for finding dependencies")
+endif()
 if(CMAKE_CROSSCOMPILING AND NOT UNIX)
   list(INSERT CMAKE_FIND_ROOT_PATH 0 ${DEPS_PREFIX})
   list(INSERT CMAKE_PREFIX_PATH 0 ${DEPS_PREFIX}/../host/bin)
@@ -49,6 +57,9 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set(USE_FNAME_CASE TRUE)
 endif()
 
+option(ENABLE_LIBINTL "enable libintl" ON)
+option(ENABLE_LIBICONV "enable libiconv" ON)
+
 # Set default build type.
 if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "CMAKE_BUILD_TYPE not given, defaulting to 'Debug'.")
@@ -63,12 +74,12 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
 # If not in a git repo (e.g., a tarball) these tokens define the complete
 # version string, else they are combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
-set(NVIM_VERSION_MINOR 2)
-set(NVIM_VERSION_PATCH 2)
+set(NVIM_VERSION_MINOR 3)
+set(NVIM_VERSION_PATCH 0)
 set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 # API level
-set(NVIM_API_LEVEL 3)         # Bump this after any API change.
+set(NVIM_API_LEVEL 4)         # Bump this after any API change.
 set(NVIM_API_LEVEL_COMPAT 0)  # Adjust this after a _breaking_ API change.
 set(NVIM_API_PRERELEASE false)
 
@@ -204,6 +215,7 @@ int main(void)
 if(MSVC)
   # XXX: /W4 gives too many warnings. #3241
   add_definitions(/W3 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE)
+  add_definitions(-DWIN32)
 else()
   add_definitions(-Wall -Wextra -pedantic -Wno-unused-parameter
     -Wstrict-prototypes -std=gnu99)
@@ -223,6 +235,9 @@ endif()
 if(MINGW)
   # Use POSIX compatible stdio in Mingw
   add_definitions(-D__USE_MINGW_ANSI_STDIO)
+endif()
+if(WIN32)
+  # Windows Vista is the minimum supported version
   add_definitions(-D_WIN32_WINNT=0x0600)
 endif()
 
@@ -250,13 +265,14 @@ if(HAS_DIAG_COLOR_FLAG)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.5")
-    # Array-bounds testing is broken in some GCC versions before 4.8.5.
-    # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56273
-    check_c_compiler_flag(-Wno-array-bounds HAS_NO_ARRAY_BOUNDS_FLAG)
-    if(HAS_NO_ARRAY_BOUNDS_FLAG)
-      add_definitions(-Wno-array-bounds)
-    endif()
+  # 1. Array-bounds testing is broken in some GCC versions before 4.8.5.
+  #    https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56273
+  # 2. But _Pragma("...ignored") is broken (unresolved) in GCC 5+:
+  #    https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66099
+  # So we must disable -Warray-bounds globally for GCC (for kbtree.h, #7083).
+  check_c_compiler_flag(-Wno-array-bounds HAS_NO_ARRAY_BOUNDS_FLAG)
+  if(HAS_NO_ARRAY_BOUNDS_FLAG)
+    add_definitions(-Wno-array-bounds)
   endif()
 endif()
 
@@ -277,15 +293,18 @@ else()
   set(DEBUG 0)
 endif()
 
+option(LOG_LIST_ACTIONS "Add list actions logging" OFF)
+
 add_definitions(-DINCLUDE_GENERATED_DECLARATIONS)
 
-if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
   set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--no-undefined")
 
   # For O_CLOEXEC, O_DIRECTORY, and O_NOFOLLOW flags on older systems
   # (pre POSIX.1-2008: glibc 2.11 and earlier). #4042
+  # For ptsname(). #6743
   add_definitions(-D_GNU_SOURCE)
 endif()
 
@@ -319,6 +338,7 @@ if(PREFER_LUA)
   find_package(Lua REQUIRED)
   set(LUA_PREFERRED_INCLUDE_DIRS ${LUA_INCLUDE_DIR})
   set(LUA_PREFERRED_LIBRARIES ${LUA_LIBRARIES})
+  # Passive (not REQUIRED): if LUAJIT_FOUND is not set, nvim-test is skipped.
   find_package(LuaJit)
 else()
   find_package(LuaJit REQUIRED)
@@ -387,31 +407,30 @@ if((CLANG_ASAN_UBSAN OR CLANG_MSAN OR CLANG_TSAN) AND NOT CMAKE_C_COMPILER_ID MA
   message(FATAL_ERROR "Sanitizers are only supported for Clang.")
 endif()
 
-if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD|FreeBSD")
-  message(STATUS "detected OpenBSD/FreeBSD; disabled jemalloc. #5318")
+if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD|FreeBSD|Windows")  # see #5318
+  message(STATUS "skipping jemalloc on this system: ${CMAKE_SYSTEM_NAME}")
   option(ENABLE_JEMALLOC "enable jemalloc" OFF)
 else()
   option(ENABLE_JEMALLOC "enable jemalloc" ON)
 endif()
 
-if (ENABLE_JEMALLOC)
+if(ENABLE_JEMALLOC)
   if(CLANG_ASAN_UBSAN OR CLANG_MSAN OR CLANG_TSAN)
     message(STATUS "Sanitizers have been enabled; don't use jemalloc.")
   else()
-    find_package(JeMalloc)
-    if(JEMALLOC_FOUND)
-      include_directories(SYSTEM ${JEMALLOC_INCLUDE_DIRS})
-    endif()
+    find_package(JeMalloc REQUIRED)
+    include_directories(SYSTEM ${JEMALLOC_INCLUDE_DIRS})
   endif()
 endif()
 
-find_package(LibIntl)
-if(LibIntl_FOUND)
+if(ENABLE_LIBINTL)
+  # LibIntl (not Intl) selects our FindLibIntl.cmake script. #8464
+  find_package(LibIntl REQUIRED)
   include_directories(SYSTEM ${LibIntl_INCLUDE_DIRS})
 endif()
 
-find_package(Iconv)
-if(Iconv_FOUND)
+if(ENABLE_LIBICONV)
+  find_package(Iconv REQUIRED)
   include_directories(SYSTEM ${Iconv_INCLUDE_DIRS})
 endif()
 
@@ -498,23 +517,17 @@ add_subdirectory(test/includes)
 add_subdirectory(config)
 add_subdirectory(test/functional/fixtures)  # compile test programs
 add_subdirectory(runtime)
+if(WIN32)
+  install_helper(
+    FILES ${DEPS_PREFIX}/share/nvim-qt/runtime/plugin/nvim_gui_shim.vim
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/nvim-qt/runtime/plugin)
+endif()
 
 # Setup some test-related bits.  We do this after going down the tree because we
 # need some of the targets.
 if(BUSTED_PRG)
   get_property(TEST_INCLUDE_DIRS DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PROPERTY INCLUDE_DIRECTORIES)
-
-  # Set policy CMP0026 to OLD so we avoid CMake warnings on newer
-  # versions of cmake.
-  if(POLICY CMP0026)
-    cmake_policy(SET CMP0026 OLD)
-  endif()
-  if(CMAKE_GENERATOR MATCHES "Visual Studio")
-    set(TEST_LIBNVIM_PATH ${CMAKE_BINARY_DIR}/lib/nvim-test.dll)
-  else()
-    get_target_property(TEST_LIBNVIM_PATH nvim-test LOCATION)
-  endif()
 
   # When running tests from 'ninja' we need to use the
   # console pool: to do so we need to use the USES_TERMINAL
@@ -523,10 +536,6 @@ if(BUSTED_PRG)
   if(NOT (${CMAKE_VERSION} VERSION_LESS 3.2.0))
     list(APPEND TEST_TARGET_ARGS "USES_TERMINAL")
   endif()
-
-  configure_file(
-    test/config/paths.lua.in
-    ${CMAKE_BINARY_DIR}/test/config/paths.lua)
 
   set(UNITTEST_PREREQS nvim-test unittest-headers)
   set(FUNCTIONALTEST_PREREQS nvim printargs-test shell-test)
@@ -562,6 +571,32 @@ if(BUSTED_PRG)
       ${TEST_TARGET_ARGS})
   else()
     message(WARNING "disabling unit tests: no Luajit FFI in ${LUA_PRG}")
+  endif()
+
+  if(${CMAKE_VERSION} VERSION_LESS 2.8.12)
+    if(CMAKE_GENERATOR MATCHES "Visual Studio")
+      set(TEST_LIBNVIM_PATH ${CMAKE_BINARY_DIR}/lib/nvim-test.dll)
+    else()
+      get_target_property(TEST_LIBNVIM_PATH nvim-test LOCATION)
+    endif()
+    configure_file(
+      ${CMAKE_SOURCE_DIR}/test/config/paths.lua.in
+      ${CMAKE_BINARY_DIR}/test/config/paths.lua)
+  else()
+    # To avoid duplicating paths.lua.in while we still support CMake < 2.8.12,
+    # use configure_file() to add the generator expression and then generate
+    # the final file
+    if(LUA_HAS_FFI)
+      set(TEST_LIBNVIM_PATH $<TARGET_FILE:nvim-test>)
+    else()
+      set(TEST_LIBNVIM_PATH "")
+    endif()
+    configure_file(
+      ${CMAKE_SOURCE_DIR}/test/config/paths.lua.in
+      ${CMAKE_BINARY_DIR}/test/config/paths.lua.gen)
+    file(GENERATE
+      OUTPUT ${CMAKE_BINARY_DIR}/test/config/paths.lua
+      INPUT ${CMAKE_BINARY_DIR}/test/config/paths.lua.gen)
   endif()
 
   add_custom_target(functionaltest

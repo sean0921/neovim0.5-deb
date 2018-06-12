@@ -232,17 +232,17 @@
 #define LAST_NL         NUPPER + ADD_NL
 #define WITH_NL(op)     ((op) >= FIRST_NL && (op) <= LAST_NL)
 
-#define MOPEN           80  /* -89	 Mark this point in input as start of
-                             *	 \( subexpr.  MOPEN + 0 marks start of
-                             *	 match. */
-#define MCLOSE          90  /* -99	 Analogous to MOPEN.  MCLOSE + 0 marks
-                             *	 end of match. */
-#define BACKREF         100 /* -109 node Match same string again \1-\9 */
+#define MOPEN           80   // -89 Mark this point in input as start of
+                             //     \( … \) subexpr.  MOPEN + 0 marks start of
+                             //     match.
+#define MCLOSE          90   // -99 Analogous to MOPEN.  MCLOSE + 0 marks
+                             //     end of match.
+#define BACKREF         100  // -109 node Match same string again \1-\9.
 
-# define ZOPEN          110 /* -119	 Mark this point in input as start of
-                             *	 \z( subexpr. */
-# define ZCLOSE         120 /* -129	 Analogous to ZOPEN. */
-# define ZREF           130 /* -139 node Match external submatch \z1-\z9 */
+# define ZOPEN          110  // -119 Mark this point in input as start of
+                             //  \z( … \) subexpr.
+# define ZCLOSE         120  // -129 Analogous to ZOPEN.
+# define ZREF           130  // -139 node Match external submatch \z1-\z9
 
 #define BRACE_COMPLEX   140 /* -149 node Match nodes between m & n times */
 
@@ -458,18 +458,15 @@ static int toggle_Magic(int x)
 
 /* Used for an error (down from) vim_regcomp(): give the error message, set
  * rc_did_emsg and return NULL */
-#define EMSG_RET_NULL(m) return (EMSG(m), rc_did_emsg = TRUE, (void *)NULL)
-#define EMSG_RET_FAIL(m) return (EMSG(m), rc_did_emsg = TRUE, FAIL)
-#define EMSG2_RET_NULL(m, \
-                       c) return (EMSG2((m), \
-                                      (c) ? "" : "\\"), rc_did_emsg = TRUE, \
-                                  (void *)NULL)
-#define EMSG2_RET_FAIL(m, \
-                       c) return (EMSG2((m), \
-                                      (c) ? "" : "\\"), rc_did_emsg = TRUE, \
-                                  FAIL)
+#define EMSG_RET_NULL(m) return (EMSG(m), rc_did_emsg = true, (void *)NULL)
+#define IEMSG_RET_NULL(m) return (IEMSG(m), rc_did_emsg = true, (void *)NULL)
+#define EMSG_RET_FAIL(m) return (EMSG(m), rc_did_emsg = true, FAIL)
+#define EMSG2_RET_NULL(m, c) \
+    return (EMSG2((m), (c) ? "" : "\\"), rc_did_emsg = true, (void *)NULL)
+#define EMSG2_RET_FAIL(m, c) \
+    return (EMSG2((m), (c) ? "" : "\\"), rc_did_emsg = true, FAIL)
 #define EMSG_ONE_RET_NULL EMSG2_RET_NULL(_( \
-        "E369: invalid item in %s%%[]"), reg_magic == MAGIC_ALL)
+    "E369: invalid item in %s%%[]"), reg_magic == MAGIC_ALL)
 
 #define MAX_LIMIT       (32767L << 16L)
 
@@ -482,6 +479,8 @@ static char_u   *regprop(char_u *);
 #endif
 
 static char_u e_missingbracket[] = N_("E769: Missing ] after %s[");
+static char_u e_reverse_range[] = N_("E944: Reverse range in character class");
+static char_u e_large_class[] = N_("E945: Range too large in character class");
 static char_u e_unmatchedpp[] = N_("E53: Unmatched %s%%(");
 static char_u e_unmatchedp[] = N_("E54: Unmatched %s(");
 static char_u e_unmatchedpar[] = N_("E55: Unmatched %s)");
@@ -1891,8 +1890,8 @@ static char_u *regatom(int *flagp)
   case Magic(')'):
     if (one_exactly)
       EMSG_ONE_RET_NULL;
-    EMSG_RET_NULL(_(e_internal));       /* Supposed to be caught earlier. */
-  /* NOTREACHED */
+    IEMSG_RET_NULL(_(e_internal));       // Supposed to be caught earlier.
+  // NOTREACHED
 
   case Magic('='):
   case Magic('?'):
@@ -2235,15 +2234,18 @@ collection:
               if (endc == '\\' && !reg_cpo_lit)
                 endc = coll_get_char();
 
-              if (startc > endc)
-                EMSG_RET_NULL(_(e_invrange));
+              if (startc > endc) {
+                EMSG_RET_NULL(_(e_reverse_range));
+              }
               if (has_mbyte && ((*mb_char2len)(startc) > 1
                                 || (*mb_char2len)(endc) > 1)) {
-                /* Limit to a range of 256 chars */
-                if (endc > startc + 256)
-                  EMSG_RET_NULL(_(e_invrange));
-                while (++startc <= endc)
+                // Limit to a range of 256 chars
+                if (endc > startc + 256) {
+                  EMSG_RET_NULL(_(e_large_class));
+                }
+                while (++startc <= endc) {
                   regmbc(startc);
+                }
               } else {
                 while (++startc <= endc)
                   regc(startc);
@@ -2331,21 +2333,21 @@ collection:
               regc('\t');
               break;
             case CLASS_CNTRL:
-              for (cu = 1; cu <= 255; cu++) {
+              for (cu = 1; cu <= 127; cu++) {
                 if (iscntrl(cu)) {
                   regmbc(cu);
                 }
               }
               break;
             case CLASS_DIGIT:
-              for (cu = 1; cu <= 255; cu++) {
+              for (cu = 1; cu <= 127; cu++) {
                 if (ascii_isdigit(cu)) {
                   regmbc(cu);
                 }
               }
               break;
             case CLASS_GRAPH:
-              for (cu = 1; cu <= 255; cu++) {
+              for (cu = 1; cu <= 127; cu++) {
                 if (isgraph(cu)) {
                   regmbc(cu);
                 }
@@ -4244,26 +4246,28 @@ regmatch (
             int opndc = 0, inpc;
 
             opnd = OPERAND(scan);
-            /* Safety check (just in case 'encoding' was changed since
-             * compiling the program). */
+            // Safety check (just in case 'encoding' was changed since
+            // compiling the program).
             if ((len = (*mb_ptr2len)(opnd)) < 2) {
               status = RA_NOMATCH;
               break;
             }
-            if (enc_utf8)
-              opndc = mb_ptr2char(opnd);
+            if (enc_utf8) {
+              opndc = utf_ptr2char(opnd);
+            }
             if (enc_utf8 && utf_iscomposing(opndc)) {
               /* When only a composing char is given match at any
                * position where that composing char appears. */
               status = RA_NOMATCH;
               for (i = 0; reginput[i] != NUL; i += utf_ptr2len(reginput + i)) {
-                inpc = mb_ptr2char(reginput + i);
+                inpc = utf_ptr2char(reginput + i);
                 if (!utf_iscomposing(inpc)) {
-                  if (i > 0)
+                  if (i > 0) {
                     break;
+                  }
                 } else if (opndc == inpc) {
-                  /* Include all following composing chars. */
-                  len = i + mb_ptr2len(reginput + i);
+                  // Include all following composing chars.
+                  len = i + utfc_ptr2len(reginput + i);
                   status = RA_MATCH;
                   break;
                 }
@@ -4534,7 +4538,7 @@ regmatch (
             brace_max[no] = OPERAND_MAX(scan);
             brace_count[no] = 0;
           } else {
-            EMSG(_(e_internal));                    /* Shouldn't happen */
+            internal_error("BRACE_LIMITS");
             status = RA_FAIL;
           }
         }
@@ -6477,41 +6481,35 @@ static regsubmatch_T rsm;  // can only be used when can_f_submatch is true
 /// vim_regsub_both().
 static int fill_submatch_list(int argc, typval_T *argv, int argcount)
 {
-  listitem_T *li;
-  int        i;
-  char_u     *s;
-
   if (argcount == 0) {
     // called function doesn't take an argument
     return 0;
   }
 
   // Relies on sl_list to be the first item in staticList10_T.
-  init_static_list((staticList10_T *)(argv->vval.v_list));
+  tv_list_init_static10((staticList10_T *)argv->vval.v_list);
 
   // There are always 10 list items in staticList10_T.
-  li = argv->vval.v_list->lv_first;
-  for (i = 0; i < 10; i++) {
-    s = rsm.sm_match->startp[i];
+  listitem_T *li = tv_list_first(argv->vval.v_list);
+  for (int i = 0; i < 10; i++) {
+    char_u *s = rsm.sm_match->startp[i];
     if (s == NULL || rsm.sm_match->endp[i] == NULL) {
       s = NULL;
     } else {
       s = vim_strnsave(s, (int)(rsm.sm_match->endp[i] - s));
     }
-    li->li_tv.v_type = VAR_STRING;
-    li->li_tv.vval.v_string = s;
-    li = li->li_next;
+    TV_LIST_ITEM_TV(li)->v_type = VAR_STRING;
+    TV_LIST_ITEM_TV(li)->vval.v_string = s;
+    li = TV_LIST_ITEM_NEXT(argv->vval.v_list, li);
   }
   return 1;
 }
 
 static void clear_submatch_list(staticList10_T *sl)
 {
-  int i;
-
-  for (i = 0; i < 10; i++) {
-    xfree(sl->sl_items[i].li_tv.vval.v_string);
-  }
+  TV_LIST_ITER(&sl->sl_list, li, {
+    xfree(TV_LIST_ITEM_TV(li)->vval.v_string);
+  });
 }
 
 /// vim_regsub() - perform substitutions after a vim_regexec() or
@@ -6645,13 +6643,12 @@ static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest,
         typval_T argv[2];
         int dummy;
         typval_T rettv;
-        staticList10_T matchList;
+        staticList10_T matchList = TV_LIST_STATIC10_INIT;
 
         rettv.v_type = VAR_STRING;
         rettv.vval.v_string = NULL;
         argv[0].v_type = VAR_LIST;
         argv[0].vval.v_list = &matchList.sl_list;
-        matchList.sl_list.lv_len = 0;
         if (expr->v_type == VAR_FUNC) {
           s = expr->vval.v_string;
           call_func(s, (int)STRLEN(s), &rettv, 1, argv,
@@ -6665,7 +6662,7 @@ static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest,
                     fill_submatch_list, 0L, 0L, &dummy,
                     true, partial, NULL);
         }
-        if (matchList.sl_list.lv_len > 0) {
+        if (tv_list_len(&matchList.sl_list) > 0) {
           // fill_submatch_list() was called.
           clear_submatch_list(&matchList);
         }
@@ -7054,7 +7051,7 @@ list_T *reg_submatch_list(int no)
     colnr_T scol = rsm.sm_mmatch->startpos[no].col;
     colnr_T ecol = rsm.sm_mmatch->endpos[no].col;
 
-    list = tv_list_alloc();
+    list = tv_list_alloc(elnum - slnum + 1);
 
     s = (const char *)reg_getline_submatch(slnum) + scol;
     if (slnum == elnum) {
@@ -7073,7 +7070,7 @@ list_T *reg_submatch_list(int no)
     if (s == NULL || rsm.sm_match->endp[no] == NULL) {
       return NULL;
     }
-    list = tv_list_alloc();
+    list = tv_list_alloc(1);
     tv_list_append_string(list, s, (const char *)rsm.sm_match->endp[no] - s);
   }
 

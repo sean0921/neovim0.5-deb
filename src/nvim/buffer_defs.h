@@ -38,6 +38,8 @@ typedef struct {
 #include "nvim/api/private/defs.h"
 // for Map(K, V)
 #include "nvim/map.h"
+// for kvec
+#include "nvim/lib/kvec.h"
 
 #define MODIFIABLE(buf) (buf->b_p_ma)
 
@@ -237,7 +239,7 @@ typedef struct {
   char_u *wo_winhl;
 # define w_p_winhl w_onebuf_opt.wo_winhl    // 'winhighlight'
 
-  int wo_scriptID[WV_COUNT];            /* SIDs for window-local options */
+  LastSet wo_scriptID[WV_COUNT];        // SIDs for window-local options
 # define w_p_scriptID w_onebuf_opt.wo_scriptID
 } winopt_T;
 
@@ -484,6 +486,11 @@ struct file_buffer {
 #define b_changedtick changedtick_di.di_tv.vval.v_number
   ChangedtickDictItem changedtick_di;  // b:changedtick dictionary item.
 
+  varnumber_T b_last_changedtick;       // b:changedtick when TextChanged or
+                                        // TextChangedI was last triggered.
+  varnumber_T b_last_changedtick_pum;   // b:changedtick when TextChangedP was
+                                        // last triggered.
+
   bool b_saving;                /* Set to true if we are in the middle of
                                    saving the buffer. */
 
@@ -590,7 +597,7 @@ struct file_buffer {
    */
   bool b_p_initialized;                 /* set when options initialized */
 
-  int b_p_scriptID[BV_COUNT];           /* SIDs for buffer-local options */
+  LastSet b_p_scriptID[BV_COUNT];       // SIDs for buffer-local options
 
   int b_p_ai;                   ///< 'autoindent'
   int b_p_ai_nopaste;           ///< b_p_ai saved for paste mode
@@ -603,6 +610,7 @@ struct file_buffer {
   char_u *b_p_bt;               ///< 'buftype'
   int b_has_qf_entry;           ///< quickfix exists for buffer
   int b_p_bl;                   ///< 'buflisted'
+  long b_p_channel;             ///< 'channel'
   int b_p_cin;                  ///< 'cindent'
   char_u *b_p_cino;             ///< 'cinoptions'
   char_u *b_p_cink;             ///< 'cinkeys'
@@ -636,6 +644,7 @@ struct file_buffer {
   uint32_t b_p_fex_flags;       ///< flags for 'formatexpr'
   char_u *b_p_kp;               ///< 'keywordprg'
   int b_p_lisp;                 ///< 'lisp'
+  char_u *b_p_menc;             ///< 'makeencoding'
   char_u *b_p_mps;              ///< 'matchpairs'
   int b_p_ml;                   ///< 'modeline'
   int b_p_ml_nobin;             ///< b_p_ml saved for binary mode
@@ -716,6 +725,7 @@ struct file_buffer {
   int b_ind_hash_comment;
   int b_ind_cpp_namespace;
   int b_ind_if_for_while;
+  int b_ind_cpp_extern_c;
 
   linenr_T b_no_eol_lnum;       /* non-zero lnum when last line of next binary
                                  * write should not have an end-of-line */
@@ -763,6 +773,10 @@ struct file_buffer {
   BufhlInfo b_bufhl_info;       // buffer stored highlights
 
   kvec_t(BufhlLine *) b_bufhl_move_space;  // temporary space for highlights
+
+  // array of channelids which have asked to receive updates for this
+  // buffer.
+  kvec_t(uint64_t) update_channels;
 };
 
 /*

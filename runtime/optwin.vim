@@ -996,10 +996,6 @@ call append("$", "updatecount\tnumber of characters typed to cause a swap file u
 call append("$", " \tset uc=" . &uc)
 call append("$", "updatetime\ttime in msec after which the swap file will be updated")
 call append("$", " \tset ut=" . &ut)
-call append("$", "maxmem\tmaximum amount of memory in Kbyte used for one buffer")
-call append("$", " \tset mm=" . &mm)
-call append("$", "maxmemtot\tmaximum amount of memory in Kbyte used for all buffers")
-call append("$", " \tset mmt=" . &mmt)
 
 
 call <SID>Header("command line editing")
@@ -1087,6 +1083,9 @@ if has("quickfix")
   call <SID>OptionG("gp", &gp)
   call append("$", "grepformat\tlist of formats for output of 'grepprg'")
   call <SID>OptionG("gfm", &gfm)
+  call append("$", "makeencoding\tencoding of the \":make\" and \":grep\" output")
+  call append("$", "\t(global or local to buffer)")
+  call <SID>OptionG("menc", &menc)
 endif
 
 

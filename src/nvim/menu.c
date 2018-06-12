@@ -714,7 +714,7 @@ static dict_T *menu_get_recursive(const vimmenu_T *menu, int modes)
     }
   } else {
     // visit recursively all children
-    list_T *children_list = tv_list_alloc();
+    list_T *const children_list = tv_list_alloc(kListLenMayKnow);
     for (menu = menu->children; menu != NULL; menu = menu->next) {
         dict_T *dic = menu_get_recursive(menu, modes);
         if (tv_dict_len(dict) > 0) {
@@ -825,8 +825,8 @@ static void show_menus_recursive(vimmenu_T *menu, int modes, int depth)
       msg_outnum((long)menu->priority);
       MSG_PUTS(" ");
     }
-    /* Same highlighting as for directories!? */
-    msg_outtrans_attr(menu->name, hl_attr(HLF_D));
+    // Same highlighting as for directories!?
+    msg_outtrans_attr(menu->name, HL_ATTR(HLF_D));
   }
 
   if (menu != NULL && menu->children == NULL) {
@@ -854,7 +854,7 @@ static void show_menus_recursive(vimmenu_T *menu, int modes, int depth)
           msg_putchar(' ');
         MSG_PUTS(" ");
         if (*menu->strings[bit] == NUL) {
-          msg_puts_attr("<Nop>", hl_attr(HLF_8));
+          msg_puts_attr("<Nop>", HL_ATTR(HLF_8));
         } else {
           msg_outtrans_special(menu->strings[bit], false);
         }
@@ -1417,17 +1417,20 @@ void ex_emenu(exarg_T *eap)
     idx = MENU_INDEX_NORMAL;
   }
 
-  if (idx != MENU_INDEX_INVALID && menu->strings[idx] != NULL) {
-    /* When executing a script or function execute the commands right now.
-     * Otherwise put them in the typeahead buffer. */
-    if (current_SID != 0)
+  assert(idx != MENU_INDEX_INVALID);
+  if (menu->strings[idx] != NULL) {
+    // When executing a script or function execute the commands right now.
+    // Otherwise put them in the typeahead buffer.
+    if (current_SID != 0) {
       exec_normal_cmd(menu->strings[idx], menu->noremap[idx],
-          menu->silent[idx]);
-    else
-      ins_typebuf(menu->strings[idx], menu->noremap[idx], 0,
-          TRUE, menu->silent[idx]);
-  } else
+                      menu->silent[idx]);
+    } else {
+      ins_typebuf(menu->strings[idx], menu->noremap[idx], 0, true,
+                  menu->silent[idx]);
+    }
+  } else {
     EMSG2(_("E335: Menu not defined for %s mode"), mode);
+  }
 }
 
 /*

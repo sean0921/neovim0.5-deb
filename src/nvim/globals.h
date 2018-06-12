@@ -16,8 +16,6 @@
 
 #define IOSIZE         (1024+1)          // file I/O and sprintf buffer size
 
-#define MAX_MCO        6                 // maximum value for 'maxcombine'
-
 # define MSG_BUF_LEN 480                 // length of buffer for small messages
 # define MSG_BUF_CLEN  (MSG_BUF_LEN / 6) // cell length (worst case: utf-8
                                          // takes 6 bytes for one cell)
@@ -79,6 +77,11 @@ typedef enum {
   kFalse = 0,
   kTrue  = 1,
 } TriState;
+
+EXTERN struct nvim_stats_s {
+  int64_t fsync;
+  int64_t redraw;
+} g_stats INIT(= { 0, 0 });
 
 /* Values for "starting" */
 #define NO_SCREEN       2       /* no screen updating yet */
@@ -159,10 +162,6 @@ EXTERN u8char_T *ScreenLinesUC INIT(= NULL);    /* decoded UTF-8 characters */
 EXTERN u8char_T *ScreenLinesC[MAX_MCO];         /* composing characters */
 EXTERN int Screen_mco INIT(= 0);                /* value of p_mco used when
                                                    allocating ScreenLinesC[] */
-
-/* Only used for euc-jp: Second byte of a character that starts with 0x8e.
- * These are single-width. */
-EXTERN schar_T  *ScreenLines2 INIT(= NULL);
 
 EXTERN int screen_Rows INIT(= 0);           /* actual size of ScreenLines[] */
 EXTERN int screen_Columns INIT(= 0);        /* actual size of ScreenLines[] */
@@ -291,13 +290,11 @@ EXTERN int vgetc_busy INIT(= 0);            /* when inside vgetc() then > 0 */
 EXTERN int didset_vim INIT(= FALSE);        /* did set $VIM ourselves */
 EXTERN int didset_vimruntime INIT(= FALSE);        /* idem for $VIMRUNTIME */
 
-/*
- * Lines left before a "more" message.	Ex mode needs to be able to reset this
- * after you type something.
- */
-EXTERN int lines_left INIT(= -1);           /* lines left for listing */
-EXTERN int msg_no_more INIT(= FALSE);       /* don't use more prompt, truncate
-                                               messages */
+/// Lines left before a "more" message.  Ex mode needs to be able to reset this
+/// after you type something.
+EXTERN int lines_left INIT(= -1);           // lines left for listing
+EXTERN int msg_no_more INIT(= false);       // don't use more prompt, truncate
+                                            // messages
 
 EXTERN char_u   *sourcing_name INIT( = NULL); /* name of error message source */
 EXTERN linenr_T sourcing_lnum INIT(= 0);    /* line number of the source file */
@@ -308,105 +305,86 @@ EXTERN int debug_did_msg INIT(= false);         // did "debug mode" message
 EXTERN int debug_tick INIT(= 0);                // breakpoint change count
 EXTERN int debug_backtrace_level INIT(= 0);     // breakpoint backtrace level
 
-/* Values for "do_profiling". */
-#define PROF_NONE       0       /* profiling not started */
-#define PROF_YES        1       /* profiling busy */
-#define PROF_PAUSED     2       /* profiling paused */
-EXTERN int do_profiling INIT(= PROF_NONE);      /* PROF_ values */
+// Values for "do_profiling".
+#define PROF_NONE       0       ///< profiling not started
+#define PROF_YES        1       ///< profiling busy
+#define PROF_PAUSED     2       ///< profiling paused
+EXTERN int do_profiling INIT(= PROF_NONE);      ///< PROF_ values
 
-/*
- * The exception currently being thrown.  Used to pass an exception to
- * a different cstack.  Also used for discarding an exception before it is
- * caught or made pending.  Only valid when did_throw is TRUE.
- */
+/// Exception currently being thrown.  Used to pass an exception to a different
+/// cstack.  Also used for discarding an exception before it is caught or made
+/// pending.
 EXTERN except_T *current_exception;
 
-/*
- * did_throw: An exception is being thrown.  Reset when the exception is caught
- * or as long as it is pending in a finally clause.
- */
-EXTERN int did_throw INIT(= FALSE);
+/// Set when a throw that cannot be handled in do_cmdline() must be propagated
+/// to the cstack of the previously called do_cmdline().
+EXTERN int need_rethrow INIT(= false);
 
-/*
- * need_rethrow: set to TRUE when a throw that cannot be handled in do_cmdline()
- * must be propagated to the cstack of the previously called do_cmdline().
- */
-EXTERN int need_rethrow INIT(= FALSE);
+/// Set when a ":finish" or ":return" that cannot be handled in do_cmdline()
+/// must be propagated to the cstack of the previously called do_cmdline().
+EXTERN int check_cstack INIT(= false);
 
-/*
- * check_cstack: set to TRUE when a ":finish" or ":return" that cannot be
- * handled in do_cmdline() must be propagated to the cstack of the previously
- * called do_cmdline().
- */
-EXTERN int check_cstack INIT(= FALSE);
-
-/*
- * Number of nested try conditionals (across function calls and ":source"
- * commands).
- */
+/// Number of nested try conditionals (across function calls and ":source"
+/// commands).
 EXTERN int trylevel INIT(= 0);
 
-/*
- * When "force_abort" is TRUE, always skip commands after an error message,
- * even after the outermost ":endif", ":endwhile" or ":endfor" or for a
- * function without the "abort" flag.  It is set to TRUE when "trylevel" is
- * non-zero (and ":silent!" was not used) or an exception is being thrown at
- * the time an error is detected.  It is set to FALSE when "trylevel" gets
- * zero again and there was no error or interrupt or throw.
- */
-EXTERN int force_abort INIT(= FALSE);
+/// When "force_abort" is TRUE, always skip commands after an error message,
+/// even after the outermost ":endif", ":endwhile" or ":endfor" or for a
+/// function without the "abort" flag.  It is set to TRUE when "trylevel" is
+/// non-zero (and ":silent!" was not used) or an exception is being thrown at
+/// the time an error is detected.  It is set to FALSE when "trylevel" gets
+/// zero again and there was no error or interrupt or throw.
+EXTERN int force_abort INIT(= false);
 
-/*
- * "msg_list" points to a variable in the stack of do_cmdline() which keeps
- * the list of arguments of several emsg() calls, one of which is to be
- * converted to an error exception immediately after the failing command
- * returns.  The message to be used for the exception value is pointed to by
- * the "throw_msg" field of the first element in the list.  It is usually the
- * same as the "msg" field of that element, but can be identical to the "msg"
- * field of a later list element, when the "emsg_severe" flag was set when the
- * emsg() call was made.
- */
+/// "msg_list" points to a variable in the stack of do_cmdline() which keeps
+/// the list of arguments of several emsg() calls, one of which is to be
+/// converted to an error exception immediately after the failing command
+/// returns.  The message to be used for the exception value is pointed to by
+/// the "throw_msg" field of the first element in the list.  It is usually the
+/// same as the "msg" field of that element, but can be identical to the "msg"
+/// field of a later list element, when the "emsg_severe" flag was set when the
+/// emsg() call was made.
 EXTERN struct msglist **msg_list INIT(= NULL);
 
-/*
- * suppress_errthrow: When TRUE, don't convert an error to an exception.  Used
- * when displaying the interrupt message or reporting an exception that is still
- * uncaught at the top level (which has already been discarded then).  Also used
- * for the error message when no exception can be thrown.
- */
-EXTERN int suppress_errthrow INIT(= FALSE);
+/// When set, don't convert an error to an exception.  Used when displaying the
+/// interrupt message or reporting an exception that is still uncaught at the
+/// top level (which has already been discarded then).  Also used for the error
+/// message when no exception can be thrown.
+EXTERN int suppress_errthrow INIT(= false);
 
-/*
- * The stack of all caught and not finished exceptions.  The exception on the
- * top of the stack is the one got by evaluation of v:exception.  The complete
- * stack of all caught and pending exceptions is embedded in the various
- * cstacks; the pending exceptions, however, are not on the caught stack.
- */
+/// The stack of all caught and not finished exceptions.  The exception on the
+/// top of the stack is the one got by evaluation of v:exception.  The complete
+/// stack of all caught and pending exceptions is embedded in the various
+/// cstacks; the pending exceptions, however, are not on the caught stack.
 EXTERN except_T *caught_stack INIT(= NULL);
 
 
-/*
- * Garbage collection can only take place when we are sure there are no Lists
- * or Dictionaries being used internally.  This is flagged with
- * "may_garbage_collect" when we are at the toplevel.
- * "want_garbage_collect" is set by the garbagecollect() function, which means
- * we do garbage collection before waiting for a char at the toplevel.
- * "garbage_collect_at_exit" indicates garbagecollect(1) was called.
- */
-EXTERN int may_garbage_collect INIT(= FALSE);
-EXTERN int want_garbage_collect INIT(= FALSE);
-EXTERN int garbage_collect_at_exit INIT(= FALSE);
+///
+/// Garbage collection can only take place when we are sure there are no Lists
+/// or Dictionaries being used internally.  This is flagged with
+/// "may_garbage_collect" when we are at the toplevel.
+/// "want_garbage_collect" is set by the garbagecollect() function, which means
+/// we do garbage collection before waiting for a char at the toplevel.
+/// "garbage_collect_at_exit" indicates garbagecollect(1) was called.
+///
+EXTERN int may_garbage_collect INIT(= false);
+EXTERN int want_garbage_collect INIT(= false);
+EXTERN int garbage_collect_at_exit INIT(= false);
 
-/* Special values for current_SID. */
-#define SID_MODELINE    -1      /* when using a modeline */
-#define SID_CMDARG      -2      /* for "--cmd" argument */
-#define SID_CARG        -3      /* for "-c" argument */
-#define SID_ENV         -4      /* for sourcing environment variable */
-#define SID_ERROR       -5      /* option was reset because of an error */
-#define SID_NONE        -6      /* don't set scriptID */
+// Special values for current_SID.
+#define SID_MODELINE    -1      // when using a modeline
+#define SID_CMDARG      -2      // for "--cmd" argument
+#define SID_CARG        -3      // for "-c" argument
+#define SID_ENV         -4      // for sourcing environment variable
+#define SID_ERROR       -5      // option was reset because of an error
+#define SID_NONE        -6      // don't set scriptID
+#define SID_LUA         -7      // for Lua scripts/chunks
+#define SID_API_CLIENT  -8      // for API clients
 
-/* ID of script being sourced or was sourced to define the current function. */
+// ID of script being sourced or was sourced to define the current function.
 EXTERN scid_T current_SID INIT(= 0);
+// ID of the current channel making a client API call
+EXTERN uint64_t current_channel_id INIT(= 0);
 
 EXTERN bool did_source_packages INIT(= false);
 
@@ -416,7 +394,7 @@ EXTERN struct caller_scope {
   scid_T SID;
   uint8_t *sourcing_name, *autocmd_fname, *autocmd_match; 
   linenr_T sourcing_lnum;
-  int autocmd_fname_full, autocmd_bufnr;
+  int autocmd_bufnr;
   void *funccalp;
 } provider_caller_scope;
 EXTERN int provider_call_nesting INIT(= 0);
@@ -547,10 +525,6 @@ EXTERN buf_T    *curbuf INIT(= NULL);    // currently active buffer
 #define FOR_ALL_BUFFERS_BACKWARDS(buf) \
   for (buf_T *buf = lastbuf; buf != NULL; buf = buf->b_prev)
 
-/* Flag that is set when switching off 'swapfile'.  It means that all blocks
- * are to be loaded into memory.  Shouldn't be global... */
-EXTERN int mf_dont_release INIT(= FALSE);       /* don't release blocks */
-
 /*
  * List of files being edited (global argument list).  curwin->w_alist points
  * to this when the window is using the global argument list.
@@ -581,57 +555,46 @@ EXTERN int stdout_isatty INIT(= true);
 // volatile because it is used in a signal handler.
 EXTERN volatile int full_screen INIT(= false);
 
-EXTERN int restricted INIT(= FALSE);
-// TRUE when started in restricted mode (-Z)
-EXTERN int secure INIT(= FALSE);
-/* non-zero when only "safe" commands are
- * allowed, e.g. when sourcing .exrc or .vimrc
- * in current directory */
+// When started in restricted mode (-Z).
+EXTERN int restricted INIT(= false);
 
+/// Non-zero when only "safe" commands are allowed, e.g. when sourcing .exrc or
+/// .vimrc in current directory.
+EXTERN int secure INIT(= false);
+
+/// Non-zero when changing text and jumping to another window/buffer is not
+/// allowed.
 EXTERN int textlock INIT(= 0);
-/* non-zero when changing text and jumping to
- * another window or buffer is not allowed */
 
+/// Non-zero when the current buffer can't be changed.  Used for FileChangedRO.
 EXTERN int curbuf_lock INIT(= 0);
-/* non-zero when the current buffer can't be
- * changed.  Used for FileChangedRO. */
+
+/// Non-zero when no buffer name can be changed, no buffer can be deleted and
+/// current directory can't be changed. Used for SwapExists et al.
 EXTERN int allbuf_lock INIT(= 0);
-/* non-zero when no buffer name can be
- * changed, no buffer can be deleted and
- * current directory can't be changed.
- * Used for SwapExists et al. */
+
+/// Non-zero when evaluating an expression in a "sandbox".  Several things are
+/// not allowed then.
 EXTERN int sandbox INIT(= 0);
-/* Non-zero when evaluating an expression in a
- * "sandbox".  Several things are not allowed
- * then. */
 
-EXTERN int silent_mode INIT(= FALSE);
-/* set to TRUE when "-s" commandline argument
- * used for ex */
+/// Batch-mode: "-es" or "-Es" commandline argument was given.
+EXTERN int silent_mode INIT(= false);
 
-// Set to true when sourcing of startup scripts (init.vim) is done.
-// Used for options that cannot be changed after startup scripts.
-EXTERN bool did_source_startup_scripts INIT(= false);
-
-EXTERN pos_T VIsual;            /* start position of active Visual selection */
-EXTERN int VIsual_active INIT(= FALSE);
-/* whether Visual mode is active */
-EXTERN int VIsual_select INIT(= FALSE);
-/* whether Select mode is active */
+/// Start position of active Visual selection.
+EXTERN pos_T VIsual;
+/// Whether Visual mode is active.
+EXTERN int VIsual_active INIT(= false);
+/// Whether Select mode is active.
+EXTERN int VIsual_select INIT(= false);
+/// Whether to restart the selection after a Select-mode mapping or menu.
 EXTERN int VIsual_reselect;
-/* whether to restart the selection after a
- * Select mode mapping or menu */
-
+/// Type of Visual mode.
 EXTERN int VIsual_mode INIT(= 'v');
-/* type of Visual mode */
+/// TRUE when redoing Visual.
+EXTERN int redo_VIsual_busy INIT(= false);
 
-EXTERN int redo_VIsual_busy INIT(= FALSE);
-/* TRUE when redoing Visual */
-
-/*
- * When pasting text with the middle mouse button in visual mode with
- * restart_edit set, remember where it started so we can set Insstart.
- */
+/// When pasting text with the middle mouse button in visual mode with
+/// restart_edit set, remember where it started so we can set Insstart.
 EXTERN pos_T where_paste_started;
 
 /*
@@ -722,35 +685,12 @@ EXTERN int vr_lines_changed INIT(= 0);      /* #Lines changed by "gR" so far */
 // mbyte flags that used to depend on 'encoding'. These are now deprecated, as
 // 'encoding' is always "utf-8". Code that use them can be refactored to
 // remove dead code.
-#define enc_dbcs false
+#define enc_dbcs 0
 #define enc_utf8 true
 #define has_mbyte true
 
 /// Encoding used when 'fencs' is set to "default"
 EXTERN char_u *fenc_default INIT(= NULL);
-
-// To speed up BYTELEN(); keep a lookup table to quickly get the length in
-// bytes of a UTF-8 character from the first byte of a UTF-8 string.  Bytes
-// which are illegal when used as the first byte have a 1.  The NUL byte has
-// length 1.
-EXTERN char utf8len_tab[256] INIT(= {
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-  4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 1, 1,
-});
 
 # if defined(USE_ICONV) && defined(DYNAMIC_ICONV)
 /* Pointers to functions and variables to be loaded at runtime */
@@ -762,27 +702,23 @@ EXTERN int (*iconvctl)(iconv_t cd, int request, void *argument);
 EXTERN int* (*iconv_errno)(void);
 # endif
 
-/*
- * "State" is the main state of Vim.
- * There are other variables that modify the state:
- * "Visual_mode"    When State is NORMAL or INSERT.
- * "finish_op"	    When State is NORMAL, after typing the operator and before
- *		    typing the motion command.
- */
-EXTERN int State INIT(= NORMAL);        /* This is the current state of the
-                                         * command interpreter. */
+/// "State" is the main state of Vim.
+/// There are other variables that modify the state:
+///    Visual_mode:    When State is NORMAL or INSERT.
+///    finish_op  :    When State is NORMAL, after typing the operator and
+///                    before typing the motion command.
+EXTERN int State INIT(= NORMAL);        // This is the current state of the
+                                        // command interpreter.
 
 EXTERN bool finish_op INIT(= false);    // true while an operator is pending
 EXTERN long opcount INIT(= 0);          // count for pending operator
 
-/*
- * ex mode (Q) state
- */
-EXTERN int exmode_active INIT(= 0);     /* zero, EXMODE_NORMAL or EXMODE_VIM */
-EXTERN int ex_no_reprint INIT(= FALSE); /* no need to print after z or p */
+// Ex Mode (Q) state
+EXTERN int exmode_active INIT(= 0);     // Zero, EXMODE_NORMAL or EXMODE_VIM.
+EXTERN int ex_no_reprint INIT(=false);  // No need to print after z or p.
 
-EXTERN int Recording INIT(= FALSE);     /* TRUE when recording into a reg. */
-EXTERN int Exec_reg INIT(= FALSE);      /* TRUE when executing a register */
+EXTERN int Recording INIT(= false);     // TRUE when recording into a reg.
+EXTERN int Exec_reg INIT(= false);      // TRUE when executing a register.
 
 EXTERN int no_mapping INIT(= false);    // currently no mapping allowed
 EXTERN int no_zero_mapping INIT(= 0);   // mapping zero not allowed
@@ -863,10 +799,7 @@ EXTERN int do_redraw INIT(= FALSE);         /* extra redraw once */
 EXTERN int need_highlight_changed INIT(= true);
 EXTERN char *used_shada_file INIT(= NULL);  // name of the ShaDa file to use
 
-#define NSCRIPT 15
-EXTERN FILE     *scriptin[NSCRIPT];         /* streams to read script from */
-EXTERN int curscript INIT(= 0);             /* index in scriptin[] */
-EXTERN FILE     *scriptout INIT(= NULL);    /* stream to write script to */
+EXTERN FILE *scriptout INIT(= NULL);  ///< Stream to write script to.
 
 // volatile because it is used in a signal handler.
 EXTERN volatile int got_int INIT(= false);  // set to true when interrupt
@@ -895,15 +828,11 @@ EXTERN char_u *last_cmdline INIT(= NULL);      // last command line (for ":)
 EXTERN char_u *repeat_cmdline INIT(= NULL);    // command line for "."
 EXTERN char_u *new_last_cmdline INIT(= NULL);  // new value for last_cmdline
 EXTERN char_u *autocmd_fname INIT(= NULL);     // fname for <afile> on cmdline
-EXTERN int autocmd_fname_full;                 // autocmd_fname is full path
 EXTERN int autocmd_bufnr INIT(= 0);            // fnum for <abuf> on cmdline
 EXTERN char_u *autocmd_match INIT(= NULL);     // name for <amatch> on cmdline
 EXTERN int did_cursorhold INIT(= false);       // set when CursorHold t'gerd
 // for CursorMoved event
 EXTERN pos_T last_cursormoved INIT(= INIT_POS_T(0, 0, 0));
-
-EXTERN varnumber_T last_changedtick INIT(= 0);  // for TextChanged event
-EXTERN buf_T    *last_changedtick_buf INIT(= NULL);
 
 EXTERN int postponed_split INIT(= 0);       /* for CTRL-W CTRL-] command */
 EXTERN int postponed_split_flags INIT(= 0);       /* args for win_split() */
@@ -960,7 +889,7 @@ extern char_u *compiled_sys;
  * directory is not a local directory, globaldir is NULL. */
 EXTERN char_u   *globaldir INIT(= NULL);
 
-/* Characters from 'listchars' option */
+// 'listchars' characters. Defaults are overridden in set_chars_option().
 EXTERN int lcs_eol INIT(= '$');
 EXTERN int lcs_ext INIT(= NUL);
 EXTERN int lcs_prec INIT(= NUL);
@@ -971,12 +900,13 @@ EXTERN int lcs_tab2 INIT(= NUL);
 EXTERN int lcs_trail INIT(= NUL);
 EXTERN int lcs_conceal INIT(= ' ');
 
-/* Characters from 'fillchars' option */
+// 'fillchars' characters. Defaults are overridden in set_chars_option().
 EXTERN int fill_stl INIT(= ' ');
 EXTERN int fill_stlnc INIT(= ' ');
-EXTERN int fill_vert INIT(= ' ');
-EXTERN int fill_fold INIT(= '-');
+EXTERN int fill_vert INIT(= 9474);  // │
+EXTERN int fill_fold INIT(= 183);   // ·
 EXTERN int fill_diff INIT(= '-');
+EXTERN int fill_msgsep INIT(= ' ');
 
 /* Whether 'keymodel' contains "stopsel" and "startsel". */
 EXTERN int km_stopsel INIT(= FALSE);
@@ -1066,6 +996,7 @@ EXTERN char_u e_for[] INIT(= N_("E588: :endfor without :for"));
 EXTERN char_u e_exists[] INIT(= N_("E13: File exists (add ! to override)"));
 EXTERN char_u e_failed[] INIT(= N_("E472: Command failed"));
 EXTERN char_u e_internal[] INIT(= N_("E473: Internal error"));
+EXTERN char_u e_intern2[] INIT(= N_("E685: Internal error: %s"));
 EXTERN char_u e_interr[] INIT(= N_("Interrupted"));
 EXTERN char_u e_invaddr[] INIT(= N_("E14: Invalid address"));
 EXTERN char_u e_invarg[] INIT(= N_("E474: Invalid argument"));
@@ -1074,11 +1005,20 @@ EXTERN char_u e_invexpr2[] INIT(= N_("E15: Invalid expression: %s"));
 EXTERN char_u e_invrange[] INIT(= N_("E16: Invalid range"));
 EXTERN char_u e_invcmd[] INIT(= N_("E476: Invalid command"));
 EXTERN char_u e_isadir2[] INIT(= N_("E17: \"%s\" is a directory"));
-EXTERN char_u e_invjob[] INIT(= N_("E900: Invalid job id"));
+EXTERN char_u e_invchan[] INIT(= N_("E900: Invalid channel id"));
+EXTERN char_u e_invchanjob[] INIT(= N_("E900: Invalid channel id: not a job"));
 EXTERN char_u e_jobtblfull[] INIT(= N_("E901: Job table is full"));
 EXTERN char_u e_jobspawn[] INIT(= N_(
-        "E903: Process failed to start: %s: \"%s\""));
-EXTERN char_u e_jobnotpty[] INIT(= N_("E904: Job is not connected to a pty"));
+    "E903: Process failed to start: %s: \"%s\""));
+EXTERN char_u e_channotpty[] INIT(= N_("E904: channel is not a pty"));
+EXTERN char_u e_stdiochan2[] INIT(= N_(
+    "E905: Couldn't open stdio channel: %s"));
+EXTERN char_u e_invstream[] INIT(= N_("E906: invalid stream for channel"));
+EXTERN char_u e_invstreamrpc[] INIT(= N_(
+    "E906: invalid stream for rpc channel, use 'rpc'"));
+EXTERN char_u e_streamkey[] INIT(= N_(
+    "E5210: dict key '%s' already set for buffered stream in channel %"
+    PRIu64));
 EXTERN char_u e_libcall[] INIT(= N_("E364: Library call failed for \"%s()\""));
 EXTERN char_u e_mkdir[] INIT(= N_("E739: Cannot create directory %s: %s"));
 EXTERN char_u e_markinval[] INIT(= N_("E19: Mark has invalid line number"));
@@ -1089,7 +1029,6 @@ EXTERN char_u e_nesting[] INIT(= N_("E22: Scripts nested too deep"));
 EXTERN char_u e_noalt[] INIT(= N_("E23: No alternate file"));
 EXTERN char_u e_noabbr[] INIT(= N_("E24: No such abbreviation"));
 EXTERN char_u e_nobang[] INIT(= N_("E477: No ! allowed"));
-EXTERN char_u e_nogvim[] INIT(= N_("E25: Nvim does not have a built-in GUI"));
 EXTERN char_u e_nogroup[] INIT(= N_("E28: No such highlight group name: %s"));
 EXTERN char_u e_noinstext[] INIT(= N_("E29: No inserted text yet"));
 EXTERN char_u e_nolastcmd[] INIT(= N_("E30: No previous command line"));
@@ -1105,6 +1044,7 @@ EXTERN char_u e_norange[] INIT(= N_("E481: No range allowed"));
 EXTERN char_u e_noroom[] INIT(= N_("E36: Not enough room"));
 EXTERN char_u e_notmp[] INIT(= N_("E483: Can't get temp file name"));
 EXTERN char_u e_notopen[] INIT(= N_("E484: Can't open file %s"));
+EXTERN char_u e_notopen_2[] INIT(= N_("E484: Can't open file %s: %s"));
 EXTERN char_u e_notread[] INIT(= N_("E485: Can't read file %s"));
 EXTERN char_u e_nowrtmsg[] INIT(= N_(
         "E37: No write since last change (add ! to override)"));
@@ -1151,7 +1091,6 @@ EXTERN char_u e_write[] INIT(= N_("E80: Error while writing"));
 EXTERN char_u e_zerocount[] INIT(= N_("E939: Positive count required"));
 EXTERN char_u e_usingsid[] INIT(= N_(
     "E81: Using <SID> not in a script context"));
-EXTERN char_u e_intern2[] INIT(= N_("E685: Internal error: %s"));
 EXTERN char_u e_maxmempat[] INIT(= N_(
         "E363: pattern uses more memory than 'maxmempattern'"));
 EXTERN char_u e_emptybuf[] INIT(= N_("E749: empty buffer"));
@@ -1167,6 +1106,14 @@ EXTERN char_u e_dirnotf[] INIT(= N_(
 EXTERN char_u e_unsupportedoption[] INIT(= N_("E519: Option not supported"));
 EXTERN char_u e_fnametoolong[] INIT(= N_("E856: Filename too long"));
 EXTERN char_u e_float_as_string[] INIT(= N_("E806: using Float as a String"));
+EXTERN char_u e_autocmd_err[] INIT(=N_(
+    "E5500: autocmd has thrown an exception: %s"));
+EXTERN char_u e_cmdmap_err[] INIT(=N_(
+    "E5520: <Cmd> mapping must end with <CR>"));
+EXTERN char_u e_cmdmap_repeated[] INIT(=N_(
+    "E5521: <Cmd> mapping must end with <CR> before second <Cmd>"));
+EXTERN char_u e_cmdmap_key[] INIT(=N_(
+    "E5522: <Cmd> mapping must not include %s key"));
 
 
 EXTERN char top_bot_msg[] INIT(= N_("search hit TOP, continuing at BOTTOM"));
@@ -1185,11 +1132,10 @@ EXTERN FILE *time_fd INIT(= NULL);  /* where to write startup timing */
 EXTERN int ignored;
 EXTERN char *ignoredp;
 
-// If a msgpack-rpc channel should be started over stdin/stdout
+// Start a msgpack-rpc channel over stdin/stdout.
 EXTERN bool embedded_mode INIT(= false);
-
-/// next free id for a job or rpc channel
-EXTERN uint64_t next_chan_id INIT(= 1);
+// Do not start a UI nor read/write to stdio (unless embedding).
+EXTERN bool headless_mode INIT(= false);
 
 /// Used to track the status of external functions.
 /// Currently only used for iconv().

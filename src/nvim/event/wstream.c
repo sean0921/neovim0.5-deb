@@ -14,7 +14,7 @@
 #include "nvim/vim.h"
 #include "nvim/memory.h"
 
-#define DEFAULT_MAXMEM 1024 * 1024 * 10
+#define DEFAULT_MAXMEM 1024 * 1024 * 2000
 
 typedef struct {
   Stream *stream;
@@ -90,7 +90,7 @@ bool wstream_write(Stream *stream, WBuffer *buffer)
 
   uv_buf_t uvbuf;
   uvbuf.base = buffer->data;
-  uvbuf.len = buffer->size;
+  uvbuf.len = UV_BUF_LEN(buffer->size);
 
   if (uv_write(&data->uv_req, stream->uvstream, &uvbuf, 1, write_cb)) {
     xfree(data);

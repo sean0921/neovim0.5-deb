@@ -29,20 +29,26 @@ License: Vim
 
 Files: src/nvim/api/*
        src/nvim/aucmd.*
+       src/nvim/buffer_updates.*
        src/nvim/bufhl_defs.h
+       src/nvim/channel.*
        src/nvim/CMakeLists.txt
        src/nvim/cursor_shape.*
+       src/nvim/eval.lua
        src/nvim/eval/*
        src/nvim/event/*
        src/nvim/func_attr.h
        src/nvim/generators/*
        src/nvim/highlight_defs.h
+       src/nvim/lib/ringbuf.h
        src/nvim/log.*
        src/nvim/lua/*
        src/nvim/map.*
        src/nvim/memory.*
        src/nvim/msgpack_rpc/*
        src/nvim/os/fileio.*
+       src/nvim/os/lang.*
+       src/nvim/os/process.*
        src/nvim/os/pty_process*
        src/nvim/os/stdpaths.*
        src/nvim/README.md
@@ -50,12 +56,15 @@ Files: src/nvim/api/*
        src/nvim/shada.*
        src/nvim/state.*
        src/nvim/terminal.*
+       src/nvim/testdir/runnvim.*
        src/nvim/tui*
        src/nvim/ui*
        src/nvim/ugrid.*
+       src/nvim/viml/*
        src/nvim/*.lua
        runtime/autoload/health.vim
        runtime/autoload/health/*
+       runtime/autoload/man.vim
        runtime/autoload/msgpack.vim
        runtime/autoload/provider.vim
        runtime/autoload/provider/*
@@ -64,6 +73,7 @@ Files: src/nvim/api/*
        runtime/autoload/tutor.vim
        runtime/autoload/vimexpect.vim
        runtime/doc/api.txt
+       runtime/doc/channel.txt
        runtime/doc/deprecated.txt
        runtime/doc/if_lua.txt
        runtime/doc/if_ruby.txt
@@ -77,11 +87,13 @@ Files: src/nvim/api/*
        runtime/doc/ui.txt
        runtime/doc/vim_diff.txt
        runtime/ftplugin/tutor.vim
+       runtime/lua/*
        runtime/nvim.desktop
        runtime/nvim.png
-       runtime/plugin/gui_shim.vim
        runtime/plugin/health.vim
        runtime/plugin/man.vim
+       runtime/plugin/rplugin.vim
+       runtime/syntax/man.vim
        runtime/syntax/tutor.vim
        runtime/tutor/*
 Copyright: Neovim contributors
