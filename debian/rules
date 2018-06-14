@@ -11,7 +11,7 @@ CXXFLAGS += $(CPPFLAGS)
 export CFLAGS CXXFLAGS LDFLAGS
 
 USE_JEMALLOC = ON
-ifnq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' libjemalloc-dev)))
+ifeq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' libjemalloc-dev)))
   USE_JEMALLOC = OFF
 endif
 
