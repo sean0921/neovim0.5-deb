@@ -21,6 +21,7 @@ Build-Depends:
  libunibilium-dev,
  libuv1-dev,
  libvterm-dev,
+ locales,
  lua-bitop,
  lua-busted <!nocheck>,
  lua-lpeg,

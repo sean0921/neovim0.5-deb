@@ -56,15 +56,20 @@ debian/passwd:
 debian/fakehome:
 	mkdir -p debian/fakehome
 
+debian/fakehome/locale-stamp:
+	mkdir -p debian/fakehome/locale
+	localedef -f UTF-8 -i en_US debian/fakehome/locale/en_US.UTF-8
+	touch $@
+
 override_dh_auto_test-indep:
 
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 # Force SHELL=/bin/bash so we have a printf that understands \x07
 override_dh_auto_test-arch: export SHELL=/bin/bash
-override_dh_auto_test-arch: debian/passwd debian/fakehome
-	env "HOME=$(CURDIR)/debian/fakehome" $(MAKE) -C src/nvim/testdir clean
-	env "HOME=$(CURDIR)/debian/fakehome" TERM=xterm $(MAKE) -C src/nvim/testdir "NVIM_PRG=$(CURDIR)/build/bin/nvim"
+override_dh_auto_test-arch: debian/passwd debian/fakehome debian/fakehome/locale-stamp
+	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" "HOME=$(CURDIR)/debian/fakehome" $(MAKE) -C src/nvim/testdir clean
+	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" "HOME=$(CURDIR)/debian/fakehome" TERM=xterm $(MAKE) -C src/nvim/testdir "NVIM_PRG=$(CURDIR)/build/bin/nvim"
 ifneq (,$(UNITTEST)$(FUNCTIONALTEST))
-	env TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(UNITTEST) $(FUNCTIONALTEST)
+	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(UNITTEST) $(FUNCTIONALTEST)
 endif
 endif
