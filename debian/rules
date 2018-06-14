@@ -27,8 +27,8 @@ ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit))
   UNITTEST = unittest
 endif
 
-export USERNAME = pkg-vim-maintainers
-export HOSTNAME = lists.alioth.debian.org
+export USERNAME = team+vim
+export HOSTNAME = tracker.debian.org
 
 USER = $(shell id -un)
 ID = $(shell id -u)
