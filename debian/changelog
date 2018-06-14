@@ -1,8 +1,13 @@
-neovim (0.3.0-1) UNRELEASED; urgency=medium
+neovim (0.3.0-1) unstable; urgency=medium
 
   * New upstream release
+  * Add gettext to Build-Depends for xgettext/msgfmt commands
+  * Use bash when running tests so printf understands hex escapes
+  * Generate en_US.UTF-8 locale as required by upstream's tests
+  * Declare compliance with Policy 4.1.4, no changes needed
+  * Change Maintainer email to team+vim@tracker.debian.org
 
- -- James McCoy <jamessan@debian.org>  Mon, 11 Jun 2018 21:04:24 -0400
+ -- James McCoy <jamessan@debian.org>  Thu, 14 Jun 2018 00:10:33 -0400
 
 neovim (0.2.2-3) unstable; urgency=medium
 
