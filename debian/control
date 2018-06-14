@@ -1,7 +1,7 @@
 Source: neovim
 Section: editors
 Priority: optional
-Maintainer: Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
+Maintainer: Debian Vim Maintainers <team+vim@tracker.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends:
  cmake,
