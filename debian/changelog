@@ -1,8 +1,9 @@
-neovim (0.3.0-2) UNRELEASED; urgency=medium
+neovim (0.3.0-2) unstable; urgency=medium
 
-  * 
+  * Disable use of jemalloc when the package is not installed
+  * Use team+vim@tracker.debian.org for the "Compiled by" string
 
- -- James McCoy <jamessan@debian.org>  Thu, 14 Jun 2018 07:29:42 -0400
+ -- James McCoy <jamessan@debian.org>  Thu, 14 Jun 2018 08:19:34 -0400
 
 neovim (0.3.0-1) unstable; urgency=medium
 
