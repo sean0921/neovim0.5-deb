@@ -11,18 +11,18 @@ CXXFLAGS += $(CPPFLAGS)
 export CFLAGS CXXFLAGS LDFLAGS
 
 USE_JEMALLOC = ON
-ifeq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' libjemalloc-dev)))
+ifeq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' libjemalloc-dev 2>&1)))
   USE_JEMALLOC = OFF
 endif
 
 PREFER_LUA = ON
 FUNCTIONALTEST =
 UNITTEST =
-ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim)))
+ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim 2>&1)))
   FUNCTIONALTEST = functionaltest
 endif
 
-ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit)))
+ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit 2>&1)))
   PREFER_LUA = OFF
   UNITTEST = unittest
 endif
