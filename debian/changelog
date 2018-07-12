@@ -1,3 +1,14 @@
+neovim (0.3.0-3) UNRELEASED; urgency=medium
+
+  * Backport patch from upstream to fix a build issues for hurd
+    + cmake: Check for GNU compiler, not Linux, to set -D_GNU_SOURCE
+  * Backport patches from upstream to fix FTBFS with libuv1 >= 1.21.0, due to
+    reorganized headers
+    + test: Rename includes/pre/uv-errno.h to includes/pre/uv.h
+    + test/includes: Use ${gen_cdefs} when pre-processing headers
+
+ -- James McCoy <jamessan@debian.org>  Thu, 12 Jul 2018 07:42:05 -0400
+
 neovim (0.3.0-2) unstable; urgency=medium
 
   * Disable use of jemalloc when the package is not installed
