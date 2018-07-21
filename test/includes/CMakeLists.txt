@@ -29,3 +29,4 @@ foreach(hfile ${PRE_HEADERS})
 endforeach()
 
 add_custom_target(unittest-headers DEPENDS ${POST_HEADERS})
+set_target_properties(unittest-headers PROPERTIES FOLDER test)
