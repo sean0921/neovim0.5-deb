@@ -47,6 +47,7 @@ Depends:
  ${shlibs:Depends}
 Recommends: python-neovim, python3-neovim, xsel | xclip, xxd
 Suggests: ctags, vim-scripts
+Provides: editor
 Description: heavily refactored vim fork
  Neovim is a fork of Vim focused on modern code and features, rather than
  running in legacy environments.
