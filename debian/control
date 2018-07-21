@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Debian Vim Maintainers <team+vim@tracker.debian.org>
 Uploaders: James McCoy <jamessan@debian.org>
 Build-Depends:
- cmake,
+ cmake (>= 2.8.12),
  debhelper (>= 11),
  gettext,
  gperf,
