@@ -1,10 +1,13 @@
-neovim (0.3.1-1) UNRELEASED; urgency=medium
+neovim (0.3.1-1) unstable; urgency=medium
 
   * New upstream release
     + Unicode 11 support
-    + Bump minimum CMake version for builds to 2.8.12
+  * control:
+    + Bump minimum CMake version to 2.8.12
+    + Add python(3)-neovim to Build-Depends for tests
+    + Add Provides: editor to neovim (Closes: #881313)
 
- -- James McCoy <jamessan@debian.org>  Sat, 21 Jul 2018 13:35:38 -0400
+ -- James McCoy <jamessan@debian.org>  Wed, 25 Jul 2018 00:27:36 -0400
 
 neovim (0.3.0-3) unstable; urgency=medium
 
