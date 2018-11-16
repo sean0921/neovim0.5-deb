@@ -33,7 +33,12 @@ export HOSTNAME = tracker.debian.org
 USER = $(shell id -un)
 ID = $(shell id -u)
 GID = $(shell id -g)
-BUILD = ninja -v -C build
+
+ifeq (,$(filter terse,$(DEB_BUILD_OPTIONS)))
+  BUILD = ninja -v -C build
+else
+  BUILD = ninja -C build
+endif
 
 %:
 	dh $@ --buildsystem=cmake --builddirectory=build
