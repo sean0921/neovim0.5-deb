@@ -44,7 +44,7 @@ endif
 	dh $@ --buildsystem=cmake --builddirectory=build
 
 override_dh_auto_configure:
-	dh_auto_configure -- -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUSTED_OUTPUT_TYPE=nvim -DPREFER_LUA=$(PREFER_LUA) -DENABLE_JEMALLOC=$(USE_JEMALLOC)
+	dh_auto_configure -- -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUSTED_OUTPUT_TYPE=nvim -DPREFER_LUA=$(PREFER_LUA) -DENABLE_JEMALLOC=$(USE_JEMALLOC)
 
 override_dh_auto_build:
 	$(BUILD)
