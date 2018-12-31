@@ -24,6 +24,7 @@ Build-Depends:
  locales,
  lua-bitop,
  lua-busted <!nocheck>,
+ lua-inspect <!nocheck>,
  lua-lpeg,
  lua-mpack,
  lua-nvim (>= 0.0.1-26-1~) [!hurd-i386] <!nocheck>,
