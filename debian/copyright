@@ -11,6 +11,7 @@ Copyright: 2016-2018 James McCoy <jamessan@debian.org>
 License: Apache
 
 Files: runtime/*
+       scripts/check_urls.vim
        src/nvim/*
        test/functional/legacy/*
 Copyright: 2001-2015 Bram Moolenaar <Bram@vim.org>
@@ -39,6 +40,7 @@ Files: src/nvim/api/*
        src/nvim/event/*
        src/nvim/func_attr.h
        src/nvim/generators/*
+       src/nvim/highlight.*
        src/nvim/highlight_defs.h
        src/nvim/lib/ringbuf.h
        src/nvim/log.*
@@ -121,20 +123,26 @@ Files: unicode/*
 Copyright: 2016 Unicode®, Inc.
 License: Unicode
 
-Files: src/nvim/lib/khash.h
+Files: contrib/doxygen/extra.css
+       runtime/ftplugin/wast.vim
+       runtime/indent/wast.vim
+       runtime/syntax/cf.vim
+       runtime/syntax/wast.vim
+       scripts/gen_help_html.py
+       src/nvim/lib/khash.h
        src/nvim/lib/klist.h
        src/nvim/lib/kvec.h
 Copyright: 2008-2009, 2011 Attractive Chaos <attractor@live.co.uk>
            2008 Google Inc.
+           2014 Nicolas Gallagher
+           2016 rhysd
+           2017 Ernst M. van der Linden <ernst.vanderlinden@ernestoz.com>
+           2016 Carlo Teubner
 License: Expat
 
 Files: src/nvim/lib/queue.h
 Copyright: 2013 Ben Noordhuis <info@bnoordhuis.nl>
 License: ISC
-
-Files: contrib/doxygen/extra.css
-Copyright: 2014 Nicolas Gallagher
-License: Expat
 
 Files: src/nvim/regexp.c
 Copyright: 1986 University of Toronto
@@ -146,6 +154,14 @@ Copyright: Eric Pruitt <eric.pruitt@gmail.com>
            1997-1999, 2001 John-Mark Gurney
            2008-2009 Attractive Chaos <attractor@live.co.uk>
 License: BSD-2-clause
+
+Files: src/nvim/xdiff/*
+Copyright: 2003-2016 Davide Libenzi, Johannes E. Schindelin
+License: LGPL-2.1+
+
+Files: src/nvim/xdiff/xhistogram.c
+Copyright: 2010 Google Inc. and other copyright owners as documented in JGit's IP log
+License: EDL-1
 
 License: Apache
  Copyright Neovim contributors. All rights reserved.
@@ -414,3 +430,46 @@ License: BSD-2-clause
  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: LGPL-2.1+
+ On Debian systems, the complete text of the LGPL version 2 license can be
+ found in `/usr/share/common-licenses/LGPL-2.1'.
+
+License: EDL-1
+ This program and the accompanying materials are made available
+ under the terms of the Eclipse Distribution License v1.0 which
+ accompanies this distribution, is reproduced below, and is
+ available at http://www.eclipse.org/org/documents/edl-v10.php
+ .
+ All rights reserved.
+ .
+ Redistribution and use in source and binary forms, with or
+ without modification, are permitted provided that the following
+ conditions are met:
+ .
+ - Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+ .
+ - Redistributions in binary form must reproduce the above
+   copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided
+   with the distribution.
+ .
+ - Neither the name of the Eclipse Foundation, Inc. nor the
+   names of its contributors may be used to endorse or promote
+   products derived from this software without specific prior
+   written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
