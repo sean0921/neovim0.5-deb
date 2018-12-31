@@ -21,6 +21,7 @@
 #include "nvim/vim.h"
 #include "nvim/buffer.h"
 #include "nvim/file_search.h"
+#include "nvim/highlight.h"
 #include "nvim/window.h"
 #include "nvim/types.h"
 #include "nvim/ex_docmd.h"
@@ -44,6 +45,24 @@
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "api/vim.c.generated.h"
 #endif
+
+void api_vim_init(void)
+  FUNC_API_NOEXPORT
+{
+  namespace_ids = map_new(String, handle_T)();
+}
+
+void api_vim_free_all_mem(void)
+  FUNC_API_NOEXPORT
+{
+  String name;
+  handle_T id;
+  map_foreach(namespace_ids, name, id, {
+    (void)id;
+    xfree(name.data);
+  })
+  map_free(String, handle_T)(namespace_ids);
+}
 
 /// Executes an ex-command.
 ///
@@ -501,7 +520,7 @@ Integer nvim_strwidth(String text, Error *err)
   FUNC_API_SINCE(1)
 {
   if (text.size > INT_MAX) {
-    api_set_error(err, kErrorTypeValidation, "String length is too high");
+    api_set_error(err, kErrorTypeValidation, "String is too long");
     return 0;
   }
 
@@ -558,7 +577,7 @@ void nvim_set_current_dir(String dir, Error *err)
   FUNC_API_SINCE(1)
 {
   if (dir.size >= MAXPATHL) {
-    api_set_error(err, kErrorTypeValidation, "Directory string is too long");
+    api_set_error(err, kErrorTypeValidation, "Directory name is too long");
     return;
   }
 
@@ -724,6 +743,9 @@ void nvim_err_writeln(String str)
 
 /// Gets the current list of buffer handles
 ///
+/// Includes unlisted (unloaded/deleted) buffers, like `:ls!`.
+/// Use |nvim_buf_is_loaded()| to check if a buffer is loaded.
+///
 /// @return List of buffer handles
 ArrayOf(Buffer) nvim_list_bufs(void)
   FUNC_API_SINCE(1)
@@ -883,6 +905,49 @@ void nvim_set_current_tabpage(Tabpage tabpage, Error *err)
   }
 }
 
+/// Creates a new namespace, or gets an existing one
+///
+/// Namespaces are used for buffer highlights and virtual text, see
+/// |nvim_buf_add_highlight()| and |nvim_buf_set_virtual_text()|.
+///
+/// Namespaces can be named or anonymous. If `name` matches an existing
+/// namespace, the associated id is returned. If `name` is an empty string
+/// a new, anonymous namespace is created.
+///
+/// @param name Namespace name or empty string
+/// @return Namespace id
+Integer nvim_create_namespace(String name)
+  FUNC_API_SINCE(5)
+{
+  handle_T id = map_get(String, handle_T)(namespace_ids, name);
+  if (id > 0) {
+    return id;
+  }
+  id = next_namespace_id++;
+  if (name.size > 0) {
+    String name_alloc = copy_string(name);
+    map_put(String, handle_T)(namespace_ids, name_alloc, id);
+  }
+  return (Integer)id;
+}
+
+/// Gets existing, non-anonymous namespaces
+///
+/// @return dict that maps from names to namespace ids.
+Dictionary nvim_get_namespaces(void)
+  FUNC_API_SINCE(5)
+{
+  Dictionary retval = ARRAY_DICT_INIT;
+  String name;
+  handle_T id;
+
+  map_foreach(namespace_ids, name, id, {
+    PUT(retval, name.data, INTEGER_OBJ(id));
+  })
+
+  return retval;
+}
+
 /// Subscribes to event broadcasts
 ///
 /// @param channel_id Channel id (passed automatically by the dispatcher)
@@ -1027,7 +1092,7 @@ Array nvim_get_api_info(uint64_t channel_id)
 /// @param attributes Informal attributes describing the client. Clients might
 ///                   define their own keys, but the following are suggested:
 ///     - "website" Website of client (for instance github repository)
-///     - "license" Informal descripton of the license, such as "Apache 2",
+///     - "license" Informal description of the license, such as "Apache 2",
 ///                 "GPLv3" or "MIT"
 ///     - "logo"    URI or path to image, preferably small logo or icon.
 ///                 .png or .svg format is preferred.
@@ -1082,7 +1147,7 @@ void nvim_set_client_info(uint64_t channel_id, String name,
 ///    -  "buffer"  buffer with connected |terminal| instance (optional)
 ///    -  "client"  information about the client on the other end of the
 ///                 RPC channel, if it has added it using
-///                 |nvim_set_client_info|. (optional)
+///                 |nvim_set_client_info()|. (optional)
 ///
 Dictionary nvim_get_chan_info(Integer chan, Error *err)
   FUNC_API_SINCE(4)
@@ -1096,7 +1161,7 @@ Dictionary nvim_get_chan_info(Integer chan, Error *err)
 /// Get information about all open channels.
 ///
 /// @returns Array of Dictionaries, each describing a channel with
-///          the format specified at |nvim_get_chan_info|.
+///          the format specified at |nvim_get_chan_info()|.
 Array nvim_list_chans(void)
   FUNC_API_SINCE(4)
 {
@@ -1135,14 +1200,14 @@ Array nvim_call_atomic(uint64_t channel_id, Array calls, Error *err)
     if (calls.items[i].type != kObjectTypeArray) {
       api_set_error(err,
                     kErrorTypeValidation,
-                    "All items in calls array must be arrays");
+                    "Items in calls array must be arrays");
       goto validation_error;
     }
     Array call = calls.items[i].data.array;
     if (call.size != 2) {
       api_set_error(err,
                     kErrorTypeValidation,
-                    "All items in calls array must be arrays of size 2");
+                    "Items in calls array must be arrays of size 2");
       goto validation_error;
     }
 
@@ -1849,4 +1914,23 @@ Object nvim_get_proc(Integer pid, Error *err)
   }
 #endif
   return rvobj;
+}
+
+/// NB: if your UI doesn't use hlstate, this will not return hlstate first time
+Array nvim__inspect_cell(Integer row, Integer col, Error *err)
+{
+  Array ret = ARRAY_DICT_INIT;
+  if (row < 0 || row >= screen_Rows
+      || col < 0 || col >= screen_Columns) {
+    return ret;
+  }
+  size_t off = LineOffset[(size_t)row] + (size_t)col;
+  ADD(ret, STRING_OBJ(cstr_to_string((char *)ScreenLines[off])));
+  int attr = ScreenAttrs[off];
+  ADD(ret, DICTIONARY_OBJ(hl_get_attr_by_id(attr, true, err)));
+  // will not work first time
+  if (!highlight_use_hlstate()) {
+    ADD(ret, ARRAY_OBJ(hl_inspect(attr)));
+  }
+  return ret;
 }

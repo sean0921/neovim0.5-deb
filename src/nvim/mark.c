@@ -599,9 +599,10 @@ static char_u *mark_line(pos_T *mp, int lead_len)
   if (mp->lnum == 0 || mp->lnum > curbuf->b_ml.ml_line_count)
     return vim_strsave((char_u *)"-invalid-");
   assert(Columns >= 0 && (size_t)Columns <= SIZE_MAX);
-  s = vim_strnsave(skipwhite(ml_get(mp->lnum)), (size_t)Columns);
+  // Allow for up to 5 bytes per character.
+  s = vim_strnsave(skipwhite(ml_get(mp->lnum)), (size_t)Columns * 5);
 
-  /* Truncate the line to fit it in the window */
+  // Truncate the line to fit it in the window
   len = 0;
   for (p = s; *p != NUL; MB_PTR_ADV(p)) {
     len += ptr2cells(p);
@@ -1465,12 +1466,16 @@ void mark_mb_adjustpos(buf_T *buf, pos_T *lp)
 {
   if (lp->col > 0 || lp->coladd > 1) {
     const char_u *const p = ml_get_buf(buf, lp->lnum, false);
-    lp->col -= (*mb_head_off)(p, p + lp->col);
+    if (*p == NUL || (int)STRLEN(p) < lp->col) {
+      lp->col = 0;
+    } else {
+      lp->col -= utf_head_off(p, p + lp->col);
+    }
     // Reset "coladd" when the cursor would be on the right half of a
     // double-wide character.
     if (lp->coladd == 1
         && p[lp->col] != TAB
-        && vim_isprintc((*mb_ptr2char)(p + lp->col))
+        && vim_isprintc(utf_ptr2char(p + lp->col))
         && ptr2cells(p + lp->col) > 1) {
       lp->coladd = 0;
     }

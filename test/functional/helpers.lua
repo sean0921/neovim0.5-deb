@@ -1,3 +1,4 @@
+require('vim.compat')
 require('coxpcall')
 local luv = require('luv')
 local lfs = require('lfs')
@@ -18,6 +19,7 @@ local expect_err = global_helpers.expect_err
 local filter = global_helpers.filter
 local map = global_helpers.map
 local matches = global_helpers.matches
+local near = global_helpers.near
 local neq = global_helpers.neq
 local ok = global_helpers.ok
 local read_file = global_helpers.read_file
@@ -299,8 +301,10 @@ end
 -- Calls fn() until it succeeds, up to `max` times or until `max_ms`
 -- milliseconds have passed.
 local function retry(max, max_ms, fn)
+  assert(max == nil or max > 0)
+  assert(max_ms == nil or max_ms > 0)
   local tries = 1
-  local timeout = (max_ms and max_ms > 0) and max_ms or 10000
+  local timeout = (max_ms and max_ms or 10000)
   local start_time = luv.now()
   while true do
     local status, result = pcall(fn)
@@ -329,6 +333,7 @@ local function clear(...)
   local new_args
   local env = nil
   local opts = select(1, ...)
+  local headless = true
   if type(opts) == 'table' then
     if opts.env then
       local env_tbl = {}
@@ -354,8 +359,14 @@ local function clear(...)
       end
     end
     new_args = opts.args or {}
+    if opts.headless == false then
+      headless = false
+    end
   else
     new_args = {...}
+  end
+  if headless then
+    table.insert(args, '--headless')
   end
   for _, arg in ipairs(new_args) do
     table.insert(args, arg)
@@ -699,6 +710,7 @@ local module = {
   meths = meths,
   missing_provider = missing_provider,
   mkdir = lfs.mkdir,
+  near = near,
   neq = neq,
   new_pipename = new_pipename,
   next_msg = next_msg,
@@ -746,6 +758,14 @@ return function(after_each)
       end
       check_logs()
       check_cores('build/bin/nvim')
+      if session then
+        local msg = session:next_message(0)
+        if msg then
+          if msg[1] == "notification" and msg[2] == "nvim_error_event" then
+            error(msg[3][2])
+          end
+        end
+      end
     end)
   end
   return module

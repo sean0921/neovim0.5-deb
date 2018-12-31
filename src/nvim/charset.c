@@ -30,7 +30,7 @@
 #include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/path.h"
-
+#include "nvim/cursor.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "charset.c.generated.h"
@@ -1344,7 +1344,11 @@ colnr_T getvcol_nolist(pos_T *posp)
   colnr_T vcol;
 
   curwin->w_p_list = false;
-  getvcol(curwin, posp, NULL, &vcol, NULL);
+  if (posp->coladd) {
+    getvvcol(curwin, posp, NULL, &vcol, NULL);
+  } else {
+    getvcol(curwin, posp, NULL, &vcol, NULL);
+  }
   curwin->w_p_list = list_save;
   return vcol;
 }
@@ -1375,7 +1379,7 @@ void getvvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor,
     ptr = ml_get_buf(wp->w_buffer, pos->lnum, false);
 
     if (pos->col < (colnr_T)STRLEN(ptr)) {
-      int c = (*mb_ptr2char)(ptr + pos->col);
+      int c = utf_ptr2char(ptr + pos->col);
       if ((c != TAB) && vim_isprintc(c)) {
         endadd = (colnr_T)(char2cells(c) - 1);
         if (coladd > endadd) {
@@ -1459,6 +1463,18 @@ char_u *skipwhite(const char_u *q)
     p++;
   }
   return (char_u *)p;
+}
+
+// getwhitecols: return the number of whitespace
+// columns (bytes) at the start of a given line
+intptr_t getwhitecols_curline(void)
+{
+  return getwhitecols(get_cursor_line_ptr());
+}
+
+intptr_t getwhitecols(const char_u *p)
+{
+  return skipwhite(p) - p;
 }
 
 /// Skip over digits

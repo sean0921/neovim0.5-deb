@@ -191,8 +191,6 @@ EXTERN int cmdline_star INIT(= FALSE);          /* cmdline is crypted */
 
 EXTERN int exec_from_reg INIT(= FALSE);         /* executing register */
 
-EXTERN int screen_cleared INIT(= FALSE);        /* screen has been cleared */
-
 /*
  * When '$' is included in 'cpoptions' option set:
  * When a change command is given that deletes only part of a line, a dollar
@@ -280,13 +278,9 @@ EXTERN int did_wait_return INIT(= FALSE);       /* wait_return() was used and
                                                    nothing written since then */
 EXTERN int need_maketitle INIT(= TRUE);      /* call maketitle() soon */
 
-EXTERN int quit_more INIT(= FALSE);         /* 'q' hit at "--more--" msg */
-#if defined(UNIX) || defined(MACOS_X)
-EXTERN int newline_on_exit INIT(= FALSE);       /* did msg in altern. screen */
-EXTERN int intr_char INIT(= 0);             /* extra interrupt character */
-#endif
-EXTERN int ex_keep_indent INIT(= FALSE);      /* getexmodeline(): keep indent */
-EXTERN int vgetc_busy INIT(= 0);            /* when inside vgetc() then > 0 */
+EXTERN int quit_more INIT(= false);         // 'q' hit at "--more--" msg
+EXTERN int ex_keep_indent INIT(= false);    // getexmodeline(): keep indent
+EXTERN int vgetc_busy INIT(= 0);            // when inside vgetc() then > 0
 
 EXTERN int didset_vim INIT(= FALSE);        /* did set $VIM ourselves */
 EXTERN int didset_vimruntime INIT(= FALSE);        /* idem for $VIMRUNTIME */
@@ -532,8 +526,8 @@ EXTERN buf_T    *curbuf INIT(= NULL);    // currently active buffer
  */
 EXTERN alist_T global_alist;    /* global argument list */
 EXTERN int max_alist_id INIT(= 0);     ///< the previous argument list id
-EXTERN int arg_had_last INIT(= FALSE);      /* accessed last file in
-                                               global_alist */
+EXTERN bool arg_had_last INIT(= false);     // accessed last file in
+                                            // global_alist
 
 EXTERN int ru_col;              /* column for ruler */
 EXTERN int ru_wid;              /* 'rulerfmt' width of ruler when non-zero */
@@ -604,7 +598,7 @@ EXTERN pos_T where_paste_started;
  * reset when any other editing is done on the line. If an <ESC> or <RETURN>
  * is received, and did_ai is TRUE, the line is truncated.
  */
-EXTERN int did_ai INIT(= FALSE);
+EXTERN bool did_ai INIT(= false);
 
 /*
  * Column of first char after autoindent.  0 when no autoindent done.  Used
@@ -632,19 +626,19 @@ EXTERN int did_syncbind INIT(= FALSE);
  * This flag is set when a smart indent has been performed. When the next typed
  * character is a '{' the inserted tab will be deleted again.
  */
-EXTERN int did_si INIT(= FALSE);
+EXTERN bool did_si INIT(= false);
 
 /*
  * This flag is set after an auto indent. If the next typed character is a '}'
  * one indent will be removed.
  */
-EXTERN int can_si INIT(= FALSE);
+EXTERN bool can_si INIT(= false);
 
 /*
  * This flag is set after an "O" command. If the next typed character is a '{'
  * one indent will be removed.
  */
-EXTERN int can_si_back INIT(= FALSE);
+EXTERN bool can_si_back INIT(= false);
 
 // w_cursor before formatting text.
 EXTERN pos_T saved_cursor INIT(= INIT_POS_T(0, 0, 0));
@@ -751,7 +745,7 @@ EXTERN cmdmod_T cmdmod;                 /* Ex command modifiers */
 EXTERN int msg_silent INIT(= 0);         // don't print messages
 EXTERN int emsg_silent INIT(= 0);        // don't print error messages
 EXTERN bool emsg_noredir INIT(= false);  // don't redirect error messages
-EXTERN int cmd_silent INIT(= false);     // don't echo the command line
+EXTERN bool cmd_silent INIT(= false);    // don't echo the command line
 
 /* Values for swap_exists_action: what to do when swap file already exists */
 #define SEA_NONE        0       /* don't use dialog */
@@ -789,7 +783,7 @@ EXTERN int ex_normal_busy INIT(= 0);     // recursiveness of ex_normal()
 EXTERN int ex_normal_lock INIT(= 0);     // forbid use of ex_normal()
 EXTERN int ignore_script INIT(= false);  // ignore script input
 EXTERN int stop_insert_mode;             // for ":stopinsert" and 'insertmode'
-EXTERN int KeyTyped;                     // TRUE if user typed current char
+EXTERN bool KeyTyped;                    // true if user typed current char
 EXTERN int KeyStuffed;                   // TRUE if current char from stuffbuf
 EXTERN int maptick INIT(= 0);            // tick for each non-mapped char
 
@@ -942,8 +936,8 @@ EXTERN int no_hlsearch INIT(= FALSE);
 EXTERN linenr_T printer_page_num;
 
 
-EXTERN int typebuf_was_filled INIT(= FALSE);      /* received text from client
-                                                     or from feedkeys() */
+EXTERN bool typebuf_was_filled INIT(= false);     // received text from client
+                                                  // or from feedkeys()
 
 
 #ifdef BACKSLASH_IN_FILENAME
@@ -952,9 +946,9 @@ EXTERN char psepcN INIT(= '/');            // abnormal path separator character
 EXTERN char pseps[2] INIT(= { '\\', 0 });  // normal path separator string
 #endif
 
-/* Set to TRUE when an operator is being executed with virtual editing, MAYBE
- * when no operator is being executed, FALSE otherwise. */
-EXTERN int virtual_op INIT(= MAYBE);
+// Set to kTrue when an operator is being executed with virtual editing
+// kNone when no operator is being executed, kFalse otherwise.
+EXTERN TriState virtual_op INIT(= kNone);
 
 /* Display tick, incremented for each call to update_screen() */
 EXTERN disptick_T display_tick INIT(= 0);
@@ -1103,6 +1097,8 @@ EXTERN char_u e_notset[] INIT(= N_("E764: Option '%s' is not set"));
 EXTERN char_u e_invalidreg[] INIT(= N_("E850: Invalid register name"));
 EXTERN char_u e_dirnotf[] INIT(= N_(
     "E919: Directory not found in '%s': \"%s\""));
+EXTERN char_u e_au_recursive[] INIT(= N_(
+    "E952: Autocommand caused recursive behavior"));
 EXTERN char_u e_unsupportedoption[] INIT(= N_("E519: Option not supported"));
 EXTERN char_u e_fnametoolong[] INIT(= N_("E856: Filename too long"));
 EXTERN char_u e_float_as_string[] INIT(= N_("E806: using Float as a String"));
@@ -1129,8 +1125,7 @@ EXTERN FILE *time_fd INIT(= NULL);  /* where to write startup timing */
  * can't do anything useful with the value.  Assign to this variable to avoid
  * the warning.
  */
-EXTERN int ignored;
-EXTERN char *ignoredp;
+EXTERN int vim_ignored;
 
 // Start a msgpack-rpc channel over stdin/stdout.
 EXTERN bool embedded_mode INIT(= false);

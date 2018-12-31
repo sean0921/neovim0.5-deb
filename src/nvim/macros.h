@@ -118,7 +118,8 @@
 // Advance multi-byte pointer, do not skip over composing chars.
 # define MB_CPTR_ADV(p)     (p += utf_ptr2len(p))
 // Backup multi-byte pointer. Only use with "p" > "s" !
-# define MB_PTR_BACK(s, p)  (p -= mb_head_off((char_u *)s, (char_u *)p - 1) + 1)
+# define MB_PTR_BACK(s, p) \
+          (p -= utf_head_off((char_u *)s, (char_u *)p - 1) + 1)
 // get length of multi-byte char, not including composing chars
 # define MB_CPTR2LEN(p)     utf_ptr2len(p)
 
@@ -126,7 +127,7 @@
 
 # define MB_CHARLEN(p)      mb_charlen(p)
 # define MB_CHAR2LEN(c)     mb_char2len(c)
-# define PTR2CHAR(p)        mb_ptr2char(p)
+# define PTR2CHAR(p)        utf_ptr2char(p)
 
 # define RESET_BINDING(wp)  (wp)->w_p_scb = FALSE; (wp)->w_p_crb = FALSE
 

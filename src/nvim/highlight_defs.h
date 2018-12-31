@@ -8,6 +8,8 @@
 typedef int32_t RgbValue;
 
 /// Highlighting attribute bits.
+///
+/// sign bit should not be used here, as it identifies invalid highlight
 typedef enum {
   HL_INVERSE     = 0x01,
   HL_BOLD        = 0x02,
@@ -20,7 +22,7 @@ typedef enum {
 /// Stores a complete highlighting entry, including colors and attributes
 /// for both TUI and GUI.
 typedef struct attr_entry {
-  int16_t rgb_ae_attr, cterm_ae_attr;  // HL_BOLD, etc.
+  int16_t rgb_ae_attr, cterm_ae_attr;  ///< HlAttrFlags
   RgbValue rgb_fg_color, rgb_bg_color, rgb_sp_color;
   int cterm_fg_color, cterm_bg_color;
 } HlAttrs;
@@ -81,8 +83,8 @@ typedef enum {
   , HLF_TP          // tabpage line
   , HLF_TPS         // tabpage line selected
   , HLF_TPF         // tabpage line filler
-  , HLF_CUC         // 'cursurcolumn'
-  , HLF_CUL         // 'cursurline'
+  , HLF_CUC         // 'cursorcolumn'
+  , HLF_CUL         // 'cursorline'
   , HLF_MC          // 'colorcolumn'
   , HLF_QFL         // selected quickfix line
   , HLF_0           // Whitespace
@@ -151,5 +153,20 @@ EXTERN int cterm_normal_bg_color INIT(= 0);
 EXTERN RgbValue normal_fg INIT(= -1);
 EXTERN RgbValue normal_bg INIT(= -1);
 EXTERN RgbValue normal_sp INIT(= -1);
+
+typedef enum {
+  kHlUnknown,
+  kHlUI,
+  kHlSyntax,
+  kHlTerminal,
+  kHlCombine,
+} HlKind;
+
+typedef struct {
+  HlAttrs attr;
+  HlKind kind;
+  int id1;
+  int id2;
+} HlEntry;
 
 #endif  // NVIM_HIGHLIGHT_DEFS_H

@@ -485,7 +485,7 @@ static char_u e_unmatchedpp[] = N_("E53: Unmatched %s%%(");
 static char_u e_unmatchedp[] = N_("E54: Unmatched %s(");
 static char_u e_unmatchedpar[] = N_("E55: Unmatched %s)");
 static char_u e_z_not_allowed[] = N_("E66: \\z( not allowed here");
-static char_u e_z1_not_allowed[] = N_("E67: \\z1 et al. not allowed here");
+static char_u e_z1_not_allowed[] = N_("E67: \\z1 - \\z9 not allowed here");
 static char_u e_missing_sb[] = N_("E69: Missing ] after %s%%[");
 static char_u e_empty_sb[]  = N_("E70: Empty %s%%[]");
 #define NOT_MULTI       0
@@ -772,13 +772,9 @@ static int get_equi_class(char_u **pp)
   char_u      *p = *pp;
 
   if (p[1] == '=') {
-    if (has_mbyte)
-      l = (*mb_ptr2len)(p + 2);
+    l = (*mb_ptr2len)(p + 2);
     if (p[l + 2] == '=' && p[l + 3] == ']') {
-      if (has_mbyte)
-        c = mb_ptr2char(p + 2);
-      else
-        c = p[2];
+      c = utf_ptr2char(p + 2);
       *pp += l + 4;
       return c;
     }
@@ -1107,13 +1103,9 @@ static int get_coll_element(char_u **pp)
   char_u      *p = *pp;
 
   if (p[0] != NUL && p[1] == '.') {
-    if (has_mbyte)
-      l = (*mb_ptr2len)(p + 2);
+    l = utfc_ptr2len(p + 2);
     if (p[l + 2] == '.' && p[l + 3] == ']') {
-      if (has_mbyte)
-        c = mb_ptr2char(p + 2);
-      else
-        c = p[2];
+      c = utf_ptr2char(p + 2);
       *pp += l + 4;
       return c;
     }
@@ -1299,10 +1291,7 @@ static regprog_T *bt_regcomp(char_u *expr, int re_flags)
     }
 
     if (OP(scan) == EXACTLY) {
-      if (has_mbyte)
-        r->regstart = (*mb_ptr2char)(OPERAND(scan));
-      else
-        r->regstart = *OPERAND(scan);
+      r->regstart = utf_ptr2char(OPERAND(scan));
     } else if (OP(scan) == BOW
                || OP(scan) == EOW
                || OP(scan) == NOTHING
@@ -1310,10 +1299,7 @@ static regprog_T *bt_regcomp(char_u *expr, int re_flags)
                || OP(scan) == MCLOSE + 0 || OP(scan) == NCLOSE) {
       char_u *regnext_scan = regnext(scan);
       if (OP(regnext_scan) == EXACTLY) {
-        if (has_mbyte)
-          r->regstart = (*mb_ptr2char)(OPERAND(regnext_scan));
-        else
-          r->regstart = *OPERAND(regnext_scan);
+        r->regstart = utf_ptr2char(OPERAND(regnext_scan));
       }
     }
 
@@ -1678,9 +1664,8 @@ static char_u *regpiece(int *flagp)
   case Magic('@'):
   {
     int lop = END;
-    int nr;
+    int64_t nr = getdecchrs();
 
-    nr = getdecchrs();
     switch (no_Magic(getchr())) {
     case '=': lop = MATCH; break;                                 /* \@= */
     case '!': lop = NOMATCH; break;                               /* \@! */
@@ -1820,8 +1805,8 @@ static char_u *regatom(int *flagp)
     if (c == '[')
       goto collection;
 
-  /* "\_x" is character class plus newline */
-  /*FALLTHROUGH*/
+  // "\_x" is character class plus newline
+  FALLTHROUGH;
 
   /*
    * Character classes.
@@ -1967,7 +1952,7 @@ static char_u *regatom(int *flagp)
   {
     c = no_Magic(getchr());
     switch (c) {
-    case '(': if (reg_do_extmatch != REX_SET)
+    case '(': if ((reg_do_extmatch & REX_SET) == 0)
         EMSG_RET_NULL(_(e_z_not_allowed));
       if (one_exactly)
         EMSG_ONE_RET_NULL;
@@ -1986,7 +1971,7 @@ static char_u *regatom(int *flagp)
     case '6':
     case '7':
     case '8':
-    case '9': if (reg_do_extmatch != REX_USE)
+    case '9': if ((reg_do_extmatch & REX_USE) == 0)
         EMSG_RET_NULL(_(e_z1_not_allowed));
       ret = regnode(ZREF + c - '0');
       re_has_z = REX_USE;
@@ -2101,7 +2086,7 @@ static char_u *regatom(int *flagp)
     case 'u':               /* %uabcd hex 4 */
     case 'U':               /* %U1234abcd hex 8 */
     {
-      int i;
+      int64_t i;
 
       switch (c) {
       case 'd': i = getdecchrs(); break;
@@ -2412,20 +2397,16 @@ collection:
               break;
             }
           } else {
-            if (has_mbyte) {
-              int len;
-
-              /* produce a multibyte character, including any
-               * following composing characters */
-              startc = mb_ptr2char(regparse);
-              len = (*mb_ptr2len)(regparse);
-              if (enc_utf8 && utf_char2len(startc) != len)
-                startc = -1;                    /* composing chars */
-              while (--len >= 0)
-                regc(*regparse++);
-            } else {
-              startc = *regparse++;
-              regc(startc);
+            // produce a multibyte character, including any
+            // following composing characters.
+            startc = utf_ptr2char(regparse);
+            int len = utfc_ptr2len(regparse);
+            if (utf_char2len(startc) != len) {
+              // composing chars
+              startc = -1;
+            }
+            while (--len >= 0) {
+              regc(*regparse++);
             }
           }
         }
@@ -2439,7 +2420,7 @@ collection:
       } else if (reg_strict)
         EMSG2_RET_NULL(_(e_missingbracket), reg_magic > MAGIC_OFF);
     }
-  /* FALLTHROUGH */
+    FALLTHROUGH;
 
   default:
   {
@@ -2557,12 +2538,11 @@ static void regc(int b)
  */
 static void regmbc(int c)
 {
-  if (!has_mbyte && c > 0xff)
-    return;
-  if (regcode == JUST_CALC_SIZE)
-    regsize += (*mb_char2len)(c);
-  else
-    regcode += (*mb_char2bytes)(c, regcode);
+  if (regcode == JUST_CALC_SIZE) {
+    regsize += utf_char2len(c);
+  } else {
+    regcode += utf_char2bytes(c, regcode);
+  }
 }
 
 /*
@@ -2906,17 +2886,13 @@ static int peekchr(void)
        * Next character can never be (made) magic?
        * Then backslashing it won't do anything.
        */
-      if (has_mbyte)
-        curchr = (*mb_ptr2char)(regparse + 1);
-      else
-        curchr = c;
+      curchr = utf_ptr2char(regparse + 1);
     }
     break;
   }
 
   default:
-    if (has_mbyte)
-      curchr = (*mb_ptr2char)(regparse);
+    curchr = utf_ptr2char(regparse);
   }
 
   return curchr;
@@ -2998,9 +2974,9 @@ static void ungetchr(void)
  * The parameter controls the maximum number of input characters. This will be
  * 2 when reading a \%x20 sequence and 4 when reading a \%u20AC sequence.
  */
-static int gethexchrs(int maxinputlen)
+static int64_t gethexchrs(int maxinputlen)
 {
-  int nr = 0;
+  int64_t nr = 0;
   int c;
   int i;
 
@@ -3022,9 +2998,9 @@ static int gethexchrs(int maxinputlen)
  * Get and return the value of the decimal string immediately after the
  * current position. Return -1 for invalid.  Consumes all digits.
  */
-static int getdecchrs(void)
+static int64_t getdecchrs(void)
 {
-  int nr = 0;
+  int64_t nr = 0;
   int c;
   int i;
 
@@ -3051,9 +3027,9 @@ static int getdecchrs(void)
  *     blahblah\%o210asdf
  *	   before-^  ^-after
  */
-static int getoctchrs(void)
+static int64_t getoctchrs(void)
 {
-  int nr = 0;
+  int64_t nr = 0;
   int c;
   int i;
 
@@ -3077,7 +3053,7 @@ static int getoctchrs(void)
  */
 static int coll_get_char(void)
 {
-  int nr = -1;
+  int64_t nr = -1;
 
   switch (*regparse++) {
   case 'd': nr = getdecchrs(); break;
@@ -3466,12 +3442,7 @@ static long bt_regexec_both(char_u *line,
 
   /* If there is a "must appear" string, look for it. */
   if (prog->regmust != NULL) {
-    int c;
-
-    if (has_mbyte)
-      c = (*mb_ptr2char)(prog->regmust);
-    else
-      c = *prog->regmust;
+    int c = utf_ptr2char(prog->regmust);
     s = line + col;
 
     // This is used very often, esp. for ":global".  Use two versions of
@@ -3502,16 +3473,11 @@ static long bt_regexec_both(char_u *line,
 
   /* Simplest case: Anchored match need be tried only once. */
   if (prog->reganch) {
-    int c;
-
-    if (has_mbyte)
-      c = (*mb_ptr2char)(regline + col);
-    else
-      c = regline[col];
+    int c = utf_ptr2char(regline + col);
     if (prog->regstart == NUL
         || prog->regstart == c
         || (rex.reg_ic
-            && (((enc_utf8 && utf_fold(prog->regstart) == utf_fold(c)))
+            && (utf_fold(prog->regstart) == utf_fold(c)
                 || (c < 255 && prog->regstart < 255
                     && mb_tolower(prog->regstart) == mb_tolower(c))))) {
       retval = regtry(prog, col);
@@ -3686,8 +3652,7 @@ static long regtry(bt_regprog_T *prog, colnr_T col)
 static int reg_prev_class(void)
 {
   if (reginput > regline) {
-    return mb_get_class_tab(reginput - 1 - (*mb_head_off)(regline,
-                                                          reginput - 1),
+    return mb_get_class_tab(reginput - 1 - utf_head_off(regline, reginput - 1),
                             rex.reg_buf->b_chartab);
   }
   return -1;
@@ -3858,12 +3823,10 @@ regmatch (
       } else if (rex.reg_line_lbr && WITH_NL(op) && *reginput == '\n') {
         ADVANCE_REGINPUT();
       } else {
-        if (WITH_NL(op))
+        if (WITH_NL(op)) {
           op -= ADD_NL;
-        if (has_mbyte)
-          c = (*mb_ptr2char)(reginput);
-        else
-          c = *reginput;
+        }
+        c = utf_ptr2char(reginput);
         switch (op) {
         case BOL:
           if (reginput != regline)
@@ -4956,13 +4919,13 @@ regmatch (
                   (colnr_T)STRLEN(regline);
               }
             } else {
-              if (has_mbyte) {
-                rp->rs_un.regsave.rs_u.pos.col -=
-                  (*mb_head_off)(regline, regline
-                                 + rp->rs_un.regsave.rs_u.pos.col - 1) + 1;
-              } else {
-                rp->rs_un.regsave.rs_u.pos.col--;
-              }
+              const char_u *const line =
+                  reg_getline(behind_pos.rs_u.pos.lnum);
+
+              rp->rs_un.regsave.rs_u.pos.col -=
+                  utf_head_off(line,
+                               line + rp->rs_un.regsave.rs_u.pos.col - 1)
+                  + 1;
             }
           } else {
             if (rp->rs_un.regsave.rs_u.ptr == regline) {
@@ -5191,8 +5154,8 @@ regrepeat (
 
   case IDENT:
   case IDENT + ADD_NL:
-    testval = TRUE;
-  /*FALLTHROUGH*/
+    testval = 1;
+    FALLTHROUGH;
   case SIDENT:
   case SIDENT + ADD_NL:
     while (count < maxcount) {
@@ -5218,8 +5181,8 @@ regrepeat (
 
   case KWORD:
   case KWORD + ADD_NL:
-    testval = TRUE;
-  /*FALLTHROUGH*/
+    testval = 1;
+    FALLTHROUGH;
   case SKWORD:
   case SKWORD + ADD_NL:
     while (count < maxcount) {
@@ -5247,8 +5210,8 @@ regrepeat (
 
   case FNAME:
   case FNAME + ADD_NL:
-    testval = TRUE;
-  /*FALLTHROUGH*/
+    testval = 1;
+    FALLTHROUGH;
   case SFNAME:
   case SFNAME + ADD_NL:
     while (count < maxcount) {
@@ -5275,8 +5238,8 @@ regrepeat (
 
   case PRINT:
   case PRINT + ADD_NL:
-    testval = TRUE;
-  /*FALLTHROUGH*/
+    testval = 1;
+    FALLTHROUGH;
   case SPRINT:
   case SPRINT + ADD_NL:
     while (count < maxcount) {
@@ -5454,8 +5417,8 @@ do_class:
 
   case ANYOF:
   case ANYOF + ADD_NL:
-    testval = TRUE;
-  /*FALLTHROUGH*/
+    testval = 1;
+    FALLTHROUGH;
 
   case ANYBUT:
   case ANYBUT + ADD_NL:
@@ -5473,8 +5436,8 @@ do_class:
         }
       } else if (rex.reg_line_lbr && *scan == '\n' && WITH_NL(OP(p))) {
         scan++;
-      } else if (has_mbyte && (len = (*mb_ptr2len)(scan)) > 1) {
-        if ((cstrchr(opnd, (*mb_ptr2char)(scan)) == NULL) == testval) {
+      } else if ((len = utfc_ptr2len(scan)) > 1) {
+        if ((cstrchr(opnd, utf_ptr2char(scan)) == NULL) == testval) {
           break;
         }
         scan += len;
@@ -6782,40 +6745,36 @@ static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest,
           }
             c = *src++;
           }
-        } else if (has_mbyte)
-          c = mb_ptr2char(src - 1);
-
-        /* Write to buffer, if copy is set. */
-        if (func_one != (fptr_T)NULL)
-          /* Turbo C complains without the typecast */
+        } else {
+          c = utf_ptr2char(src - 1);
+        }
+        // Write to buffer, if copy is set.
+        if (func_one != NULL) {
           func_one = (fptr_T)(func_one(&cc, c));
-        else if (func_all != (fptr_T)NULL)
-          /* Turbo C complains without the typecast */
+        } else if (func_all != NULL) {
           func_all = (fptr_T)(func_all(&cc, c));
-        else     /* just copy */
+        } else {
+          // just copy
           cc = c;
+        }
 
-        if (has_mbyte) {
-          int totlen = mb_ptr2len(src - 1);
+        int totlen = utfc_ptr2len(src - 1);
 
-          if (copy)
-            mb_char2bytes(cc, dst);
-          dst += mb_char2len(cc) - 1;
-          if (enc_utf8) {
-            int clen = utf_ptr2len(src - 1);
+        if (copy) {
+          utf_char2bytes(cc, dst);
+        }
+        dst += utf_char2len(cc) - 1;
+        int clen = utf_ptr2len(src - 1);
 
-            /* If the character length is shorter than "totlen", there
-             * are composing characters; copy them as-is. */
-            if (clen < totlen) {
-              if (copy)
-                memmove(dst + 1, src - 1 + clen,
-                    (size_t)(totlen - clen));
-              dst += totlen - clen;
-            }
+        // If the character length is shorter than "totlen", there
+        // are composing characters; copy them as-is.
+        if (clen < totlen) {
+          if (copy) {
+            memmove(dst + 1, src - 1 + clen, (size_t)(totlen - clen));
           }
-          src += totlen - 1;
-        } else if (copy)
-          *dst = cc;
+          dst += totlen - clen;
+        }
+        src += totlen - 1;
         dst++;
       } else {
         if (REG_MULTI) {
@@ -6878,10 +6837,7 @@ static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest,
                 }
                 dst += 2;
               } else {
-                if (has_mbyte)
-                  c = mb_ptr2char(s);
-                else
-                  c = *s;
+                c = utf_ptr2char(s);
 
                 if (func_one != (fptr_T)NULL)
                   /* Turbo C complains without the typecast */
@@ -6895,20 +6851,19 @@ static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest,
                 if (has_mbyte) {
                   int l;
 
-                  /* Copy composing characters separately, one
-                   * at a time. */
-                  if (enc_utf8)
-                    l = utf_ptr2len(s) - 1;
-                  else
-                    l = mb_ptr2len(s) - 1;
+                  // Copy composing characters separately, one
+                  // at a time.
+                  l = utf_ptr2len(s) - 1;
 
                   s += l;
                   len -= l;
-                  if (copy)
-                    mb_char2bytes(cc, dst);
-                  dst += mb_char2len(cc) - 1;
-                } else if (copy)
+                  if (copy) {
+                    utf_char2bytes(cc, dst);
+                  }
+                  dst += utf_char2len(cc) - 1;
+                } else if (copy) {
                   *dst = cc;
+                }
                 dst++;
               }
 
@@ -7302,15 +7257,13 @@ int vim_regexec_nl(regmatch_T *rmp, char_u *line, colnr_T col)
   return vim_regexec_both(rmp, line, col, true);
 }
 
-/*
- * Match a regexp against multiple lines.
- * "rmp->regprog" is a compiled regexp as returned by vim_regcomp().
- * Note: "rmp->regprog" may be freed and changed.
- * Uses curbuf for line count and 'iskeyword'.
- *
- * Return zero if there is no match.  Return number of lines contained in the
- * match otherwise.
- */
+/// Match a regexp against multiple lines.
+/// "rmp->regprog" must be a compiled regexp as returned by vim_regcomp().
+/// Note: "rmp->regprog" may be freed and changed, even set to NULL.
+/// Uses curbuf for line count and 'iskeyword'.
+///
+/// Return zero if there is no match.  Return number of lines contained in the
+/// match otherwise.
 long vim_regexec_multi(
   regmmatch_T *rmp,
   win_T       *win,               /* window in which to search or NULL */
@@ -7342,7 +7295,12 @@ long vim_regexec_multi(
     p_re = BACKTRACKING_ENGINE;
     vim_regfree(rmp->regprog);
     report_re_switch(pat);
+    // checking for \z misuse was already done when compiling for NFA,
+    // allow all here
+    reg_do_extmatch = REX_ALL;
     rmp->regprog = vim_regcomp(pat, re_flags);
+    reg_do_extmatch = 0;
+
     if (rmp->regprog != NULL) {
       result = rmp->regprog->engine->regexec_multi(rmp, win, buf, lnum, col,
                                                    tm);
