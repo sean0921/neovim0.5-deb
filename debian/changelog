@@ -3,6 +3,9 @@ neovim (0.3.2-1) experimental; urgency=medium
   * New upstream release
     + syntax/debcontrol.vim: Updated list of archive sections.  (Closes:
       #880699)
+  * Add lua-inspect Build-Depends for tests
+  * Declare compliance with Policy 4.3.0, no changes needed
+  * Point Vcs-Git & gbp.conf to debian/experimental branch
 
  -- James McCoy <jamessan@debian.org>  Mon, 31 Dec 2018 20:29:45 -0500
 
