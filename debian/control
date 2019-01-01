@@ -37,7 +37,7 @@ Build-Depends:
 Standards-Version: 4.3.0
 Homepage: https://neovim.io/
 Rules-Requires-Root: no
-Vcs-Git: https://salsa.debian.org/vim-team/neovim.git
+Vcs-Git: https://salsa.debian.org/vim-team/neovim.git -b debian/experimental
 Vcs-Browser: https://salsa.debian.org/vim-team/neovim
 
 Package: neovim
