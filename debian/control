@@ -46,7 +46,7 @@ Depends:
  neovim-runtime (= ${source:Version}),
  ${misc:Depends},
  ${shlibs:Depends}
-Recommends: python-neovim, python3-neovim, xsel | xclip, xxd
+Recommends: python-neovim, python3-neovim, xclip | xsel, xxd
 Suggests: ctags, vim-scripts
 Provides: editor
 Description: heavily refactored vim fork
