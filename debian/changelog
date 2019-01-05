@@ -1,14 +1,18 @@
-neovim (0.3.2-2) UNRELEASED; urgency=medium
+neovim (0.3.3-1) UNRELEASED; urgency=medium
 
+  * New upstream release
   * Reorder xclip/xsel Recommends to prefer xclip, to align with upstream
 
- -- James McCoy <jamessan@debian.org>  Sat, 05 Jan 2019 09:52:30 -0500
+ -- James McCoy <jamessan@debian.org>  Sat, 05 Jan 2019 10:33:36 -0500
 
 neovim (0.3.2-1) experimental; urgency=medium
 
   * New upstream release
     + syntax/debcontrol.vim: Updated list of archive sections.  (Closes:
       #880699)
+    + Use $XDG_CONFIG_DIRS/nvim/sysinit.vim, if it exists, in preference to
+      $VIM/sysinit.vim
+    + 'background' now defaults to "dark"
   * Add lua-inspect Build-Depends for tests
   * Declare compliance with Policy 4.3.0, no changes needed
   * Point Vcs-Git & gbp.conf to debian/experimental branch
