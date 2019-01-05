@@ -37,7 +37,12 @@ endfunction
 
 " Handler for s:system() function.
 function! s:system_handler(jobid, data, event) dict abort
-  if a:event ==# 'stdout' || a:event ==# 'stderr'
+  if a:event ==# 'stderr'
+    let self.stderr .= join(a:data, '')
+    if !self.ignore_stderr
+      let self.output .= join(a:data, '')
+    endif
+  elseif a:event ==# 'stdout'
     let self.output .= join(a:data, '')
   elseif a:event ==# 'exit'
     let s:shell_error = a:data
@@ -57,16 +62,15 @@ endfunction
 " Run a system command and timeout after 30 seconds.
 function! s:system(cmd, ...) abort
   let stdin = a:0 ? a:1 : ''
-  let ignore_stderr = a:0 > 1 ? a:2 : 0
   let ignore_error = a:0 > 2 ? a:3 : 0
   let opts = {
+        \ 'ignore_stderr': a:0 > 1 ? a:2 : 0,
         \ 'output': '',
+        \ 'stderr': '',
         \ 'on_stdout': function('s:system_handler'),
+        \ 'on_stderr': function('s:system_handler'),
         \ 'on_exit': function('s:system_handler'),
         \ }
-  if !ignore_stderr
-    let opts.on_stderr = function('s:system_handler')
-  endif
   let jobid = jobstart(a:cmd, opts)
 
   if jobid < 1
@@ -85,8 +89,8 @@ function! s:system(cmd, ...) abort
     call health#report_error(printf('Command timed out: %s', s:shellify(a:cmd)))
     call jobstop(jobid)
   elseif s:shell_error != 0 && !ignore_error
-    call health#report_error(printf("Command error (job=%d): `%s` (in %s)\nOutput: %s",
-          \ jobid, s:shellify(a:cmd), string(getcwd()), opts.output))
+    call health#report_error(printf("Command error (job=%d, exit code %d): `%s` (in %s)\nOutput: %s\nStderr: %s",
+          \ jobid, s:shell_error, s:shellify(a:cmd), string(getcwd()), opts.output, opts.stderr))
   endif
 
   return opts.output
@@ -148,10 +152,10 @@ function! s:check_clipboard() abort
   endif
 endfunction
 
-" Get the latest Neovim Python client version from PyPI.
+" Get the latest Neovim Python client (pynvim) version from PyPI.
 function! s:latest_pypi_version() abort
   let pypi_version = 'unable to get pypi response'
-  let pypi_response = s:download('https://pypi.python.org/pypi/neovim/json')
+  let pypi_response = s:download('https://pypi.python.org/pypi/pynvim/json')
   if !empty(pypi_response)
     try
       let pypi_data = json_decode(pypi_response)
@@ -188,9 +192,9 @@ function! s:version_info(python) abort
   let nvim_path = s:trim(s:system([
         \ a:python, '-c',
         \ 'import sys; sys.path.remove(""); ' .
-        \ 'import neovim; print(neovim.__file__)']))
+        \ 'import pynvim; print(pynvim.__file__)']))
   if s:shell_error || empty(nvim_path)
-    return [python_version, 'unable to load neovim Python module', pypi_version,
+    return [python_version, 'unable to load pynvim Python module', pypi_version,
           \ nvim_path]
   endif
 
@@ -202,13 +206,13 @@ function! s:version_info(python) abort
     return a == b ? 0 : a > b ? 1 : -1
   endfunction
 
-  " Try to get neovim.VERSION (added in 0.1.11dev).
+  " Try to get pynvim.VERSION (added in 0.1.11dev).
   let nvim_version = s:system([a:python, '-c',
-        \ 'from neovim import VERSION as v; '.
+        \ 'from pynvim import VERSION as v; '.
         \ 'print("{}.{}.{}{}".format(v.major, v.minor, v.patch, v.prerelease))'],
         \ '', 1, 1)
   if empty(nvim_version)
-    let nvim_version = 'unable to find neovim Python module version'
+    let nvim_version = 'unable to find pynvim Python module version'
     let base = fnamemodify(nvim_path, ':h')
     let metas = glob(base.'-*/METADATA', 1, 1)
           \ + glob(base.'-*/PKG-INFO', 1, 1)
@@ -289,22 +293,16 @@ function! s:check_python(version) abort
 
   let [pyname, pythonx_errs] = provider#pythonx#Detect(a:version)
   if empty(pyname)
-    call health#report_warn('No Python interpreter was found with the neovim '
+    call health#report_warn('No Python interpreter was found with the pynvim '
             \ . 'module.  Using the first available for diagnostics.')
-  endif
-
-  if !empty(pyname)
-    if exists('g:'.host_prog_var)
-      let python_bin = exepath(pyname)
-    endif
-    let pyname = fnamemodify(pyname, ':t')
+  elseif exists('g:'.host_prog_var)
+    let python_bin = pyname
   endif
 
   if !empty(pythonx_errs)
     call health#report_error('Python provider error', pythonx_errs)
-  endif
 
-  if !empty(pyname) && empty(python_bin) && empty(pythonx_errs)
+  elseif !empty(pyname) && empty(python_bin)
     if !exists('g:'.host_prog_var)
       call health#report_info(printf('`g:%s` is not set.  Searching for '
             \ . '%s in the environment.', host_prog_var, pyname))
@@ -354,7 +352,7 @@ function! s:check_python(version) abort
       call health#report_warn('pyenv is not set up optimally.', [
             \ printf('Create a virtualenv specifically '
             \ . 'for Neovim using pyenv, and set `g:%s`.  This will avoid '
-            \ . 'the need to install the Neovim Python module in each '
+            \ . 'the need to install the pynvim module in each '
             \ . 'version/virtualenv.', host_prog_var)
             \ ])
     elseif !empty(venv)
@@ -368,7 +366,7 @@ function! s:check_python(version) abort
         call health#report_warn('Your virtualenv is not set up optimally.', [
               \ printf('Create a virtualenv specifically '
               \ . 'for Neovim and use `g:%s`.  This will avoid '
-              \ . 'the need to install Neovim''s Python module in each '
+              \ . 'the need to install the pynvim module in each '
               \ . 'virtualenv.', host_prog_var)
               \ ])
       endif
@@ -402,6 +400,8 @@ function! s:check_python(version) abort
     endfor
   endif
 
+  let pip = 'pip' . (a:version == 2 ? '' : '3')
+
   if !empty(python_bin)
     let [pyversion, current, latest, status] = s:version_info(python_bin)
     if a:version != str2nr(pyversion)
@@ -412,28 +412,35 @@ function! s:check_python(version) abort
       call health#report_warn('Python 3.3+ is recommended.')
     endif
 
-    call health#report_info('Python'.a:version.' version: ' . pyversion)
+    call health#report_info('Python version: ' . pyversion)
     if s:is_bad_response(status)
-      call health#report_info(printf('%s-neovim version: %s (%s)', pyname, current, status))
+      call health#report_info(printf('pynvim version: %s (%s)', current, status))
     else
-      call health#report_info(printf('%s-neovim version: %s', pyname, current))
+      call health#report_info(printf('pynvim version: %s', current))
+      let [module_found, _msg] = provider#pythonx#CheckForModule(python_bin,
+            \ 'neovim', a:version)
+      if !module_found
+        call health#report_error('Importing "neovim" failed.',
+              \ "Reinstall \"pynvim\" and optionally \"neovim\" packages.\n" .
+              \    pip ." uninstall pynvim neovim\n" .
+              \    pip ." install pynvim\n" .
+              \    pip ." install neovim # only if needed by third-party software")
+      endif
     endif
 
     if s:is_bad_response(current)
       call health#report_error(
-        \ "Neovim Python client is not installed.\nError: ".current,
-        \ ['Run in shell: pip' . a:version . ' install neovim'])
+        \ "pynvim is not installed.\nError: ".current,
+        \ ['Run in shell: '. pip .' install pynvim'])
     endif
 
     if s:is_bad_response(latest)
       call health#report_warn('Could not contact PyPI to get latest version.')
       call health#report_error('HTTP request failed: '.latest)
     elseif s:is_bad_response(status)
-      call health#report_warn(printf('Latest %s-neovim is NOT installed: %s',
-            \ pyname, latest))
+      call health#report_warn(printf('Latest pynvim is NOT installed: %s', latest))
     elseif !s:is_bad_response(current)
-      call health#report_ok(printf('Latest %s-neovim is installed: %s',
-            \ pyname, latest))
+      call health#report_ok(printf('Latest pynvim is installed.'))
     endif
   endif
 

@@ -124,7 +124,6 @@ describe('system()', function()
     local screen
 
     before_each(function()
-      clear()
       screen = Screen.new()
       screen:attach()
     end)
@@ -201,6 +200,38 @@ describe('system()', function()
         ~                                                    |
         :call system("echo")                                 |
       ]])
+    end)
+
+    it('prints verbose information', function()
+      screen:try_resize(72, 14)
+      feed(':4verbose echo system("echo hi")<cr>')
+      if iswin() then
+        screen:expect{any=[[Executing command: "'cmd.exe' '/s' '/c' '"echo hi"'"]]}
+      else
+        screen:expect{any=[[Executing command: "'/[^']*sh' '%-c' 'echo hi'"]]}
+      end
+      feed('<cr>')
+    end)
+
+    it('self and total time recorded separately', function()
+      local tempfile = helpers.tmpname()
+
+      feed(':function! AlmostNoSelfTime()<cr>')
+      feed('echo system("echo hi")<cr>')
+      feed('endfunction<cr>')
+
+      feed(':profile start ' .. tempfile .. '<cr>')
+      feed(':profile func AlmostNoSelfTime<cr>')
+      feed(':call AlmostNoSelfTime()<cr>')
+      feed(':profile dump<cr>')
+
+      feed(':edit ' .. tempfile .. '<cr>')
+
+      local command_total_time = tonumber(helpers.funcs.split(helpers.funcs.getline(7))[2])
+      local command_self_time = tonumber(helpers.funcs.split(helpers.funcs.getline(7))[3])
+
+      helpers.neq(nil, command_total_time)
+      helpers.neq(nil, command_self_time)
     end)
 
     it('`yes` interrupted with CTRL-C', function()
@@ -386,13 +417,12 @@ describe('systemlist()', function()
     local screen
 
     before_each(function()
-        clear()
-        screen = Screen.new()
-        screen:attach()
+      screen = Screen.new()
+      screen:attach()
     end)
 
     after_each(function()
-        screen:detach()
+      screen:detach()
     end)
 
     it('`echo` and waits for its return', function()

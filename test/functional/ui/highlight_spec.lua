@@ -40,24 +40,24 @@ describe('highlight: `:syntax manual`', function()
   end)
 
   it("works with buffer switch and 'hidden'", function()
-    feed_command('e tmp1.vim')
-    feed_command('e Xtest-functional-ui-highlight.tmp.vim')
-    feed_command('filetype on')
-    feed_command('syntax manual')
-    feed_command('set ft=vim')
-    feed_command('set syntax=ON')
+    command('e tmp1.vim')
+    command('e Xtest-functional-ui-highlight.tmp.vim')
+    command('filetype on')
+    command('syntax manual')
+    command('set ft=vim')
+    command('set syntax=ON')
     feed('iecho 1<esc>0')
 
-    feed_command('set hidden')
-    feed_command('w')
-    feed_command('bn')
+    command('set hidden')
+    command('w')
+    command('bn')
     feed_command('bp')
     screen:expect([[
       {1:^echo} 1              |
       {0:~                   }|
       {0:~                   }|
       {0:~                   }|
-      <f 1 --100%-- col 1 |
+      :bp                 |
     ]])
   end)
 
@@ -122,7 +122,7 @@ describe('highlight defaults', function()
       {0:~                                                    }|
       {0:~                                                    }|
       {2:[No Name]                                            }|
-                                                           |
+      :vsp                                                 |
     ]])
     -- navigate to verify that the attributes are properly moved
     feed('<c-w>j')
@@ -140,7 +140,7 @@ describe('highlight defaults', function()
       {0:~                                                    }|
       {0:~                                                    }|
       {1:[No Name]                                            }|
-                                                           |
+      :vsp                                                 |
     ]])
     -- note that when moving to a window with small width nvim will increase
     -- the width of the new active window at the expense of a inactive window
@@ -160,7 +160,7 @@ describe('highlight defaults', function()
       {0:~                                                    }|
       {0:~                                                    }|
       {2:[No Name]                                            }|
-                                                           |
+      :vsp                                                 |
     ]])
     feed('<c-w>l')
     screen:expect([[
@@ -177,7 +177,7 @@ describe('highlight defaults', function()
       {0:~                                                    }|
       {0:~                                                    }|
       {2:[No Name]                                            }|
-                                                           |
+      :vsp                                                 |
     ]])
     feed('<c-w>h<c-w>h')
     screen:expect([[
@@ -194,7 +194,7 @@ describe('highlight defaults', function()
       {0:~                                                    }|
       {0:~                                                    }|
       {2:[No Name]                                            }|
-                                                           |
+      :vsp                                                 |
     ]])
   end)
 
@@ -677,6 +677,7 @@ end)
 
 describe('CursorLine highlight', function()
   before_each(clear)
+
   it('overridden by Error, ColorColumn if fg not set', function()
     local screen = Screen.new(50,5)
     screen:set_default_attr_ids({
@@ -690,9 +691,9 @@ describe('CursorLine highlight', function()
     })
     screen:attach()
 
-    feed_command('filetype on')
-    feed_command('syntax on')
-    feed_command('set cursorline ft=json')
+    command('filetype on')
+    command('syntax on')
+    command('set cursorline ft=json')
     feed('i{<cr>"a" : abc // 10;<cr>}<cr><esc>')
     screen:expect([[
       {1:{}                                                 |
@@ -702,7 +703,7 @@ describe('CursorLine highlight', function()
                                                         |
     ]])
 
-    feed_command('set colorcolumn=3')
+    command('set colorcolumn=3')
     feed('i  <esc>')
     screen:expect([[
       {1:{} {7: }                                               |
@@ -711,6 +712,96 @@ describe('CursorLine highlight', function()
       {5: ^ }{7: }{5:                                               }|
                                                         |
     ]])
+  end)
+
+  it('with split-windows in diff-mode', function()
+    local screen = Screen.new(50,12)
+    screen:set_default_attr_ids({
+      [1] = {foreground = Screen.colors.DarkBlue, background = Screen.colors.WebGray},
+      [2] = {bold = true, background = Screen.colors.Red},
+      [3] = {background = Screen.colors.LightMagenta},
+      [4] = {reverse = true},
+      [5] = {background = Screen.colors.LightBlue},
+      [6] = {background = Screen.colors.LightCyan1, bold = true, foreground = Screen.colors.Blue1},
+      [7] = {background = Screen.colors.Red, foreground = Screen.colors.White},
+      [8] = {bold = true, foreground = Screen.colors.Blue1},
+      [9] = {bold = true, reverse = true},
+      [10] = {bold = true},
+    })
+    screen:attach()
+
+    command('hi CursorLine ctermbg=red ctermfg=white guibg=red guifg=white')
+    command('set cursorline')
+    feed('iline 1 some text<cr>line 2 more text<cr>extra line!<cr>extra line!<cr>last line ...<cr>')
+    feed('<esc>gg')
+    command('vsplit')
+    command('enew')
+    feed('iline 1 some text<cr>line 2 moRe text!<cr>extra line!<cr>extra line!<cr>extra line!<cr>last line ...<cr>')
+    feed('<esc>gg')
+    command('windo diffthis')
+    screen:expect([[
+      {1:  }{7:line 1 some text       }{4:│}{1:  }{7:^line 1 some text      }|
+      {1:  }{3:line 2 mo}{2:Re text!}{3:      }{4:│}{1:  }{3:line 2 mo}{2:re text}{3:      }|
+      {1:  }{5:extra line!            }{4:│}{1:  }{6:----------------------}|
+      {1:  }extra line!            {4:│}{1:  }extra line!           |
+      {1:  }extra line!            {4:│}{1:  }extra line!           |
+      {1:  }last line ...          {4:│}{1:  }last line ...         |
+      {1:  }                       {4:│}{1:  }                      |
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {4:[No Name] [+]             }{9:[No Name] [+]           }|
+                                                        |
+    ]])
+    feed('jjjjj')
+    screen:expect([[
+      {1:  }line 1 some text       {4:│}{1:  }line 1 some text      |
+      {1:  }{3:line 2 mo}{2:Re text!}{3:      }{4:│}{1:  }{3:line 2 mo}{2:re text}{3:      }|
+      {1:  }{5:extra line!            }{4:│}{1:  }{6:----------------------}|
+      {1:  }extra line!            {4:│}{1:  }extra line!           |
+      {1:  }extra line!            {4:│}{1:  }extra line!           |
+      {1:  }last line ...          {4:│}{1:  }last line ...         |
+      {1:  }{7:                       }{4:│}{1:  }{7:^                      }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {4:[No Name] [+]             }{9:[No Name] [+]           }|
+                                                        |
+    ]])
+
+    -- CursorLine with fg=NONE is "low-priority".
+    -- Rendered as underline in a diff-line. #9028
+    command('hi CursorLine ctermbg=red ctermfg=NONE guibg=red guifg=NONE')
+    feed('kkkk')
+    screen:expect([[
+      {1:  }line 1 some text       {4:│}{1:  }line 1 some text      |
+      {1:  }{11:line 2 mo}{12:Re text!}{11:      }{4:│}{1:  }{11:^line 2 mo}{12:re text}{11:      }|
+      {1:  }{5:extra line!            }{4:│}{1:  }{6:----------------------}|
+      {1:  }extra line!            {4:│}{1:  }extra line!           |
+      {1:  }extra line!            {4:│}{1:  }extra line!           |
+      {1:  }last line ...          {4:│}{1:  }last line ...         |
+      {1:  }                       {4:│}{1:  }                      |
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {1:  }{8:~                      }{4:│}{1:  }{8:~                     }|
+      {4:[No Name] [+]             }{9:[No Name] [+]           }|
+                                                        |
+    ]], {
+      [1] = {foreground = Screen.colors.DarkBlue, background = Screen.colors.WebGray},
+      [2] = {bold = true, background = Screen.colors.Red},
+      [3] = {background = Screen.colors.LightMagenta},
+      [4] = {reverse = true},
+      [5] = {background = Screen.colors.LightBlue},
+      [6] = {background = Screen.colors.LightCyan1, bold = true, foreground = Screen.colors.Blue1},
+      [7] = {foreground = Screen.colors.Grey100, background = Screen.colors.Red},
+      [8] = {bold = true, foreground = Screen.colors.Blue1},
+      [9] = {bold = true, reverse = true},
+      [10] = {bold = true},
+      [11] = {underline = true,
+              background = Screen.colors.LightMagenta},
+      [12] = {bold = true, underline = true,
+              background = Screen.colors.Red},
+    })
   end)
 end)
 
@@ -834,7 +925,7 @@ describe("'winhighlight' highlight", function()
       {1:a^a                  }|
       {2:~                   }|
       {2:~                   }|
-      {11:[No Name] [+]       }|
+      {3:[No Name] [+]       }|
       aa                  |
       {0:~                   }|
       {4:[No Name] [+]       }|
@@ -846,7 +937,7 @@ describe("'winhighlight' highlight", function()
       {1:^                    }|
       {2:~                   }|
       {2:~                   }|
-      {11:[No Name]           }|
+      {3:[No Name]           }|
       aa                  |
       {0:~                   }|
       {4:[No Name] [+]       }|
@@ -870,7 +961,7 @@ describe("'winhighlight' highlight", function()
     eq('Vim(set):E474: Invalid argument: winhl=xxx:yyy',
        exc_exec("set winhl=xxx:yyy"))
     eq('Normal:Background1', eval('&winhl'))
-    screen:expect([[
+    screen:expect{grid=[[
       {1:^                    }|
       {2:~                   }|
       {2:~                   }|
@@ -879,7 +970,7 @@ describe("'winhighlight' highlight", function()
       {2:~                   }|
       {2:~                   }|
                           |
-    ]])
+    ]], unchanged=true}
   end)
 
 
@@ -891,7 +982,7 @@ describe("'winhighlight' highlight", function()
       {1:a^a                  }|
       {2:~                   }|
       {2:~                   }|
-      {11:[No Name] [+]       }|
+      {3:[No Name] [+]       }|
       aa                  |
       {0:~                   }|
       {4:[No Name] [+]       }|
@@ -915,11 +1006,11 @@ describe("'winhighlight' highlight", function()
       {1:^aa                  }|
       {2:~                   }|
       {2:~                   }|
-      {11:[No Name] [+]       }|
+      {3:[No Name] [+]       }|
       aa                  |
       {0:~                   }|
       {4:[No Name] [+]       }|
-      <f 1 --100%-- col 1 |
+                          |
     ]])
   end)
 
@@ -931,10 +1022,10 @@ describe("'winhighlight' highlight", function()
       {1:^                    }|
       {2:~                   }|
       {2:~                   }|
-      {11:[No Name]           }|
+      {3:[No Name]           }|
       {5:                    }|
       {6:~                   }|
-      {12:[No Name]           }|
+      {4:[No Name]           }|
                           |
     ]])
 
@@ -943,10 +1034,10 @@ describe("'winhighlight' highlight", function()
       {5:                    }|
       {6:~                   }|
       {6:~                   }|
-      {12:[No Name]           }|
+      {4:[No Name]           }|
       {1:^                    }|
       {2:~                   }|
-      {11:[No Name]           }|
+      {3:[No Name]           }|
                           |
     ]])
 
@@ -955,10 +1046,10 @@ describe("'winhighlight' highlight", function()
       {1:^                    }|
       {2:~                   }|
       {2:~                   }|
-      {11:[No Name]           }|
+      {3:[No Name]           }|
       {5:                    }|
       {6:~                   }|
-      {12:[No Name]           }|
+      {4:[No Name]           }|
                           |
     ]])
   end)
@@ -974,7 +1065,7 @@ describe("'winhighlight' highlight", function()
       {3:[No Name]           }|
       {7:                    }|
       {8:~                   }|
-      {13:[No Name]           }|
+      {4:[No Name]           }|
                           |
     ]])
 
@@ -983,7 +1074,7 @@ describe("'winhighlight' highlight", function()
       {7:                    }|
       {8:~                   }|
       {8:~                   }|
-      {13:[No Name]           }|
+      {4:[No Name]           }|
       ^                    |
       {0:~                   }|
       {3:[No Name]           }|
@@ -997,10 +1088,10 @@ describe("'winhighlight' highlight", function()
       {7:                    }|
       {8:~                   }|
       {8:~                   }|
-      {13:[No Name]           }|
+      {4:[No Name]           }|
       {1:^                    }|
       {2:~                   }|
-      {11:[No Name]           }|
+      {3:[No Name]           }|
                           |
     ]])
 
@@ -1012,7 +1103,7 @@ describe("'winhighlight' highlight", function()
       {3:[No Name]           }|
       {1:                    }|
       {2:~                   }|
-      {14:[No Name]           }|
+      {4:[No Name]           }|
                           |
     ]])
 
@@ -1022,10 +1113,10 @@ describe("'winhighlight' highlight", function()
       {7:                    }|
       {8:~                   }|
       {8:~                   }|
-      {13:[No Name]           }|
+      {4:[No Name]           }|
       {1:^                    }|
       {2:~                   }|
-      {11:[No Name]           }|
+      {3:[No Name]           }|
                           |
     ]])
 
@@ -1037,7 +1128,7 @@ describe("'winhighlight' highlight", function()
       {3:[No Name]           }|
       {5:                    }|
       {6:~                   }|
-      {12:[No Name]           }|
+      {4:[No Name]           }|
                           |
     ]])
   end)

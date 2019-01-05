@@ -79,6 +79,8 @@ file(MAKE_DIRECTORY ${LINT_SUPPRESSES_ROOT}/src)
 
 file(GLOB NVIM_SOURCES *.c)
 file(GLOB NVIM_HEADERS *.h)
+file(GLOB XDIFF_SOURCES xdiff/*.c)
+file(GLOB XDIFF_HEADERS xdiff/*.h)
 
 foreach(subdir
         os
@@ -148,12 +150,13 @@ set(CONV_SOURCES
   syntax.c
   tag.c
   window.c)
-
 foreach(sfile ${CONV_SOURCES})
   if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/${sfile}")
     message(FATAL_ERROR "${sfile} doesn't exist (it was added to CONV_SOURCES)")
   endif()
 endforeach()
+# xdiff: inlined external project, we don't maintain it. #9306
+list(APPEND CONV_SOURCES ${XDIFF_SOURCES})
 
 if(NOT MSVC)
   set_source_files_properties(
@@ -399,13 +402,26 @@ if(JEMALLOC_FOUND)
   list(APPEND NVIM_EXEC_LINK_LIBRARIES ${JEMALLOC_LIBRARIES})
 endif()
 
+if(POLICY CMP0069)
+  cmake_policy(SET CMP0069 NEW)
+endif()
+
 add_executable(nvim ${NVIM_GENERATED_FOR_SOURCES} ${NVIM_GENERATED_FOR_HEADERS}
-  ${NVIM_GENERATED_SOURCES} ${NVIM_SOURCES} ${NVIM_HEADERS})
+  ${NVIM_GENERATED_SOURCES} ${NVIM_SOURCES} ${NVIM_HEADERS}
+  ${XDIFF_SOURCES} ${XDIFF_HEADERS})
 target_link_libraries(nvim ${NVIM_EXEC_LINK_LIBRARIES})
 install_helper(TARGETS nvim)
 
 set_property(TARGET nvim APPEND PROPERTY
              INCLUDE_DIRECTORIES ${LUA_PREFERRED_INCLUDE_DIRS})
+
+if(ENABLE_LTO AND (POLICY CMP0069))
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT IPO_SUPPORTED)
+  if(IPO_SUPPORTED AND (NOT CMAKE_BUILD_TYPE MATCHES Debug))
+    set_property(TARGET nvim PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  endif()
+endif()
 
 if(WIN32)
   # Copy DLLs and third-party tools to bin/ and install them along with nvim
@@ -478,6 +494,7 @@ add_library(
   EXCLUDE_FROM_ALL
   ${NVIM_SOURCES} ${NVIM_GENERATED_SOURCES}
   ${NVIM_HEADERS} ${NVIM_GENERATED_FOR_SOURCES} ${NVIM_GENERATED_FOR_HEADERS}
+  ${XDIFF_SOURCES} ${XDIFF_HEADERS}
 )
 set_property(TARGET libnvim APPEND PROPERTY
              INCLUDE_DIRECTORIES ${LUA_PREFERRED_INCLUDE_DIRS})
@@ -502,6 +519,7 @@ else()
     EXCLUDE_FROM_ALL
     ${NVIM_SOURCES} ${NVIM_GENERATED_SOURCES}
     ${NVIM_HEADERS} ${NVIM_GENERATED_FOR_SOURCES} ${NVIM_GENERATED_FOR_HEADERS}
+    ${XDIFF_SOURCES} ${XDIFF_HEADERS}
     ${UNIT_TEST_FIXTURES}
   )
   target_link_libraries(nvim-test ${NVIM_TEST_LINK_LIBRARIES})
@@ -646,6 +664,12 @@ add_custom_target(
     ${LINT_PRG} --suppress-errors=${LINT_SUPPRESS_FILE} ${LINT_NVIM_REL_SOURCES}
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   DEPENDS ${LINT_PRG} ${LINT_NVIM_SOURCES} ${LINT_SUPPRESS_FILE}
+)
+
+add_custom_target(generated-sources DEPENDS
+  ${NVIM_GENERATED_FOR_SOURCES}
+  ${NVIM_GENERATED_FOR_HEADERS}
+  ${NVIM_GENERATED_SOURCES}
 )
 
 add_subdirectory(po)

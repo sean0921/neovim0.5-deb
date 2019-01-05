@@ -27,6 +27,7 @@ a complete and centralized reference of those differences.
 
 - 'autoindent' is set by default
 - 'autoread' is set by default
+- 'background' always defaults to "dark"
 - 'backspace' defaults to "indent,eol,start"
 - 'backupdir' defaults to .,~/.local/share/nvim/backup (|xdg|)
 - 'belloff' defaults to "all"
@@ -55,6 +56,7 @@ a complete and centralized reference of those differences.
 - 'smarttab' is set by default
 - 'tabpagemax' defaults to 50
 - 'tags' defaults to "./tags;,tags"
+- 'ttimeoutlen' defaults to 50
 - 'ttyfast' is always set
 - 'undodir' defaults to ~/.local/share/nvim/undo (|xdg|), auto-created
 - 'viminfo' includes "!"
@@ -111,7 +113,7 @@ ARCHITECTURE ~
 
 External plugins run in separate processes. |remote-plugin| This improves
 stability and allows those plugins to work without blocking the editor. Even
-"legacy" Python and Ruby plugins which use the old Vim interfaces (|if_py| and
+"legacy" Python and Ruby plugins which use the old Vim interfaces (|if_pyth|,
 |if_ruby|) run out-of-process.
 
 Platform and I/O facilities are built upon libuv. Nvim benefits from libuv
@@ -135,6 +137,7 @@ Commands:
   |:cquit| can use [count] to set the exit code
   |:drop| is always available
   |:Man| is available by default, with many improvements such as completion
+  |:sign-define| accepts a `numhl` argument, to highlight the line number
   |:tchdir| tab-local |current-directory|
 
 Events:
@@ -182,7 +185,7 @@ Options:
   'display' flag `msgsep` to minimize scrolling when showing messages
   'guicursor' works in the terminal
   'fillchars' flags: `msgsep` (see 'display' above)
-	      and `eob` for |EndOfBuffer| marker
+	      and `eob` for |hl-EndOfBuffer| marker
   'inccommand' shows interactive results for |:substitute|-like commands
   'scrollback'
   'statusline' supports unlimited alignment sections
@@ -204,18 +207,7 @@ certain features removed/added at compile-time. |feature-compile|
 If a Python interpreter is available on your `$PATH`, |:python| and |:python3|
 are always available and may be used simultaneously. See |provider-python|.
 
-|:!| does not support "interactive" commands. Use |:terminal| instead.
-(GUI Vim has a similar limitation, see ":help gui-pty" in Vim.)
-
-:!start is not special-cased on Windows.
-
-|system()| does not support writing/reading "backgrounded" commands. |E5677|
-
 |:redir| nested in |execute()| works.
-
-Nvim may throttle (skip) messages from shell commands (|:!|, |:grep|, |:make|)
-if there is too much output. No data is lost, this only affects display and
-makes things faster. |:terminal| output is never throttled.
 
 |mkdir()| behaviour changed:
 1. Assuming /tmp/foo does not exist and /tmp can be written to
@@ -245,7 +237,7 @@ makes things faster. |:terminal| output is never throttled.
 4. Stringifyed infinite and NaN values now use |str2float()| and can be evaled
    back.
 5. (internal) Trying to print or stringify VAR_UNKNOWN in Vim results in 
-   nothing, |E908|, in Neovim it is internal error.
+   nothing, E908, in Nvim it is internal error.
 
 |json_decode()| behaviour changed:
 1. It may output |msgpack-special-dict|.
@@ -287,12 +279,11 @@ coerced to strings. See |id()| for more details, currently it uses
 
 Lua interface (|if_lua.txt|):
 
-- `:lua print("a\0b")` will print `a^@b`, like with `:echomsg "a\nb"` . In Vim 
+- `:lua print("a\0b")` will print `a^@b`, like with `:echomsg "a\nb"` . In Vim
   that prints `a` and `b` on separate lines, exactly like
   `:lua print("a\nb")` .
-- `:lua error('TEST')` will print “TEST” as the error in Vim and “E5105: Error 
-  while calling lua chunk: [string "<VimL compiled string>"]:1: TEST” in 
-  Neovim.
+- `:lua error('TEST')` emits the error “E5105: Error while calling lua chunk:
+  [string "<VimL compiled string>"]:1: TEST”, whereas Vim emits only “TEST”.
 - Lua has direct access to Nvim |API| via `vim.api`.
 - Lua package.path and package.cpath are automatically updated according to
   'runtimepath': |lua-require|.
@@ -323,6 +314,22 @@ Normal commands:
 Options:
   'ttimeout', 'ttimeoutlen' behavior was simplified
 
+Shell:
+  Shell output (|:!|, |:make|, …) is always routed through the UI, so it
+  cannot "mess up" the screen. (You can still use "chansend(v:stderr,…)" if
+  you want to mess up the screen :)
+
+  Nvim throttles (skips) messages from shell commands (|:!|, |:grep|, |:make|)
+  if there is too much output. No data is lost, this only affects display and
+  improves performance. |:terminal| output is never throttled.
+
+  |:!| does not support "interactive" commands. Use |:terminal| instead.
+  (GUI Vim has a similar limitation, see ":help gui-pty" in Vim.)
+
+  :!start is not special-cased on Windows.
+
+  |system()| does not support writing/reading "backgrounded" commands. |E5677|
+
 Startup:
   |-e| and |-es| invoke the same "improved Ex mode" as -E and -Es.
   |-E| and |-Es| reads stdin as text (into buffer 1).
@@ -347,11 +354,14 @@ TUI:
   only 8 colours plus bright foreground on Linux VTs.
 
   Vim combines what is in its |builtin-terms| with what it reads from terminfo,
-  and has a |ttybuiltin| setting to control how that combination works.  Nvim
+  and has a 'ttybuiltin' setting to control how that combination works.  Nvim
   uses one or the other, it does not attempt to merge the two.
 
 VimL (Vim script) compatibility:
   `count` does not alias to |v:count|
+  `errmsg` does not alias to |v:errmsg|
+  `shell_error` does not alias to |v:shell_error|
+  `this_session` does not alias to |v:this_session|
 
 ==============================================================================
 5. Missing legacy features				 *nvim-features-missing*

@@ -331,6 +331,7 @@ void trunc_string(char_u *s, char_u *buf, int room_in, int buflen)
  */
 
 int smsg(char *s, ...)
+  FUNC_ATTR_PRINTF(1, 2)
 {
   va_list arglist;
 
@@ -341,6 +342,7 @@ int smsg(char *s, ...)
 }
 
 int smsg_attr(int attr, char *s, ...)
+  FUNC_ATTR_PRINTF(2, 3)
 {
   va_list arglist;
 
@@ -503,7 +505,7 @@ int emsg(const char_u *s_)
      */
     if (cause_errthrow((char_u *)s, severe, &ignore) == true) {
       if (!ignore) {
-        did_emsg = true;
+        did_emsg++;
       }
       return true;
     }
@@ -541,7 +543,7 @@ int emsg(const char_u *s_)
 
     // Reset msg_silent, an error causes messages to be switched back on.
     msg_silent = 0;
-    cmd_silent = FALSE;
+    cmd_silent = false;
 
     if (global_busy) {        // break :global command
       global_busy++;
@@ -550,9 +552,9 @@ int emsg(const char_u *s_)
     if (p_eb) {
       beep_flush();           // also includes flush_buffers()
     } else {
-      flush_buffers(false);   // flush internal buffers
+      flush_buffers(FLUSH_MINIMAL);  // flush internal buffers
     }
-    did_emsg = true;          // flag for DoOneCmd()
+    did_emsg++;               // flag for DoOneCmd()
   }
 
   emsg_on_display = true;     // remember there is an error message
@@ -581,6 +583,7 @@ void emsg_invreg(int name)
 
 /// Print an error message with unknown number of arguments
 bool emsgf(const char *const fmt, ...)
+  FUNC_ATTR_PRINTF(1, 2)
 {
   bool ret;
 
@@ -610,7 +613,7 @@ static bool emsgfv(const char *fmt, va_list ap)
 /// detected when fuzzing vim.
 void iemsg(const char *s)
 {
-    msg((char_u *)s);
+    emsg((char_u *)s);
 #ifdef ABORT_ON_INTERNAL_ERROR
     abort();
 #endif
@@ -644,6 +647,7 @@ static void msg_emsgf_event(void **argv)
 }
 
 void msg_schedule_emsgf(const char *const fmt, ...)
+  FUNC_ATTR_PRINTF(1, 2)
 {
   va_list ap;
   va_start(ap, fmt);
@@ -699,8 +703,8 @@ char_u *msg_may_trunc(int force, char_u *s)
         return s;
 
       for (n = 0; size >= room; ) {
-        size -= (*mb_ptr2cells)(s + n);
-        n += (*mb_ptr2len)(s + n);
+        size -= utf_ptr2cells(s + n);
+        n += utfc_ptr2len(s + n);
       }
       --n;
     }
@@ -828,12 +832,11 @@ void msg_end_prompt(void)
   lines_left = -1;
 }
 
-/*
- * wait for the user to hit a key (normally a return)
- * if 'redraw' is TRUE, clear and redraw the screen
- * if 'redraw' is FALSE, just redraw the screen
- * if 'redraw' is -1, don't redraw at all
- */
+/// wait for the user to hit a key (normally a return)
+///
+/// if 'redraw' is true, redraw the entire screen NOT_VALID
+/// if 'redraw' is false, do a normal redraw
+/// if 'redraw' is -1, don't redraw at all
 void wait_return(int redraw)
 {
   int c;
@@ -843,8 +846,9 @@ void wait_return(int redraw)
   int save_Recording;
   FILE        *save_scriptout;
 
-  if (redraw == TRUE)
-    must_redraw = CLEAR;
+  if (redraw == true) {
+    redraw_all_later(NOT_VALID);
+  }
 
   /* If using ":silent cmd", don't wait for a return.  Also don't set
    * need_wait_return to do it later. */
@@ -1121,7 +1125,7 @@ void msg_putchar_attr(int c, int attr)
     buf[2] = (char)K_THIRD(c);
     buf[3] = NUL;
   } else {
-    buf[(*mb_char2bytes)(c, (char_u *)buf)] = NUL;
+    buf[utf_char2bytes(c, (char_u *)buf)] = NUL;
   }
   msg_puts_attr(buf, attr);
 }
@@ -1219,10 +1223,10 @@ int msg_outtrans_len_attr(char_u *msgstr, int len, int attr)
     // Don't include composing chars after the end.
     mb_l = utfc_ptr2len_len((char_u *)str, len + 1);
     if (mb_l > 1) {
-      c = (*mb_ptr2char)((char_u *)str);
+      c = utf_ptr2char((char_u *)str);
       if (vim_isprintc(c)) {
         // Printable multi-byte char: count the cells.
-        retval += (*mb_ptr2cells)((char_u *)str);
+        retval += utf_ptr2cells((char_u *)str);
       } else {
         // Unprintable multi-byte char: print the printable chars so
         // far and the translation of the unprintable char.
@@ -1471,18 +1475,20 @@ void msg_prt_line(char_u *s, int list)
 
   while (!got_int) {
     if (n_extra > 0) {
-      --n_extra;
-      if (c_extra)
+      n_extra--;
+      if (c_extra) {
         c = c_extra;
-      else
+      } else {
+        assert(p_extra != NULL);
         c = *p_extra++;
-    } else if (has_mbyte && (l = (*mb_ptr2len)(s)) > 1) {
-      col += (*mb_ptr2cells)(s);
+      }
+    } else if ((l = utfc_ptr2len(s)) > 1) {
+      col += utf_ptr2cells(s);
       char buf[MB_MAXBYTES + 1];
       if (lcs_nbsp != NUL && list
-          && (mb_ptr2char(s) == 160 || mb_ptr2char(s) == 0x202f)) {
-        mb_char2bytes(lcs_nbsp, (char_u *)buf);
-        buf[(*mb_ptr2len)((char_u *)buf)] = NUL;
+          && (utf_ptr2char(s) == 160 || utf_ptr2char(s) == 0x202f)) {
+        utf_char2bytes(lcs_nbsp, (char_u *)buf);
+        buf[utfc_ptr2len((char_u *)buf)] = NUL;
       } else {
         memmove(buf, s, (size_t)l);
         buf[l] = NUL;
@@ -1549,7 +1555,7 @@ static char_u *screen_puts_mbyte(char_u *s, int l, int attr)
   int cw;
 
   msg_didout = true;            // remember that line is not empty
-  cw = (*mb_ptr2cells)(s);
+  cw = utf_ptr2cells(s);
   if (cw > 1
       && (cmdmsg_rl ? msg_col <= 1 : msg_col == Columns - 1)) {
     // Doesn't fit, print a highlighted '>' to fill it up.
@@ -1672,7 +1678,7 @@ void msg_puts_attr_len(const char *const str, const ptrdiff_t len, int attr)
 /// @param[in]  attr  Highlight attributes.
 /// @param[in]  fmt  Format string.
 void msg_printf_attr(const int attr, const char *const fmt, ...)
-  FUNC_ATTR_NONNULL_ARG(2)
+  FUNC_ATTR_NONNULL_ARG(2) FUNC_ATTR_PRINTF(2, 3)
 {
   static char msgbuf[IOSIZE];
 
@@ -1711,14 +1717,12 @@ static void msg_puts_display(const char_u *str, int maxlen, int attr,
         && (*s == '\n' || (cmdmsg_rl
                            ? (msg_col <= 1
                               || (*s == TAB && msg_col <= 7)
-                              || (has_mbyte
-                                  && (*mb_ptr2cells)(s) > 1
+                              || (utf_ptr2cells(s) > 1
                                   && msg_col <= 2))
                            : (msg_col + t_col >= Columns - 1
                               || (*s == TAB
                                   && msg_col + t_col >= ((Columns - 1) & ~7))
-                              || (has_mbyte
-                                  && (*mb_ptr2cells)(s) > 1
+                              || (utf_ptr2cells(s) > 1
                                   && msg_col + t_col >= Columns - 2))))) {
       // The screen is scrolled up when at the last row (some terminals
       // scroll automatically, some don't.  To avoid problems we scroll
@@ -1787,7 +1791,7 @@ static void msg_puts_display(const char_u *str, int maxlen, int attr,
 
     wrap = *s == '\n'
            || msg_col + t_col >= Columns
-           || (has_mbyte && (*mb_ptr2cells)(s) > 1
+           || (utf_ptr2cells(s) > 1
                && msg_col + t_col >= Columns - 1)
     ;
     if (t_col > 0 && (wrap || *s == '\r' || *s == '\b'
@@ -1821,7 +1825,7 @@ static void msg_puts_display(const char_u *str, int maxlen, int attr,
     } else if (*s == BELL) {  // beep (from ":sh")
       vim_beep(BO_SH);
     } else if (*s >= 0x20) {  // printable char
-      cw = mb_ptr2cells(s);
+      cw = utf_ptr2cells(s);
       if (maxlen >= 0) {
         // avoid including composing chars after the end
         l = utfc_ptr2len_len(s, (int)((str + maxlen) - s));
@@ -1888,12 +1892,13 @@ static void msg_scroll_up(void)
                   fill_msgsep, fill_msgsep, HL_ATTR(HLF_MSGSEP));
     }
     int nscroll = MIN(msg_scrollsize()+1, Rows);
-    ui_call_set_scroll_region(Rows-nscroll, Rows-1, 0, Columns-1);
-    screen_del_lines(Rows-nscroll, 0, 1, nscroll, NULL);
-    ui_reset_scroll_region();
+    screen_del_lines(Rows-nscroll, 1, Rows, 0, Columns);
   } else {
-    screen_del_lines(0, 0, 1, (int)Rows, NULL);
+    screen_del_lines(0, 1, (int)Rows, 0, Columns);
   }
+  // TODO(bfredl): when msgsep display is properly batched, this fill should be
+  // eliminated.
+  screen_fill(Rows-1, Rows, 0, (int)Columns, ' ', ' ', 0);
 }
 
 /*
@@ -2259,8 +2264,8 @@ static int do_more_prompt(int typed_char)
         skip_redraw = TRUE;                     /* skip redraw once */
         need_wait_return = FALSE;               /* don't wait in main() */
       }
-    /*FALLTHROUGH*/
-    case 'q':                   /* quit */
+      FALLTHROUGH;
+    case 'q':                   // quit
     case Ctrl_C:
     case ESC:
       if (confirm_msg_used) {
@@ -2307,9 +2312,10 @@ static int do_more_prompt(int typed_char)
               mp_last = msg_sb_start(mp_last->sb_prev);
           }
 
-          if (toscroll == -1 && screen_ins_lines(0, 0, 1,
-                  (int)Rows, NULL) == OK) {
-            /* display line at top */
+          if (toscroll == -1
+              && screen_ins_lines(0, 1, (int)Rows, 0, (int)Columns) == OK) {
+            screen_fill(0, 1, 0, (int)Columns, ' ', ' ', 0);
+            // display line at top
             (void)disp_sb_line(0, mp);
           } else {
             /* redisplay all lines */
@@ -2819,7 +2825,6 @@ do_dialog (
                                Ex command */
 )
 {
-  int oldState;
   int retval = 0;
   char_u      *hotkeys;
   int c;
@@ -2832,7 +2837,10 @@ do_dialog (
   }
 
 
-  oldState = State;
+  int save_msg_silent = msg_silent;
+  int oldState = State;
+
+  msg_silent = 0;  // If dialog prompts for input, user needs to see it! #8788
   State = CONFIRM;
   setmouse();
 
@@ -2868,14 +2876,12 @@ do_dialog (
       // Make the character lowercase, as chars in "hotkeys" are.
       c = mb_tolower(c);
       retval = 1;
-      for (i = 0; hotkeys[i]; ++i) {
-        if (has_mbyte) {
-          if ((*mb_ptr2char)(hotkeys + i) == c)
-            break;
-          i += (*mb_ptr2len)(hotkeys + i) - 1;
-        } else if (hotkeys[i] == c)
+      for (i = 0; hotkeys[i]; i++) {
+        if (utf_ptr2char(hotkeys + i) == c) {
           break;
-        ++retval;
+        }
+        i += utfc_ptr2len(hotkeys + i) - 1;
+        retval++;
       }
       if (hotkeys[i])
         break;
@@ -2887,6 +2893,7 @@ do_dialog (
 
   xfree(hotkeys);
 
+  msg_silent = save_msg_silent;
   State = oldState;
   setmouse();
   --no_wait_return;
@@ -2907,25 +2914,13 @@ copy_char (
     int lowercase                  /* make character lower case */
 )
 {
-  int len;
-  int c;
-
-  if (has_mbyte) {
-    if (lowercase) {
-      c = mb_tolower((*mb_ptr2char)(from));
-      return (*mb_char2bytes)(c, to);
-    } else {
-      len = (*mb_ptr2len)(from);
-      memmove(to, from, (size_t)len);
-      return len;
-    }
-  } else {
-    if (lowercase)
-      *to = (char_u)TOLOWER_LOC(*from);
-    else
-      *to = *from;
-    return 1;
+  if (lowercase) {
+    int c = mb_tolower(utf_ptr2char(from));
+    return utf_char2bytes(c, to);
   }
+  int len = utfc_ptr2len(from);
+  memmove(to, from, (size_t)len);
+  return len;
 }
 
 #define HAS_HOTKEY_LEN 30

@@ -58,10 +58,10 @@ typedef struct {
  * functions that set or reset the flags.
  *
  * VALID_BOTLINE    VALID_BOTLINE_AP
- *     on		on		w_botline valid
- *     off		on		w_botline approximated
- *     off		off		w_botline not valid
- *     on		off		not possible
+ *     on       on      w_botline valid
+ *     off      on      w_botline approximated
+ *     off      off     w_botline not valid
+ *     on       off     not possible
  */
 #define VALID_WROW      0x01    /* w_wrow (window row) is valid */
 #define VALID_WCOL      0x02    /* w_wcol (window col) is valid */
@@ -94,6 +94,7 @@ typedef struct {
 typedef struct window_S win_T;
 typedef struct wininfo_S wininfo_T;
 typedef struct frame_S frame_T;
+typedef uint16_t disptick_T;  // display tick type
 
 // for struct memline (it needs memfile_T)
 #include "nvim/memline_defs.h"
@@ -158,7 +159,7 @@ typedef struct {
   int wo_arab;
 # define w_p_arab w_onebuf_opt.wo_arab  /* 'arabic' */
   int wo_bri;
-# define w_p_bri w_onebuf_opt.wo_bri	/* 'breakindent' */
+# define w_p_bri w_onebuf_opt.wo_bri    // 'breakindent'
   char_u *wo_briopt;
 # define w_p_briopt w_onebuf_opt.wo_briopt /* 'breakindentopt' */
   int wo_diff;
@@ -411,13 +412,13 @@ typedef struct {
    * syntax state too often.
    * b_sst_array[] is allocated to hold the state for all displayed lines,
    * and states for 1 out of about 20 other lines.
-   * b_sst_array	pointer to an array of synstate_T
-   * b_sst_len	number of entries in b_sst_array[]
-   * b_sst_first	pointer to first used entry in b_sst_array[] or NULL
-   * b_sst_firstfree	pointer to first free entry in b_sst_array[] or NULL
-   * b_sst_freecount	number of free entries in b_sst_array[]
-   * b_sst_check_lnum	entries after this lnum need to be checked for
-   *			validity (MAXLNUM means no check needed)
+   * b_sst_array        pointer to an array of synstate_T
+   * b_sst_len          number of entries in b_sst_array[]
+   * b_sst_first        pointer to first used entry in b_sst_array[] or NULL
+   * b_sst_firstfree    pointer to first free entry in b_sst_array[] or NULL
+   * b_sst_freecount    number of free entries in b_sst_array[]
+   * b_sst_check_lnum   entries after this lnum need to be checked for
+   *                    validity (MAXLNUM means no check needed)
    */
   synstate_T  *b_sst_array;
   int b_sst_len;
@@ -425,7 +426,7 @@ typedef struct {
   synstate_T  *b_sst_firstfree;
   int b_sst_freecount;
   linenr_T b_sst_check_lnum;
-  uint16_t b_sst_lasttick;      /* last display tick */
+  disptick_T b_sst_lasttick;    // last display tick
 
   // for spell checking
   garray_T b_langp;             // list of pointers to slang_T, see spell.c
@@ -474,15 +475,15 @@ struct file_buffer {
   int b_locked;                 // Buffer is being closed or referenced, don't
                                 // let autocommands wipe it out.
 
-  /*
-   * b_ffname has the full path of the file (NULL for no name).
-   * b_sfname is the name as the user typed it (or NULL).
-   * b_fname is the same as b_sfname, unless ":cd" has been done,
-   *		then it is the same as b_ffname (NULL for no name).
-   */
-  char_u      *b_ffname;        /* full path file name */
-  char_u      *b_sfname;        /* short file name */
-  char_u      *b_fname;         /* current file name */
+  //
+  // b_ffname   has the full path of the file (NULL for no name).
+  // b_sfname   is the name as the user typed it (or NULL).
+  // b_fname    is the same as b_sfname, unless ":cd" has been done,
+  //            then it is the same as b_ffname (NULL for no name).
+  //
+  char_u      *b_ffname;        // full path file name
+  char_u      *b_sfname;        // short file name
+  char_u      *b_fname;         // current file name
 
   bool file_id_valid;
   FileID file_id;
@@ -586,12 +587,12 @@ struct file_buffer {
 
   bool b_scanned;               /* ^N/^P have scanned this buffer */
 
-  /* flags for use of ":lmap" and IM control */
-  long b_p_iminsert;            /* input mode for insert */
-  long b_p_imsearch;            /* input mode for search */
-#define B_IMODE_USE_INSERT -1   /*	Use b_p_iminsert value for search */
-#define B_IMODE_NONE 0          /*	Input via none */
-#define B_IMODE_LMAP 1          /*	Input via langmap */
+  // flags for use of ":lmap" and IM control
+  long b_p_iminsert;            // input mode for insert
+  long b_p_imsearch;            // input mode for search
+#define B_IMODE_USE_INSERT -1   //  Use b_p_iminsert value for search
+#define B_IMODE_NONE 0          //  Input via none
+#define B_IMODE_LMAP 1          //  Input via langmap
 # define B_IMODE_LAST 1
 
   short b_kmap_state;           /* using "lmap" mappings */
@@ -759,7 +760,7 @@ struct file_buffer {
   /* Two special kinds of buffers:
    * help buffer  - used for help files, won't use a swap file.
    * spell buffer - used for spell info, never displayed and doesn't have a
-   *		      file name.
+   *                file name.
    */
   bool b_help;                  /* TRUE for help file buffer (when set b_p_bt
                                    is "help") */
@@ -786,6 +787,8 @@ struct file_buffer {
   // array of channelids which have asked to receive updates for this
   // buffer.
   kvec_t(uint64_t) update_channels;
+
+  int b_diff_failed;    // internal diff failed for this buffer
 };
 
 /*
@@ -839,6 +842,7 @@ struct tabpage_S {
   diff_T          *tp_first_diff;
   buf_T           *(tp_diffbuf[DB_COUNT]);
   int tp_diff_invalid;              ///< list of diffs is outdated
+  int tp_diff_update;               ///< update diffs before redrawing
   frame_T         *(tp_snapshot[SNAP_COUNT]);    ///< window layout snapshots
   ScopeDictDictItem tp_winvar;      ///< Variable for "t:" Dictionary.
   dict_T          *tp_vars;         ///< Internal variables, local to tab page.
@@ -915,9 +919,9 @@ typedef struct {
 /// Same as lpos_T, but with additional field len.
 typedef struct
 {
-    linenr_T    lnum;	///< line number
-    colnr_T     col;	///< column number
-    int         len;	///< length: 0 - to the end of line
+    linenr_T    lnum;   ///< line number
+    colnr_T     col;    ///< column number
+    int         len;    ///< length: 0 - to the end of line
 } llpos_T;
 
 /// posmatch_T provides an array for storing match items for matchaddpos()
@@ -925,10 +929,10 @@ typedef struct
 typedef struct posmatch posmatch_T;
 struct posmatch
 {
-    llpos_T     pos[MAXPOSMATCH];	///< array of positions
-    int         cur;			///< internal position counter 
-    linenr_T    toplnum;		///< top buffer line
-    linenr_T    botlnum;		///< bottom buffer line
+    llpos_T     pos[MAXPOSMATCH];   ///< array of positions
+    int         cur;                ///< internal position counter
+    linenr_T    toplnum;            ///< top buffer line
+    linenr_T    botlnum;            ///< bottom buffer line
 };
 
 /*
@@ -982,9 +986,11 @@ struct window_S {
                                        used to try to stay in the same column
                                        for up/down cursor motions. */
 
-  int w_set_curswant;               /* If set, then update w_curswant the next
-                                       time through cursupdate() to the
-                                       current virtual column */
+  int w_set_curswant;               // If set, then update w_curswant the next
+                                    // time through cursupdate() to the
+                                    // current virtual column
+
+  linenr_T w_last_cursorline;       ///< where last 'cursorline' was drawn
 
   // the next seven are used to update the visual part
   char w_old_visual_mode;           ///< last known VIsual_mode
@@ -1033,7 +1039,7 @@ struct window_S {
    * Recomputing is minimized by storing the result of computations.
    * Use functions in screen.c to check if they are valid and to update.
    * w_valid is a bitfield of flags, which indicate if specific values are
-   * valid or need to be recomputed.	
+   * valid or need to be recomputed.
    */
   int w_valid;
   pos_T w_valid_cursor;             /* last known position of w_cursor, used
