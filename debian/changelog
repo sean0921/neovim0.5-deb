@@ -1,3 +1,9 @@
+neovim (0.3.2-2) UNRELEASED; urgency=medium
+
+  * Reorder xclip/xsel Recommends to prefer xclip, to align with upstream
+
+ -- James McCoy <jamessan@debian.org>  Sat, 05 Jan 2019 09:52:30 -0500
+
 neovim (0.3.2-1) experimental; urgency=medium
 
   * New upstream release
