@@ -1,8 +1,10 @@
-neovim (0.3.4-1) UNRELEASED; urgency=medium
+neovim (0.3.4-1) unstable; urgency=medium
 
   * New upstream release
+  * Explicitly downgrade _FORTIFY_SOURCE to 1
+  * Build-Depend on jemalloc >= 5.1 for archs with varying page size
 
- -- James McCoy <jamessan@debian.org>  Sun, 13 Jan 2019 15:57:26 -0500
+ -- James McCoy <jamessan@debian.org>  Sun, 13 Jan 2019 16:04:16 -0500
 
 neovim (0.3.3-1) unstable; urgency=medium
 
