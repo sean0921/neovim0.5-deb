@@ -4,6 +4,9 @@ DEB_BUILD_MAINT_OPTIONS = hardening=+all
 include /usr/share/dpkg/buildflags.mk
 include /usr/share/dpkg/architecture.mk
 
+# _FORTIFY_SOURCE=2 doesn't work with Neovim due to some old style variable
+# length arrays
+CPPFLAGS := $(subst _FORTIFY_SOURCE=2,_FORTIFY_SOURCE=1,$(CPPFLAGS))
 # cmake doesn't honor CPPFLAGS
 CFLAGS += $(CPPFLAGS) -DDISABLE_LOG
 CXXFLAGS += $(CPPFLAGS)
