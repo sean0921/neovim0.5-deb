@@ -4923,6 +4923,7 @@ chk_modeline (
     *e = NUL;                         /* truncate the set command */
 
     if (*s != NUL) {                  /* skip over an empty "::" */
+      const int secure_save = secure;
       save_SID = current_SID;
       current_SID = SID_MODELINE;
       // Make sure no risky things are executed as a side effect.
@@ -4930,7 +4931,7 @@ chk_modeline (
 
       retval = do_set(s, OPT_MODELINE | OPT_LOCAL | flags);
 
-      --secure;
+      secure = secure_save;
       current_SID = save_SID;
       if (retval == FAIL)                     /* stop if error found */
         break;
