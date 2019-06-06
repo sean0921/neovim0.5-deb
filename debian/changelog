@@ -1,8 +1,16 @@
-neovim (0.3.4-2) UNRELEASED; urgency=medium
+neovim (0.3.4-2) unstable; urgency=high
 
-  * 
+  [ Efraim Flashner ]
+  * don't use luajit on powerpc
 
- -- James McCoy <jamessan@debian.org>  Wed, 05 Jun 2019 19:11:19 -0400
+  [ James McCoy ]
+  * Use the system allocator instead of jemalloc
+
+  [ Justin M. Keyes ]
+  * vim-patch:8.1.1365: :source should check sandbox (Closes: #930024,
+    CVE-2019-12735)
+
+ -- James McCoy <jamessan@debian.org>  Wed, 05 Jun 2019 21:38:14 -0400
 
 neovim (0.3.4-1) unstable; urgency=medium
 
