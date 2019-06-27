@@ -1,8 +1,30 @@
-neovim (0.3.4-3) UNRELEASED; urgency=medium
+neovim (0.3.4-3) unstable; urgency=high
 
-  * 
+  * Backport additional changes to address CVE-2019-12735 (Closes: #930024)
+    + vim-patch:8.1.0177: defining function in sandbox is inconsistent
+    + vim-patch:8.1.0189: function defined in sandbox not tested
+    + vim-patch:8.1.0538: evaluating a modeline might invoke using a shell
+      command
+    + vim-patch:8.1.0539: cannot build without the sandbox
+    + vim-patch:8.1.0540: may evaluate insecure value when appending to option
+    + vim-patch:8.1.0544: setting 'filetype' in a modeline causes an error
+    + vim-patch:8.1.0613: when executing an insecure function the secure flag
+      is stuck
+    + vim-patch:8.1.1046: the "secure" variable is used inconsistently
+    + vim-patch:8.1.0205: invalid memory access with invalid modeline
+    + vim-patch:8.1.0206: duplicate test function name
+    + vim-patch:8.1.0506: modeline test fails when run by root
+    + vim-patch:8.1.0546: modeline test with keymap fails
+    + vim-patch:8.1.0547: modeline test with keymap still fails
+    + vim-patch:8.1.1366: using expressions in a modeline is unsafe
+    + vim-patch:8.1.1367: can set 'modelineexpr' in modeline
+    + vim-patch:8.1.1368: modeline test fails with python but without
+      pythonhome
+    + vim-patch:8.1.1382: error when editing test file
+    + vim-patch:8.1.1401: misspelled mkspellmem as makespellmem
+  * Backport patch to prevent use of nvim's API within the sandbox
 
- -- James McCoy <jamessan@debian.org>  Sat, 22 Jun 2019 20:42:42 -0400
+ -- James McCoy <jamessan@debian.org>  Wed, 26 Jun 2019 21:21:33 -0400
 
 neovim (0.3.4-2) unstable; urgency=high
 
