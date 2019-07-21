@@ -1,3 +1,11 @@
+neovim (0.3.8-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+    + Fixes FTBFS with gcc-9 due to stricter handling of compound literal
+      lifetimes.  (Closes: #925785)
+
+ -- James McCoy <jamessan@debian.org>  Sat, 20 Jul 2019 21:42:21 -0400
+
 neovim (0.3.4-3) unstable; urgency=high
 
   * Backport additional changes to address CVE-2019-12735 (Closes: #930024)
