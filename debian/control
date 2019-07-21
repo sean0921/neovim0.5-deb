@@ -32,7 +32,7 @@ Build-Depends:
 # Disable python tests for now, as they are hitting an unexpected failure
 # python-neovim <!nocheck>,
 # python3-neovim <!nocheck>,
-Standards-Version: 4.3.0
+Standards-Version: 4.4.0
 Homepage: https://neovim.io/
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/vim-team/neovim.git
