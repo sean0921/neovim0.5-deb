@@ -1,2 +1,2 @@
-debian/scripts/* usr/bin/
+debian/scripts/* usr/libexec/neovim/
 debian/tmp/usr/bin/nvim
