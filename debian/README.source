@@ -16,6 +16,5 @@ see /usr/share/gitpkg/hooks/debcherry-deb-export-hook and its associated
 documentation in the gitpkg(1) and git-debcherry(1) man pages.
 
 The main development branch is debian/sid, with corresponding branches for
-backports to previous releases.  Tagging follows upstream's naming
-convention, so the first Debian upload of the upstream tag vX.Y.Z should
-be tagged vX.Y.Z-1.
+backports to previous releases.  Tagging follows DEP-14 convention, so the
+first Debian upload of the upstream tag vX.Y.Z should be tagged debian/X.Y.Z-1.
