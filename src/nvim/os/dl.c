@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <uv.h>
 
+#include "nvim/os/dl.h"
 #include "nvim/os/os.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
@@ -53,6 +54,7 @@ bool os_libcall(const char *libname,
   // open the dynamic loadable library
   if (uv_dlopen(libname, &lib)) {
       EMSG2(_("dlerror = \"%s\""), uv_dlerror(&lib));
+      uv_dlclose(&lib);
       return false;
   }
 

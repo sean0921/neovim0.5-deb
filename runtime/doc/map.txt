@@ -39,7 +39,7 @@ modes.
 :om[ap]	{lhs} {rhs}		|mapmode-o|		*:om* *:omap*
 :map!	{lhs} {rhs}		|mapmode-ic|		*:map!*
 :im[ap]	{lhs} {rhs}		|mapmode-i|		*:im* *:imap*
-:lm[ap]	{lhs} {rhs}		|mapmode-l|		*:lm* *:lmap*
+:lm[ap]	{lhs} {rhs}		|mapmode-l|		*:lm* *:lma* *:lmap*
 :cm[ap]	{lhs} {rhs}		|mapmode-c|		*:cm* *:cmap*
 :tma[p]	{lhs} {rhs}		|mapmode-t|		*:tma* *:tmap*
 			Map the key sequence {lhs} to {rhs} for the modes
@@ -52,12 +52,12 @@ modes.
 :nn[oremap] {lhs} {rhs}		|mapmode-n|	*:nn*  *:nnoremap*
 :vn[oremap] {lhs} {rhs}		|mapmode-v|	*:vn*  *:vnoremap*
 :xn[oremap] {lhs} {rhs}		|mapmode-x|	*:xn*  *:xnoremap*
-:snor[emap] {lhs} {rhs}		|mapmode-s|	*:snor* *:snoremap*
+:snor[emap] {lhs} {rhs}		|mapmode-s|	*:snor* *:snore* *:snoremap*
 :ono[remap] {lhs} {rhs}		|mapmode-o|	*:ono* *:onoremap*
 :no[remap]! {lhs} {rhs}		|mapmode-ic|	*:no!* *:noremap!*
-:ino[remap] {lhs} {rhs}		|mapmode-i|	*:ino* *:inoremap*
+:ino[remap] {lhs} {rhs}		|mapmode-i|	*:ino* *:inor* *:inoremap*
 :ln[oremap] {lhs} {rhs}		|mapmode-l|	*:ln*  *:lnoremap*
-:cno[remap] {lhs} {rhs}		|mapmode-c|	*:cno* *:cnoremap*
+:cno[remap] {lhs} {rhs}		|mapmode-c|	*:cno* *:cnor* *:cnoremap*
 :tno[remap] {lhs} {rhs}		|mapmode-t|	*:tno* *:tnoremap*
 			Map the key sequence {lhs} to {rhs} for the modes
 			where the map command applies.  Disallow mapping of
@@ -74,7 +74,7 @@ modes.
 :unm[ap]! {lhs}			|mapmode-ic|		*:unm!* *:unmap!*
 :iu[nmap] {lhs}			|mapmode-i|		*:iu*   *:iunmap*
 :lu[nmap] {lhs}			|mapmode-l|		*:lu*   *:lunmap*
-:cu[nmap] {lhs}			|mapmode-c|		*:cu*   *:cunmap*
+:cu[nmap] {lhs}			|mapmode-c|		*:cu*   *:cun* *:cunmap*
 :tunma[p] {lhs}			|mapmode-t|		*:tunma* *:tunmap*
 			Remove the mapping of {lhs} for the modes where the
 			map command applies.  The mapping may remain defined
@@ -227,14 +227,14 @@ should not either insert or change the v:char.
 
 Be very careful about side effects!  The expression is evaluated while
 obtaining characters, you may very well make the command dysfunctional.
-For this reason the following is blocked:
+Therefore the following is blocked for <expr> mappings:
 - Changing the buffer text |textlock|.
 - Editing another buffer.
 - The |:normal| command.
 - Moving the cursor is allowed, but it is restored afterwards.
 - If the cmdline is changed, the old text and cursor position are restored.
 If you want the mapping to do any of these let the returned characters do
-that. Or use a |<Cmd>| mapping (which doesn't have these restrictions).
+that. (Or use a |<Cmd>| mapping instead.)
 
 You can use getchar(), it consumes typeahead if there is any. E.g., if you
 have these mappings: >
@@ -274,9 +274,9 @@ Using 0x80 as a single byte before other text does not work, it will be seen
 as a special key.
 
 						*<Cmd>* *:map-cmd*
-The <Cmd> pseudokey may be used to define a "command mapping", which executes
-the command directly (without changing modes, etc.).  Where you might use
-":...<CR>" in the {lhs} of a mapping, you can instead use "<Cmd>...<CR>".
+The <Cmd> pseudokey begins a "command mapping", which executes the command
+directly (without changing modes).  Where you might use ":...<CR>" in the
+{lhs} of a mapping, you can instead use "<Cmd>...<CR>".
 Example: >
 	noremap x <Cmd>echo mode(1)<cr>
 <
@@ -284,17 +284,19 @@ This is more flexible than `:<C-U>` in visual and operator-pending mode, or
 `<C-O>:` in insert-mode, because the commands are executed directly in the
 current mode (instead of always going to normal-mode).  Visual-mode is
 preserved, so tricks with |gv| are not needed.  Commands can be invoked
-directly in cmdline-mode (which otherwise would require timer hacks).
-
-Because <Cmd> avoids mode-changes (unlike ":") it does not trigger
-|CmdlineEnter| and |CmdlineLeave| events. This helps performance.
+directly in cmdline-mode (which would otherwise require timer hacks).
 
 Unlike <expr> mappings, there are no special restrictions on the <Cmd>
 command: it is executed as if an (unrestricted) |autocmd| was invoked or an
 async event event was processed.
 
-In select-mode, |:map| and |:vmap| command mappings are executed in
-visual-mode.  Use |:smap| to handle select-mode.
+Note:
+- Because <Cmd> avoids mode-changes (unlike ":") it does not trigger
+  |CmdlineEnter| and |CmdlineLeave| events. This helps performance.
+- For the same reason, |keycodes| like <C-R><C-W> are interpreted as plain,
+  unmapped keys.
+- In select-mode, |:map| and |:vmap| command mappings are executed in
+  visual-mode.  Use |:smap| to handle select-mode.
 
 							*E5520*
 <Cmd> commands must terminate, that is, they must be followed by <CR> in the
@@ -436,6 +438,7 @@ When listing mappings the characters in the first two columns are:
 	i	Insert
 	l	":lmap" mappings for Insert, Command-line and Lang-Arg
 	c	Command-line
+	t	Terminal-Job
 
 Just before the {rhs} a special character can appear:
 	*	indicates that it is not remappable
@@ -534,9 +537,9 @@ scenario: >
 	:imap <M-C> foo
 	:set encoding=utf-8
 The mapping for <M-C> is defined with the latin1 encoding, resulting in a 0xc3
-byte.  If you type the character แ (0xe1 <M-a>) in UTF-8 encoding this is the
+byte.  If you type the character รก (0xe1 <M-a>) in UTF-8 encoding this is the
 two bytes 0xc3 0xa1.  You don't want the 0xc3 byte to be mapped then or
-otherwise it would be impossible to type the แ character.
+otherwise it would be impossible to type the รก character.
 
 					*<Leader>* *mapleader*
 To define a mapping which uses the "mapleader" variable, the special string
@@ -787,8 +790,6 @@ g@{motion}		Call the function set by the 'operatorfunc' option.
 			    "block"	{motion} was |blockwise-visual|
 			Although "block" would rarely appear, since it can
 			only result from Visual mode where "g@" is not useful.
-			{not available when compiled without the |+eval|
-			feature}
 
 Here is an example that counts the number of spaces with <F4>: >
 
@@ -969,7 +970,7 @@ See |:verbose-cmd| for more information.
 :norea[bbrev] [<expr>] [<buffer>] [lhs] [rhs]
 			same as ":ab", but no remapping for this {rhs}
 
-						*:ca* *:cabbrev*
+						*:ca* *:cab* *:cabbrev*
 :ca[bbrev] [<expr>] [<buffer>] [lhs] [rhs]
 			same as ":ab", but for Command-line mode only.
 
@@ -1187,7 +1188,7 @@ reported if any are supplied).  However, it is possible to specify that the
 command can take arguments, using the -nargs attribute.  Valid cases are:
 
 	-nargs=0    No arguments are allowed (the default)
-	-nargs=1    Exactly one argument is required, it includes spaces 
+	-nargs=1    Exactly one argument is required, it includes spaces
 	-nargs=*    Any number of arguments are allowed (0, 1, or many),
 		    separated by white space
 	-nargs=?    0 or 1 arguments are allowed
@@ -1210,8 +1211,9 @@ defined, not where it is invoked!  Example:
 Executing script2.vim will result in "None" being echoed.  Not what you
 intended!  Calling a function may be an alternative.
 
-Completion behavior				*:command-completion* *E179*
-					*E180* *E181* *:command-complete*
+Completion behavior ~
+				*:command-completion* *E179* *E180* *E181*
+				*:command-complete*
 By default, the arguments of user defined commands do not undergo completion.
 However, by specifying one or the other of the following attributes, argument
 completion can be enabled:
@@ -1332,12 +1334,13 @@ which by default correspond to the current line, last line and the whole
 buffer, relate to arguments, (loaded) buffers, windows or tab pages.
 
 Possible values are:
-     -addr=lines            Range of lines (this is the default)
-     -addr=arguments        Range for arguments
-     -addr=buffers          Range for buffers (also not loaded buffers)
-     -addr=loaded_buffers   Range for loaded buffers
-     -addr=windows          Range for windows
-     -addr=tabs             Range for tab pages
+	-addr=lines		Range of lines (this is the default)
+	-addr=arguments		Range for arguments
+	-addr=buffers		Range for buffers (also not loaded buffers)
+	-addr=loaded_buffers	Range for loaded buffers
+	-addr=windows		Range for windows
+	-addr=tabs		Range for tab pages
+	-addr=other		other kind of range
 
 
 Special cases				*:command-bang* *:command-bar*

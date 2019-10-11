@@ -1,13 +1,15 @@
 option(USE_GCOV "Enable gcov support" OFF)
 
-if(NOT CLANG_TSAN)
-# GCOV and TSAN results in false data race reports
 if(USE_GCOV)
+  if(CLANG_TSAN)
+    # GCOV and TSAN results in false data race reports
+    message(FATAL_ERROR "USE_GCOV cannot be used with CLANG_TSAN")
+  endif()
   message(STATUS "Enabling gcov support")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
-endif()
+  add_definitions(-DUSE_GCOV)
 endif()
 
 if(WIN32)
@@ -23,6 +25,7 @@ set(GENERATOR_DIR ${CMAKE_CURRENT_LIST_DIR}/generators)
 set(GENERATED_DIR ${PROJECT_BINARY_DIR}/src/nvim/auto)
 set(API_DISPATCH_GENERATOR ${GENERATOR_DIR}/gen_api_dispatch.lua)
 set(API_UI_EVENTS_GENERATOR ${GENERATOR_DIR}/gen_api_ui_events.lua)
+set(GENERATOR_C_GRAMMAR ${GENERATOR_DIR}/c_grammar.lua)
 set(API_METADATA ${PROJECT_BINARY_DIR}/api_metadata.mpack)
 set(FUNCS_DATA ${PROJECT_BINARY_DIR}/funcs_data.mpack)
 set(MSGPACK_LUA_C_BINDINGS ${GENERATED_DIR}/msgpack_lua_c_bindings.generated.c)
@@ -137,7 +140,6 @@ set(CONV_SOURCES
   eval.c
   ex_cmds.c
   ex_docmd.c
-  ex_getln.c
   fileio.c
   mbyte.c
   memline.c
@@ -162,8 +164,8 @@ if(NOT MSVC)
   set_source_files_properties(
     ${CONV_SOURCES} PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS} -Wno-conversion")
   # gperf generates ANSI-C with incorrect linkage, ignore it.
-  check_c_compiler_flag(-Wno-static-in-inline HAS_WNO_STATIC_IN_INLINE_FLAG)
-  if(HAS_WNO_STATIC_IN_INLINE_FLAG)
+  check_c_compiler_flag(-Wstatic-in-inline HAS_WSTATIC_IN_INLINE)
+  if(HAS_WSTATIC_IN_INLINE)
     set_source_files_properties(
       eval.c PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS} -Wno-static-in-inline -Wno-conversion")
   else()
@@ -269,6 +271,7 @@ add_custom_command(
     ${API_HEADERS}
     ${MSGPACK_RPC_HEADERS}
     ${API_DISPATCH_GENERATOR}
+    ${GENERATOR_C_GRAMMAR}
     ${CMAKE_CURRENT_LIST_DIR}/api/dispatch_deprecated.lua
 )
 
@@ -300,6 +303,7 @@ add_custom_command(
                      ${GENERATED_UI_EVENTS_METADATA}
   DEPENDS
     ${API_UI_EVENTS_GENERATOR}
+    ${GENERATOR_C_GRAMMAR}
     ${CMAKE_CURRENT_LIST_DIR}/api/ui_events.in.h
 )
 
@@ -378,8 +382,14 @@ if(WIN32)
   list(APPEND NVIM_LINK_LIBRARIES ${WINPTY_LIBRARIES})
 endif()
 
+# Use "luv" as imported library, to work around CMake using "-lluv" for
+# "luv.so".  #10407
+add_library(luv UNKNOWN IMPORTED)
+set_property(TARGET luv PROPERTY IMPORTED_LOCATION ${LIBLUV_LIBRARIES})
+
 # Put these last on the link line, since multiple things may depend on them.
 list(APPEND NVIM_LINK_LIBRARIES
+  luv
   ${LIBUV_LIBRARIES}
   ${MSGPACK_LIBRARIES}
   ${LIBVTERM_LIBRARIES}
@@ -397,11 +407,7 @@ endif()
 
 set(NVIM_EXEC_LINK_LIBRARIES ${NVIM_LINK_LIBRARIES} ${LUA_PREFERRED_LIBRARIES})
 
-# Don't use jemalloc in the unit test library.
-if(JEMALLOC_FOUND)
-  list(APPEND NVIM_EXEC_LINK_LIBRARIES ${JEMALLOC_LIBRARIES})
-endif()
-
+# Add IPO flags (for LTO), or error if CMake does not know the flags. #8654
 if(POLICY CMP0069)
   cmake_policy(SET CMP0069 NEW)
 endif()
@@ -547,19 +553,19 @@ if(CLANG_ASAN_UBSAN)
   else()
     set(SANITIZE_RECOVER -fno-sanitize-recover)         # Clang 3.5-
   endif()
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-DEXITFREE ")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "${SANITIZE_RECOVER} -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address -fsanitize=undefined -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/src/.asan-blacklist")
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_DEFINITIONS EXITFREE)
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_OPTIONS ${SANITIZE_RECOVER} -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address -fsanitize=undefined -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/src/.asan-blacklist)
   set_property(TARGET nvim APPEND_STRING PROPERTY LINK_FLAGS "-fsanitize=address -fsanitize=undefined ")
 elseif(CLANG_MSAN)
   message(STATUS "Enabling Clang memory sanitizer for nvim.")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-DEXITFREE ")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -fno-optimize-sibling-calls ")
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_DEFINITIONS EXITFREE)
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_OPTIONS -fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -fno-optimize-sibling-calls)
   set_property(TARGET nvim APPEND_STRING PROPERTY LINK_FLAGS "-fsanitize=memory -fsanitize-memory-track-origins ")
 elseif(CLANG_TSAN)
   message(STATUS "Enabling Clang thread sanitizer for nvim.")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-DEXITFREE ")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-fsanitize=thread ")
-  set_property(TARGET nvim APPEND_STRING PROPERTY COMPILE_FLAGS "-fPIE ")
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_DEFINITIONS EXITFREE)
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_OPTIONS -fsanitize=thread)
+  set_property(TARGET nvim APPEND PROPERTY COMPILE_OPTIONS -fPIE)
   set_property(TARGET nvim APPEND_STRING PROPERTY LINK_FLAGS "-fsanitize=thread ")
 endif()
 
@@ -673,3 +679,6 @@ add_custom_target(generated-sources DEPENDS
 )
 
 add_subdirectory(po)
+
+include(GetCompileFlags)
+get_compile_flags(NVIM_VERSION_CFLAGS)

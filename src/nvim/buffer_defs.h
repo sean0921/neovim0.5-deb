@@ -18,6 +18,8 @@ typedef struct {
 
 // for garray_T
 #include "nvim/garray.h"
+// for ScreenGrid
+#include "nvim/grid_defs.h"
 // for HLF_COUNT
 #include "nvim/highlight_defs.h"
 // for pos_T, lpos_T and linenr_T
@@ -246,9 +248,15 @@ typedef struct {
 # define w_p_scl w_onebuf_opt.wo_scl    // 'signcolumn'
   char_u *wo_winhl;
 # define w_p_winhl w_onebuf_opt.wo_winhl    // 'winhighlight'
+  char_u *wo_fcs;
+# define w_p_fcs w_onebuf_opt.wo_fcs    // 'fillchars'
+  char_u *wo_lcs;
+# define w_p_lcs w_onebuf_opt.wo_lcs    // 'listchars'
+  long wo_winbl;
+# define w_p_winbl w_onebuf_opt.wo_winbl  // 'winblend'
 
-  LastSet wo_scriptID[WV_COUNT];        // SIDs for window-local options
-# define w_p_scriptID w_onebuf_opt.wo_scriptID
+  LastSet wo_script_ctx[WV_COUNT];        // SCTXs for window-local options
+# define w_p_script_ctx w_onebuf_opt.wo_script_ctx
 } winopt_T;
 
 /*
@@ -336,17 +344,17 @@ typedef struct {
  */
 typedef struct mapblock mapblock_T;
 struct mapblock {
-  mapblock_T  *m_next;          /* next mapblock in list */
-  char_u      *m_keys;          /* mapped from, lhs */
-  char_u      *m_str;           /* mapped to, rhs */
-  char_u      *m_orig_str;      /* rhs as entered by the user */
-  int m_keylen;                 /* strlen(m_keys) */
-  int m_mode;                   /* valid mode */
-  int m_noremap;                /* if non-zero no re-mapping for m_str */
-  char m_silent;                /* <silent> used, don't echo commands */
-  char m_nowait;                /* <nowait> used */
-  char m_expr;                  /* <expr> used, m_str is an expression */
-  scid_T m_script_ID;           /* ID of script where map was defined */
+  mapblock_T  *m_next;          // next mapblock in list
+  char_u      *m_keys;          // mapped from, lhs
+  char_u      *m_str;           // mapped to, rhs
+  char_u      *m_orig_str;      // rhs as entered by the user
+  int m_keylen;                 // strlen(m_keys)
+  int m_mode;                   // valid mode
+  int m_noremap;                // if non-zero no re-mapping for m_str
+  char m_silent;                // <silent> used, don't echo commands
+  char m_nowait;                // <nowait> used
+  char m_expr;                  // <expr> used, m_str is an expression
+  sctx_T m_script_ctx;          // SCTX where map was defined
 };
 
 /*
@@ -382,24 +390,25 @@ typedef struct {
  * a window may have its own instance.
  */
 typedef struct {
-  hashtab_T b_keywtab;                  /* syntax keywords hash table */
-  hashtab_T b_keywtab_ic;               /* idem, ignore case */
-  int b_syn_error;                      /* TRUE when error occurred in HL */
-  int b_syn_ic;                         /* ignore case for :syn cmds */
-  int b_syn_spell;                      /* SYNSPL_ values */
-  garray_T b_syn_patterns;              /* table for syntax patterns */
-  garray_T b_syn_clusters;              /* table for syntax clusters */
-  int b_spell_cluster_id;               /* @Spell cluster ID or 0 */
-  int b_nospell_cluster_id;             /* @NoSpell cluster ID or 0 */
-  int b_syn_containedin;                /* TRUE when there is an item with a
-                                           "containedin" argument */
-  int b_syn_sync_flags;                 /* flags about how to sync */
-  short b_syn_sync_id;                  /* group to sync on */
-  long b_syn_sync_minlines;             /* minimal sync lines offset */
-  long b_syn_sync_maxlines;             /* maximal sync lines offset */
-  long b_syn_sync_linebreaks;           /* offset for multi-line pattern */
-  char_u      *b_syn_linecont_pat;      /* line continuation pattern */
-  regprog_T   *b_syn_linecont_prog;     /* line continuation program */
+  hashtab_T b_keywtab;                  // syntax keywords hash table
+  hashtab_T b_keywtab_ic;               // idem, ignore case
+  int b_syn_error;                      // TRUE when error occurred in HL
+  bool b_syn_slow;                      // true when 'redrawtime' reached
+  int b_syn_ic;                         // ignore case for :syn cmds
+  int b_syn_spell;                      // SYNSPL_ values
+  garray_T b_syn_patterns;              // table for syntax patterns
+  garray_T b_syn_clusters;              // table for syntax clusters
+  int b_spell_cluster_id;               // @Spell cluster ID or 0
+  int b_nospell_cluster_id;             // @NoSpell cluster ID or 0
+  int b_syn_containedin;                // TRUE when there is an item with a
+                                        // "containedin" argument
+  int b_syn_sync_flags;                 // flags about how to sync
+  int16_t b_syn_sync_id;                // group to sync on
+  long b_syn_sync_minlines;             // minimal sync lines offset
+  long b_syn_sync_maxlines;             // maximal sync lines offset
+  long b_syn_sync_linebreaks;           // offset for multi-line pattern
+  char_u      *b_syn_linecont_pat;      // line continuation pattern
+  regprog_T   *b_syn_linecont_prog;     // line continuation program
   syn_time_T b_syn_linecont_time;
   int b_syn_linecont_ic;                /* ignore-case flag for above */
   int b_syn_topgrp;                     /* for ":syntax include" */
@@ -446,6 +455,14 @@ typedef struct {
 /// Primary exists so that literals of relevant type can be made.
 typedef TV_DICTITEM_STRUCT(sizeof("changedtick")) ChangedtickDictItem;
 
+typedef struct {
+  LuaRef on_lines;
+  LuaRef on_changedtick;
+  LuaRef on_detach;
+  bool utf_sizes;
+} BufUpdateCallbacks;
+#define BUF_UPDATE_CALLBACKS_INIT { LUA_NOREF, LUA_NOREF, LUA_NOREF, false }
+
 #define BUF_HAS_QF_ENTRY 1
 #define BUF_HAS_LL_ENTRY 2
 
@@ -491,9 +508,9 @@ struct file_buffer {
   int b_changed;                // 'modified': Set to true if something in the
                                 // file has been changed and not written out.
 
-  /// Change identifier incremented for each change, including undo
+  /// Change-identifier incremented for each change, including undo.
   ///
-  /// This is a dictionary item used to store in b:changedtick.
+  /// This is a dictionary item used to store b:changedtick.
   ChangedtickDictItem changedtick_di;
 
   varnumber_T b_last_changedtick;       // b:changedtick when TextChanged or
@@ -605,9 +622,9 @@ struct file_buffer {
    * They are here because their value depends on the type of file
    * or contents of the file being edited.
    */
-  bool b_p_initialized;                 /* set when options initialized */
+  bool b_p_initialized;                 // set when options initialized
 
-  LastSet b_p_scriptID[BV_COUNT];       // SIDs for buffer-local options
+  LastSet b_p_script_ctx[BV_COUNT];     // SCTXs for buffer-local options
 
   int b_p_ai;                   ///< 'autoindent'
   int b_p_ai_nopaste;           ///< b_p_ai saved for paste mode
@@ -762,17 +779,19 @@ struct file_buffer {
    * spell buffer - used for spell info, never displayed and doesn't have a
    *                file name.
    */
-  bool b_help;                  /* TRUE for help file buffer (when set b_p_bt
-                                   is "help") */
-  bool b_spell;                 /* True for a spell file buffer, most fields
-                                   are not used!  Use the B_SPELL macro to
-                                   access b_spell without #ifdef. */
+  bool b_help;                  // TRUE for help file buffer (when set b_p_bt
+                                // is "help")
+  bool b_spell;                 // True for a spell file buffer, most fields
+                                // are not used!  Use the B_SPELL macro to
+                                // access b_spell without #ifdef.
 
-  synblock_T b_s;               /* Info related to syntax highlighting.  w_s
-                                 * normally points to this, but some windows
-                                 * may use a different synblock_T. */
+  synblock_T b_s;               // Info related to syntax highlighting.  w_s
+                                // normally points to this, but some windows
+                                // may use a different synblock_T.
 
-  signlist_T *b_signlist;       /* list of signs to draw */
+  signlist_T *b_signlist;       // list of signs to draw
+  int b_signcols_max;           // cached maximum number of sign columns
+  int b_signcols;               // last calculated number of sign columns
 
   Terminal *terminal;           // Terminal instance associated with the buffer
 
@@ -784,9 +803,25 @@ struct file_buffer {
 
   kvec_t(BufhlLine *) b_bufhl_move_space;  // temporary space for highlights
 
-  // array of channelids which have asked to receive updates for this
+  // array of channel_id:s which have asked to receive updates for this
   // buffer.
   kvec_t(uint64_t) update_channels;
+  // array of lua callbacks for buffer updates.
+  kvec_t(BufUpdateCallbacks) update_callbacks;
+
+  // whether an update callback has requested codepoint size of deleted regions.
+  bool update_need_codepoints;
+
+  // Measurements of the deleted or replaced region since the last update
+  // event. Some consumers of buffer changes need to know the byte size (like
+  // tree-sitter) or the corresponding UTF-32/UTF-16 size (like LSP) of the
+  // deleted text.
+  size_t deleted_bytes;
+  size_t deleted_codepoints;
+  size_t deleted_codeunits;
+
+  // The number for times the current line has been flushed in the memline.
+  int flush_count;
 
   int b_diff_failed;    // internal diff failed for this buffer
 };
@@ -952,18 +987,72 @@ struct matchitem {
   int conceal_char;         ///< cchar for Conceal highlighting
 };
 
-/*
- * Structure which contains all information that belongs to a window
- *
- * All row numbers are relative to the start of the window, except w_winrow.
- */
+typedef int FloatAnchor;
+
+enum {
+  kFloatAnchorEast  = 1,
+  kFloatAnchorSouth = 2,
+};
+
+// NW -> 0
+// NE -> kFloatAnchorEast
+// SW -> kFloatAnchorSouth
+// SE -> kFloatAnchorSouth | kFloatAnchorEast
+EXTERN const char *const float_anchor_str[] INIT(= { "NW", "NE", "SW", "SE" });
+
+typedef enum {
+  kFloatRelativeEditor = 0,
+  kFloatRelativeWindow = 1,
+  kFloatRelativeCursor = 2,
+} FloatRelative;
+
+EXTERN const char *const float_relative_str[] INIT(= { "editor", "win",
+                                                       "cursor" });
+
+typedef enum {
+  kWinStyleUnused = 0,
+  kWinStyleMinimal,  /// Minimal UI: no number column, eob markers, etc
+} WinStyle;
+
+typedef struct {
+  Window window;
+  lpos_T bufpos;
+  int height, width;
+  double row, col;
+  FloatAnchor anchor;
+  FloatRelative relative;
+  bool external;
+  bool focusable;
+  WinStyle style;
+} FloatConfig;
+
+#define FLOAT_CONFIG_INIT ((FloatConfig){ .height = 0, .width = 0, \
+                                          .bufpos = { -1, 0 }, \
+                                          .row = 0, .col = 0, .anchor = 0, \
+                                          .relative = 0, .external = false, \
+                                          .focusable = true, \
+                                          .style = kWinStyleUnused })
+
+// Structure to store last cursor position and topline.  Used by check_lnums()
+// and reset_lnums().
+typedef struct
+{
+  int w_topline_save;   // original topline value
+  int w_topline_corr;   // corrected topline value
+  pos_T w_cursor_save;  // original cursor position
+  pos_T w_cursor_corr;  // corrected cursor position
+} pos_save_T;
+
+/// Structure which contains all information that belongs to a window.
+///
+/// All row numbers are relative to the start of the window, except w_winrow.
 struct window_S {
   handle_T handle;                  ///< unique identifier for the window
 
   buf_T       *w_buffer;            ///< buffer we are a window into (used
                                     ///< often, keep it the first item!)
 
-  synblock_T  *w_s;                 /* for :ownsyntax */
+  synblock_T  *w_s;                 ///< for :ownsyntax
 
   int w_hl_id_normal;               ///< 'winhighlight' normal id
   int w_hl_attr_normal;             ///< 'winhighlight' normal final attrs
@@ -973,24 +1062,25 @@ struct window_S {
 
   int w_hl_needs_update;            ///< attrs need to be recalculated
 
-  win_T       *w_prev;              /* link to previous window */
-  win_T       *w_next;              /* link to next window */
-  bool w_closing;                   /* window is being closed, don't let
-                                       autocommands close it too. */
+  win_T       *w_prev;              ///< link to previous window
+  win_T       *w_next;              ///< link to next window
+  bool w_closing;                   ///< window is being closed, don't let
+                                    ///  autocommands close it too.
 
-  frame_T     *w_frame;             /* frame containing this window */
+  frame_T     *w_frame;             ///< frame containing this window
 
-  pos_T w_cursor;                   /* cursor position in buffer */
+  pos_T w_cursor;                   ///< cursor position in buffer
 
-  colnr_T w_curswant;               /* The column we'd like to be at.  This is
-                                       used to try to stay in the same column
-                                       for up/down cursor motions. */
+  colnr_T w_curswant;               ///< Column we want to be at.  This is
+                                    ///  used to try to stay in the same column
+                                    ///  for up/down cursor motions.
 
   int w_set_curswant;               // If set, then update w_curswant the next
                                     // time through cursupdate() to the
                                     // current virtual column
 
   linenr_T w_last_cursorline;       ///< where last 'cursorline' was drawn
+  pos_T w_last_cursormoved;         ///< for CursorMoved event
 
   // the next seven are used to update the visual part
   char w_old_visual_mode;           ///< last known VIsual_mode
@@ -1000,6 +1090,31 @@ struct window_S {
   linenr_T w_old_visual_lnum;       ///< last known start of visual part
   colnr_T w_old_visual_col;         ///< last known start of visual part
   colnr_T w_old_curswant;           ///< last known value of Curswant
+
+  // 'listchars' characters. Defaults set in set_chars_option().
+  struct {
+    int eol;
+    int ext;
+    int prec;
+    int nbsp;
+    int space;
+    int tab1;                       ///< first tab character
+    int tab2;                       ///< second tab character
+    int tab3;                       ///< third tab character
+    int trail;
+    int conceal;
+  } w_p_lcs_chars;
+
+  // 'fillchars' characters. Defaults set in set_chars_option().
+  struct {
+    int stl;
+    int stlnc;
+    int vert;
+    int fold;
+    int diff;
+    int msgsep;
+    int eob;
+  } w_p_fcs_chars;
 
   /*
    * "w_topline", "w_leftcol" and "w_skipcol" specify the offsets for
@@ -1020,17 +1135,25 @@ struct window_S {
   colnr_T w_skipcol;                /* starting column when a single line
                                        doesn't fit in the window */
 
-  /*
-   * Layout of the window in the screen.
-   * May need to add "msg_scrolled" to "w_winrow" in rare situations.
-   */
-  int w_winrow;                     /* first row of window in screen */
-  int w_height;                     /* number of rows in window, excluding
-                                       status/command line(s) */
-  int w_status_height;              /* number of status lines (0 or 1) */
-  int w_wincol;                     /* Leftmost column of window in screen. */
-  int w_width;                      /* Width of window, excluding separation. */
-  int w_vsep_width;                 /* Number of separator columns (0 or 1). */
+  //
+  // Layout of the window in the screen.
+  // May need to add "msg_scrolled" to "w_winrow" in rare situations.
+  //
+  int w_winrow;                     // first row of window in screen
+  int w_height;                     // number of rows in window, excluding
+                                    // status/command line(s)
+  int w_status_height;              // number of status lines (0 or 1)
+  int w_wincol;                     // Leftmost column of window in screen.
+  int w_width;                      // Width of window, excluding separation.
+  int w_vsep_width;                 // Number of separator columns (0 or 1).
+  pos_save_T w_save_cursor;         // backup of cursor pos and topline
+
+  // inner size of window, which can be overridden by external UI
+  int w_height_inner;
+  int w_width_inner;
+  // external UI request. If non-zero, the inner size will use this.
+  int w_height_request;
+  int w_width_request;
 
   /*
    * === start of cached values ====
@@ -1055,12 +1178,12 @@ struct window_S {
 
   int w_cline_row;                  /* starting row of the cursor line */
 
-  colnr_T w_virtcol;                /* column number of the cursor in the
-                                       buffer line, as opposed to the column
-                                       number we're at on the screen.  This
-                                       makes a difference on lines which span
-                                       more than one screen line or when
-                                       w_leftcol is non-zero */
+  colnr_T w_virtcol;                // column number of the cursor in the
+                                    // buffer line, as opposed to the column
+                                    // number we're at on the screen.  This
+                                    // makes a difference on lines which span
+                                    // more than one screen line or when
+                                    // w_leftcol is non-zero
 
   /*
    * w_wrow and w_wcol specify the cursor position in the window.
@@ -1151,8 +1274,6 @@ struct window_S {
   ScopeDictDictItem w_winvar;  ///< Variable for "w:" dictionary.
   dict_T *w_vars;  ///< Dictionary with w: variables.
 
-  int w_farsi;                  /* for the window dependent Farsi functions */
-
   /*
    * The w_prev_pcmark field is used to check whether we really did jump to
    * a new line after setting the w_pcmark.  If not, then we revert to
@@ -1182,6 +1303,11 @@ struct window_S {
   taggy_T w_tagstack[TAGSTACKSIZE];             /* the tag stack */
   int w_tagstackidx;                    /* idx just below active entry */
   int w_tagstacklen;                    /* number of tags on stack */
+
+  ScreenGrid w_grid;                    // the grid specific to the window
+  bool w_pos_changed;                   // true if window position changed
+  bool w_floating;                       ///< whether the window is floating
+  FloatConfig w_float_config;
 
   /*
    * w_fraction is the fractional row of the cursor within the window, from

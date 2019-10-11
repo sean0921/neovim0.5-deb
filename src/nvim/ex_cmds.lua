@@ -601,6 +601,12 @@ return {
     func='ex_wrongmodifier',
   },
   {
+    command='const',
+    flags=bit.bor(NEEDARG, EXTRA, NOTRLCOM, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_const',
+  },
+  {
     command='copen',
     flags=bit.bor(RANGE, NOTADR, COUNT, TRLBAR),
     addr_type=ADDR_LINES,
@@ -2067,6 +2073,30 @@ return {
     func='ex_py3file',
   },
   {
+    command='pyx',
+    flags=bit.bor(RANGE, EXTRA, NEEDARG, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_pyx',
+  },
+  {
+    command='pyxdo',
+    flags=bit.bor(RANGE, DFLALL, EXTRA, NEEDARG, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_pyxdo',
+  },
+  {
+    command='pythonx',
+    flags=bit.bor(RANGE, EXTRA, NEEDARG, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_pyx',
+  },
+  {
+    command='pyxfile',
+    flags=bit.bor(RANGE, FILE1, NEEDARG, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_pyxfile',
+  },
+  {
     command='quit',
     flags=bit.bor(BANG, RANGE, COUNT, NOTADR, TRLBAR, CMDWIN),
     addr_type=ADDR_WINDOWS,
@@ -2119,6 +2149,12 @@ return {
     flags=bit.bor(BANG, TRLBAR, CMDWIN),
     addr_type=ADDR_LINES,
     func='ex_redrawstatus',
+  },
+  {
+    command='redrawtabline',
+    flags=bit.bor(TRLBAR, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_redrawtabline',
   },
   {
     command='registers',
@@ -2769,6 +2805,12 @@ return {
     func='ex_tag',
   },
   {
+    command='tmenu',
+    flags=bit.bor(RANGE, NOTADR, ZEROR, EXTRA, TRLBAR, NOTRLCOM, USECTRLV, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_menu',
+  },
+  {
     command='tmap',
     flags=bit.bor(EXTRA, TRLBAR, NOTRLCOM, USECTRLV, CMDWIN),
     addr_type=ADDR_LINES,
@@ -2779,12 +2821,6 @@ return {
     flags=bit.bor(EXTRA, TRLBAR, CMDWIN),
     addr_type=ADDR_LINES,
     func='ex_mapclear',
-  },
-  {
-    command='tmenu',
-    flags=bit.bor(RANGE, NOTADR, ZEROR, EXTRA, TRLBAR, NOTRLCOM, USECTRLV, CMDWIN),
-    addr_type=ADDR_LINES,
-    func='ex_menu',
   },
   {
     command='tnext',
@@ -2829,16 +2865,16 @@ return {
     func='ex_tag',
   },
   {
-    command='tunmap',
-    flags=bit.bor(EXTRA, TRLBAR, NOTRLCOM, USECTRLV, CMDWIN),
-    addr_type=ADDR_LINES,
-    func='ex_unmap',
-  },
-  {
     command='tunmenu',
     flags=bit.bor(EXTRA, TRLBAR, NOTRLCOM, USECTRLV, CMDWIN),
     addr_type=ADDR_LINES,
     func='ex_menu',
+  },
+  {
+    command='tunmap',
+    flags=bit.bor(EXTRA, TRLBAR, NOTRLCOM, USECTRLV, CMDWIN),
+    addr_type=ADDR_LINES,
+    func='ex_unmap',
   },
   {
     command='undo',

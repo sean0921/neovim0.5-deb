@@ -5,6 +5,7 @@ if !has('timers')
 endif
 
 source shared.vim
+source load.vim
 
 func MyHandler(timer)
   let g:val += 1
@@ -20,7 +21,7 @@ func Test_oneshot()
   let slept = WaitFor('g:val == 1')
   call assert_equal(1, g:val)
   if has('reltime')
-    call assert_inrange(40, 120, slept)
+    call assert_inrange(40, LoadAdjust(120), slept)
   else
     call assert_inrange(20, 120, slept)
   endif
@@ -32,7 +33,7 @@ func Test_repeat_three()
   let slept = WaitFor('g:val == 3')
   call assert_equal(3, g:val)
   if has('reltime')
-    call assert_inrange(120, 250, slept)
+    call assert_inrange(120, LoadAdjust(250), slept)
   else
     call assert_inrange(80, 200, slept)
   endif
@@ -42,9 +43,12 @@ func Test_repeat_many()
   call timer_stopall()
   let g:val = 0
   let timer = timer_start(50, 'MyHandler', {'repeat': -1})
+  if has('mac')
+    sleep 200m
+  endif
   sleep 200m
   call timer_stop(timer)
-  call assert_inrange((has('mac') ? 1 : 2), 4, g:val)
+  call assert_inrange((has('mac') ? 1 : 2), LoadAdjust(5), g:val)
 endfunc
 
 func Test_with_partial_callback()
@@ -58,7 +62,7 @@ func Test_with_partial_callback()
   let slept = WaitFor('g:val == 1')
   call assert_equal(1, g:val)
   if has('reltime')
-    call assert_inrange(40, 130, slept)
+    call assert_inrange(40, LoadAdjust(130), slept)
   else
     call assert_inrange(20, 100, slept)
   endif
@@ -121,7 +125,7 @@ func Test_paused()
   let slept = WaitFor('g:val == 1')
   call assert_equal(1, g:val)
   if has('reltime')
-    call assert_inrange(0, 140, slept)
+    call assert_inrange(0, LoadAdjust(140), slept)
   else
     call assert_inrange(0, 10, slept)
   endif
@@ -190,6 +194,23 @@ func Test_input_in_timer()
   call timer_start(10, 'InputCb')
   call Standby(1000)
   call assert_equal('hello', g:val)
+endfunc
+
+func FuncWithError(timer)
+  let g:call_count += 1
+  if g:call_count == 4
+    return
+  endif
+  doesnotexist
+endfunc
+
+func Test_timer_errors()
+  let g:call_count = 0
+  let timer = timer_start(10, 'FuncWithError', {'repeat': -1})
+  " Timer will be stopped after failing 3 out of 3 times.
+  call WaitFor('g:call_count == 3')
+  sleep 50m
+  call assert_equal(3, g:call_count)
 endfunc
 
 func FuncWithCaughtError(timer)

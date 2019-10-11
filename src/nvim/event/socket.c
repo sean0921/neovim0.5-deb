@@ -40,8 +40,8 @@ int socket_watcher_init(Loop *loop, SocketWatcher *watcher,
     char *port = host_end + 1;
     intmax_t iport;
 
-    int ret = getdigits_safe(&(char_u *){ (char_u *)port }, &iport);
-    if (ret == FAIL || iport < 0 || iport > UINT16_MAX) {
+    int ok = try_getdigits(&(char_u *){ (char_u *)port }, &iport);
+    if (!ok || iport < 0 || iport > UINT16_MAX) {
       ELOG("Invalid port: %s", port);
       return UV_EINVAL;
     }
@@ -169,7 +169,7 @@ void socket_watcher_close(SocketWatcher *watcher, socket_close_cb cb)
   FUNC_ATTR_NONNULL_ARG(1)
 {
   watcher->close_cb = cb;
-  uv_close((uv_handle_t *)watcher->stream, close_cb);
+  uv_close(STRUCT_CAST(uv_handle_t, watcher->stream), close_cb);
 }
 
 static void connection_event(void **argv)

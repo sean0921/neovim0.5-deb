@@ -27,6 +27,7 @@
 #include "nvim/func_attr.h"
 #include "nvim/getchar.h"
 #include "nvim/mark.h"
+#include "nvim/math.h"
 #include "nvim/mbyte.h"
 #include "nvim/memfile.h"
 #include "nvim/memline.h"
@@ -50,16 +51,7 @@
 #include "nvim/os/shell.h"
 #include "nvim/eval/encode.h"
 
-#ifdef __MINGW32__
-# undef fpclassify
-# define fpclassify __fpclassify
-# undef isnan
-# define isnan _isnan
-#endif
-
-/*
- * Copy "string" into newly allocated memory.
- */
+/// Copy "string" into newly allocated memory.
 char_u *vim_strsave(const char_u *string)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -686,12 +678,12 @@ static float_T tv_float(typval_T *const tvs, int *const idxp)
 // are discarded. If "str_m" is greater than zero it is guaranteed
 // the resulting string will be NUL-terminated.
 
-// vim_vsnprintf() can be invoked with either "va_list" or a list of
+// vim_vsnprintf_typval() can be invoked with either "va_list" or a list of
 // "typval_T".  When the latter is not used it must be NULL.
 
 /// Append a formatted value to the string
 ///
-/// @see vim_vsnprintf().
+/// @see vim_vsnprintf_typval().
 int vim_snprintf_add(char *str, size_t str_m, char *fmt, ...)
   FUNC_ATTR_PRINTF(3, 4)
 {
@@ -705,7 +697,7 @@ int vim_snprintf_add(char *str, size_t str_m, char *fmt, ...)
   }
   va_list ap;
   va_start(ap, fmt);
-  const int str_l = vim_vsnprintf(str + len, space, fmt, ap, NULL);
+  const int str_l = vim_vsnprintf(str + len, space, fmt, ap);
   va_end(ap);
   return str_l;
 }
@@ -723,7 +715,7 @@ int vim_snprintf(char *str, size_t str_m, const char *fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
-  const int str_l = vim_vsnprintf(str, str_m, fmt, ap, NULL);
+  const int str_l = vim_vsnprintf(str, str_m, fmt, ap);
   va_end(ap);
   return str_l;
 }
@@ -744,6 +736,10 @@ static const char *infinity_str(bool positive, char fmt_spec,
   return table[idx];
 }
 
+int vim_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap)
+{
+  return vim_vsnprintf_typval(str, str_m, fmt, ap, NULL);
+}
 
 /// Write formatted value to the string
 ///
@@ -756,8 +752,8 @@ static const char *infinity_str(bool positive, char fmt_spec,
 ///
 /// @return Number of bytes excluding NUL byte that would be written to the
 ///         string if str_m was greater or equal to the return value.
-int vim_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap,
-                  typval_T *const tvs)
+int vim_vsnprintf_typval(
+    char *str, size_t str_m, const char *fmt, va_list ap, typval_T *const tvs)
 {
   size_t str_l = 0;
   bool str_avail = str_l < str_m;
@@ -1214,14 +1210,14 @@ int vim_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap,
               remove_trailing_zeroes = true;
             }
 
-            if (isinf(f)
+            if (xisinf(f)
                 || (strchr("fF", fmt_spec) != NULL && abs_f > 1.0e307)) {
               xstrlcpy(tmp, infinity_str(f > 0.0, fmt_spec,
                                          force_sign, space_for_positive),
                        sizeof(tmp));
               str_arg_l = strlen(tmp);
               zero_padding = 0;
-            } else if (isnan(f)) {
+            } else if (xisnan(f)) {
               // Not a number: nan or NAN
               memmove(tmp, ASCII_ISUPPER(fmt_spec) ? "NAN" : "nan", 4);
               str_arg_l = 3;

@@ -17,6 +17,8 @@
 #include "nvim/popupmnu.h"
 #include "nvim/cursor_shape.h"
 #include "nvim/highlight.h"
+#include "nvim/screen.h"
+#include "nvim/window.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "api/ui.c.generated.h"
@@ -27,11 +29,12 @@ typedef struct {
   uint64_t channel_id;
   Array buffer;
 
-  int hl_id;  // current higlight for legacy put event
-  Integer cursor_row, cursor_col;  // Intended visibule cursor position
+  int hl_id;  // Current highlight for legacy put event.
+  Integer cursor_row, cursor_col;  // Intended visible cursor position.
 
   // Position of legacy cursor, used both for drawing and visible user cursor.
   Integer client_row, client_col;
+  bool wildmenu_active;
 } UIData;
 
 static PMap(uint64_t) *connected_uis = NULL;
@@ -54,7 +57,7 @@ void remote_ui_disconnect(uint64_t channel_id)
   pmap_del(uint64_t)(connected_uis, channel_id);
   xfree(ui->data);
   ui->data = NULL;  // Flag UI as "stopped".
-  ui_detach_impl(ui);
+  ui_detach_impl(ui, channel_id);
   xfree(ui);
 }
 
@@ -73,6 +76,21 @@ void remote_ui_wait_for_attach(void)
                             pmap_has(uint64_t)(connected_uis, CHAN_STDIO));
 }
 
+/// Activates UI events on the channel.
+///
+/// Entry point of all UI clients.  Allows |\-\-embed| to continue startup.
+/// Implies that the client is ready to show the UI.  Adds the client to the
+/// list of UIs. |nvim_list_uis()|
+///
+/// @note If multiple UI clients are attached, the global screen dimensions
+///       degrade to the smallest client. E.g. if client A requests 80x40 but
+///       client B requests 200x100, the global screen has size 80x40.
+///
+/// @param channel_id
+/// @param width  Requested screen columns
+/// @param height  Requested screen rows
+/// @param options  |ui-option| map
+/// @param[out] err Error details, if any
 void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
                     Dictionary options, Error *err)
   FUNC_API_SINCE(1) FUNC_API_REMOTE_ONLY
@@ -91,7 +109,9 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
   UI *ui = xcalloc(1, sizeof(UI));
   ui->width = (int)width;
   ui->height = (int)height;
+  ui->pum_height = 0;
   ui->rgb = true;
+  ui->override = false;
   ui->grid_resize = remote_ui_grid_resize;
   ui->grid_clear = remote_ui_grid_clear;
   ui->grid_cursor_goto = remote_ui_grid_cursor_goto;
@@ -104,6 +124,7 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
   ui->mode_change = remote_ui_mode_change;
   ui->grid_scroll = remote_ui_grid_scroll;
   ui->hl_attr_define = remote_ui_hl_attr_define;
+  ui->hl_group_set = remote_ui_hl_group_set;
   ui->raw_line = remote_ui_raw_line;
   ui->bell = remote_ui_bell;
   ui->visual_bell = remote_ui_visual_bell;
@@ -113,6 +134,7 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
   ui->set_title = remote_ui_set_title;
   ui->set_icon = remote_ui_set_icon;
   ui->option_set = remote_ui_option_set;
+  ui->msg_set_pos = remote_ui_msg_set_pos;
   ui->event = remote_ui_event;
   ui->inspect = remote_ui_inspect;
 
@@ -126,8 +148,15 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
     }
   }
 
-  if (ui->ui_ext[kUIHlState]) {
+  if (ui->ui_ext[kUIHlState] || ui->ui_ext[kUIMultigrid]) {
     ui->ui_ext[kUILinegrid] = true;
+  }
+
+  if (ui->ui_ext[kUIMessages]) {
+    // This uses attribute indicies, so ext_linegrid is needed.
+    ui->ui_ext[kUILinegrid] = true;
+    // Cmdline uses the messages area, so it should be externalized too.
+    ui->ui_ext[kUICmdline] = true;
   }
 
   UIData *data = xmalloc(sizeof(UIData));
@@ -135,10 +164,11 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height,
   data->buffer = (Array)ARRAY_DICT_INIT;
   data->hl_id = 0;
   data->client_col = -1;
+  data->wildmenu_active = false;
   ui->data = data;
 
   pmap_put(uint64_t)(connected_uis, channel_id, ui);
-  ui_attach_impl(ui);
+  ui_attach_impl(ui, channel_id);
 }
 
 /// @deprecated
@@ -151,6 +181,12 @@ void ui_attach(uint64_t channel_id, Integer width, Integer height,
   api_free_dictionary(opts);
 }
 
+/// Deactivates UI events on the channel.
+///
+/// Removes the client from the list of UIs. |nvim_list_uis()|
+///
+/// @param channel_id
+/// @param[out] err Error details, if any
 void nvim_ui_detach(uint64_t channel_id, Error *err)
   FUNC_API_SINCE(1) FUNC_API_REMOTE_ONLY
 {
@@ -202,14 +238,24 @@ void nvim_ui_set_option(uint64_t channel_id, String name,
 static void ui_set_option(UI *ui, bool init, String name, Object value,
                           Error *error)
 {
+  if (strequal(name.data, "override")) {
+    if (value.type != kObjectTypeBoolean) {
+      api_set_error(error, kErrorTypeValidation, "override must be a Boolean");
+      return;
+    }
+    ui->override = value.data.boolean;
+    return;
+  }
+
   if (strequal(name.data, "rgb")) {
     if (value.type != kObjectTypeBoolean) {
       api_set_error(error, kErrorTypeValidation, "rgb must be a Boolean");
       return;
     }
     ui->rgb = value.data.boolean;
-    // A little drastic, but only legacy uis need to use this option
-    if (!init) {
+    // A little drastic, but only takes effect for legacy uis. For linegrid UI
+    // only changes metadata for nvim_list_uis(), no refresh needed.
+    if (!init && !ui->ui_ext[kUILinegrid]) {
       ui_refresh();
     }
     return;
@@ -243,6 +289,58 @@ static void ui_set_option(UI *ui, bool init, String name, Object value,
 
   api_set_error(error, kErrorTypeValidation, "No such UI option: %s",
                 name.data);
+}
+
+/// Tell Nvim to resize a grid. Triggers a grid_resize event with the requested
+/// grid size or the maximum size if it exceeds size limits.
+///
+/// On invalid grid handle, fails with error.
+///
+/// @param channel_id
+/// @param grid    The handle of the grid to be changed.
+/// @param width   The new requested width.
+/// @param height  The new requested height.
+/// @param[out] err Error details, if any
+void nvim_ui_try_resize_grid(uint64_t channel_id, Integer grid, Integer width,
+                             Integer height, Error *err)
+  FUNC_API_SINCE(6) FUNC_API_REMOTE_ONLY
+{
+  if (!pmap_has(uint64_t)(connected_uis, channel_id)) {
+    api_set_error(err, kErrorTypeException,
+                  "UI not attached to channel: %" PRId64, channel_id);
+    return;
+  }
+
+  ui_grid_resize((handle_T)grid, (int)width, (int)height, err);
+}
+
+/// Tells Nvim the number of elements displaying in the popumenu, to decide
+/// <PageUp> and <PageDown> movement.
+///
+/// @param channel_id
+/// @param height  Popupmenu height, must be greater than zero.
+/// @param[out] err Error details, if any
+void nvim_ui_pum_set_height(uint64_t channel_id, Integer height, Error *err)
+  FUNC_API_SINCE(6) FUNC_API_REMOTE_ONLY
+{
+  if (!pmap_has(uint64_t)(connected_uis, channel_id)) {
+    api_set_error(err, kErrorTypeException,
+                  "UI not attached to channel: %" PRId64, channel_id);
+    return;
+  }
+
+  if (height <= 0) {
+    api_set_error(err, kErrorTypeValidation, "Expected pum height > 0");
+    return;
+  }
+
+  UI *ui = pmap_get(uint64_t)(connected_uis, channel_id);
+  if (!ui->ui_ext[kUIPopupmenu]) {
+    api_set_error(err, kErrorTypeValidation,
+                  "It must support the ext_popupmenu option");
+    return;
+  }
+  ui->pum_height = (int)height;
 }
 
 /// Pushes data into UI.UIData, to be consumed later by remote_ui_flush().
@@ -332,6 +430,9 @@ static void remote_ui_default_colors_set(UI *ui, Integer rgb_fg,
                                          Integer rgb_bg, Integer rgb_sp,
                                          Integer cterm_fg, Integer cterm_bg)
 {
+  if (!ui->ui_ext[kUITermColors]) {
+    HL_SET_DEFAULT_COLORS(rgb_fg, rgb_bg, rgb_sp);
+  }
   Array args = ARRAY_DICT_INIT;
   ADD(args, INTEGER_OBJ(rgb_fg));
   ADD(args, INTEGER_OBJ(rgb_bg));
@@ -438,7 +539,7 @@ static void remote_ui_put(UI *ui, const char *cell)
 static void remote_ui_raw_line(UI *ui, Integer grid, Integer row,
                                Integer startcol, Integer endcol,
                                Integer clearcol, Integer clearattr,
-                               Boolean wrap, const schar_T *chunk,
+                               LineFlags flags, const schar_T *chunk,
                                const sattr_T *attrs)
 {
   UIData *data = ui->data;
@@ -550,6 +651,7 @@ static Array translate_firstarg(UI *ui, Array args)
 
 static void remote_ui_event(UI *ui, char *name, Array args, bool *args_consumed)
 {
+  UIData *data = ui->data;
   if (!ui->ui_ext[kUILinegrid]) {
     // the representation of highlights in cmdline changed, translate back
     // never consumes args
@@ -574,6 +676,39 @@ static void remote_ui_event(UI *ui, char *name, Array args, bool *args_consumed)
       return;
     }
   }
+
+  // Back-compat: translate popupmenu_xx to legacy wildmenu_xx.
+  if (ui->ui_ext[kUIWildmenu]) {
+    if (strequal(name, "popupmenu_show")) {
+      data->wildmenu_active = (args.items[4].data.integer == -1)
+                            || !ui->ui_ext[kUIPopupmenu];
+      if (data->wildmenu_active) {
+        Array new_args = ARRAY_DICT_INIT;
+        Array items = args.items[0].data.array;
+        Array new_items = ARRAY_DICT_INIT;
+        for (size_t i = 0; i < items.size; i++) {
+          ADD(new_items, copy_object(items.items[i].data.array.items[0]));
+        }
+        ADD(new_args, ARRAY_OBJ(new_items));
+        push_call(ui, "wildmenu_show", new_args);
+        if (args.items[1].data.integer != -1) {
+          Array new_args2 = ARRAY_DICT_INIT;
+          ADD(new_args2, args.items[1]);
+          push_call(ui, "wildmenu_select", new_args);
+        }
+        return;
+      }
+    } else if (strequal(name, "popupmenu_select")) {
+      if (data->wildmenu_active) {
+        name = "wildmenu_select";
+      }
+    } else if (strequal(name, "popupmenu_hide")) {
+      if (data->wildmenu_active) {
+        name = "wildmenu_hide";
+      }
+    }
+  }
+
 
   Array my_args = ARRAY_DICT_INIT;
   // Objects are currently single-reference

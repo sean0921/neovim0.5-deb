@@ -704,6 +704,26 @@ func Test_fold_last_line_with_pagedown()
   enew!
 endfunc
 
+func Test_folds_with_rnu()
+  if !CanRunVimInTerminal()
+    throw 'Skipped: cannot make screendumps'
+  endif
+
+  call writefile([
+	\ 'set fdm=marker rnu foldcolumn=2',
+	\ 'call setline(1, ["{{{1", "nline 1", "{{{1", "line 2"])',
+	\ ], 'Xtest_folds_with_rnu')
+  let buf = RunVimInTerminal('-S Xtest_folds_with_rnu', {})
+
+  call VerifyScreenDump(buf, 'Test_folds_with_rnu_01', {})
+  call term_sendkeys(buf, "j")
+  call VerifyScreenDump(buf, 'Test_folds_with_rnu_02', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
+  call delete('Xtest_folds_with_rnu')
+endfunc
+
 func Test_folds_marker_in_comment2()
   new
   call setline(1, ['Lorem ipsum dolor sit', 'Lorem ipsum dolor sit', 'Lorem ipsum dolor sit'])
@@ -718,5 +738,21 @@ func Test_folds_marker_in_comment2()
   call assert_equal(['Lorem ipsum dolor sit<!--}}}-->'], getreg(0,1,1))
 
   set foldmethod&
+  bwipe!
+endfunc
+
+func Test_fold_delete_with_marker()
+  new
+  call setline(1, ['func Func() {{{1', 'endfunc'])
+  1,2yank
+  new
+  set fdm=marker
+  call setline(1, 'x')
+  normal! Vp
+  normal! zd
+  call assert_equal(['func Func() ', 'endfunc'], getline(1, '$'))
+
+  set fdm&
+  bwipe!
   bwipe!
 endfunc

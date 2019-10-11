@@ -20,6 +20,7 @@
 uv_tty_t tty;
 uv_tty_t tty_out;
 
+bool owns_tty(void);  // silence -Wmissing-prototypes
 bool owns_tty(void)
 {
 #ifdef _WIN32
@@ -37,6 +38,9 @@ bool owns_tty(void)
 static void walk_cb(uv_handle_t *handle, void *arg)
 {
   if (!uv_is_closing(handle)) {
+#ifdef WIN32
+    uv_tty_set_mode(&tty, UV_TTY_MODE_NORMAL);
+#endif
     uv_close(handle, NULL);
   }
 }

@@ -1,10 +1,9 @@
-[![Neovim](https://raw.githubusercontent.com/neovim/neovim.github.io/master/logos/neovim-logo-600x173.png)](https://neovim.io)
+[![Neovim](https://raw.githubusercontent.com/neovim/neovim.github.io/master/logos/neovim-logo-300x87.png)](https://neovim.io)
 
 [Wiki](https://github.com/neovim/neovim/wiki) |
 [Documentation](https://neovim.io/doc) |
-[Twitter](https://twitter.com/Neovim) |
-[Community](https://neovim.io/community/) |
-[Gitter **Chat**](https://gitter.im/neovim/neovim)
+[Chat/Discussion](https://gitter.im/neovim/neovim) |
+[Twitter](https://twitter.com/Neovim)
 
 [![Travis build status](https://travis-ci.org/neovim/neovim.svg?branch=master)](https://travis-ci.org/neovim/neovim)
 [![AppVeyor build status](https://ci.appveyor.com/api/projects/status/urdqjrik5u521fac/branch/master?svg=true)](https://ci.appveyor.com/project/neovim/neovim/branch/master)
@@ -27,15 +26,13 @@ Neovim is a project that seeks to aggressively refactor Vim in order to:
 See the [Introduction](https://github.com/neovim/neovim/wiki/Introduction) wiki page and [Roadmap]
 for more information.
 
-[![Throughput Graph](https://graphs.waffle.io/neovim/neovim/throughput.svg)](https://waffle.io/neovim/neovim/metrics)
-
 Features
 --------
 
 - Modern [GUIs](https://github.com/neovim/neovim/wiki/Related-projects#gui)
-- [API](https://github.com/neovim/neovim/wiki/Related-projects#api-clients)
-  access from any language including Clojure, Lisp, Go, Haskell, Lua,
-  JavaScript, Perl, Python, Ruby, and Rust
+- [API access](https://github.com/neovim/neovim/wiki/Related-projects#api-clients)
+  from any language including C/C++, C#, Clojure, D, Elixir, Go, Haskell, Java,
+  JavaScript/Node.js, Julia, Lisp, Lua, Perl, Python, Racket, Ruby, Rust
 - Embedded, scriptable [terminal emulator](https://neovim.io/doc/user/nvim_terminal_emulator.html)
 - Asynchronous [job control](https://github.com/neovim/neovim/pull/2247)
 - [Shared data (shada)](https://github.com/neovim/neovim/pull/2506) among multiple editor instances
@@ -50,25 +47,27 @@ Install from package
 Pre-built packages for Windows, macOS, and Linux are found on the
 [Releases](https://github.com/neovim/neovim/releases/) page.
 
-Managed packages are in [Homebrew], [Debian], [Ubuntu], [Fedora], [Arch Linux], [Gentoo],
-and [more](https://github.com/neovim/neovim/wiki/Installing-Neovim)!
+[Managed packages] are in Homebrew, [Debian], [Ubuntu], [Fedora], [Arch Linux],
+[Gentoo], and more!
 
 Install from source
 -------------------
 
+The build is CMake-based, but a Makefile is provided as a convenience.
+
     make CMAKE_BUILD_TYPE=RelWithDebInfo
     sudo make install
 
-To install to a non-default location, set `CMAKE_INSTALL_PREFIX`:
+To install to a non-default location:
 
-    make CMAKE_EXTRA_FLAGS="-DCMAKE_INSTALL_PREFIX=/full/path/"
+    make CMAKE_INSTALL_PREFIX=/full/path/
     make install
 
 To skip bundled (`third-party/*`) dependencies:
 
 1. Install the dependencies using a package manager.
    ```
-   sudo apt install gperf luajit luarocks libuv1-dev libluajit-5.1-dev libunibilium-dev libmsgpack-dev libtermkey-dev libvterm-dev libjemalloc-dev
+   sudo apt install gperf luajit luarocks libuv1-dev libluajit-5.1-dev libunibilium-dev libmsgpack-dev libtermkey-dev libvterm-dev
    sudo luarocks build mpack
    sudo luarocks build lpeg
    sudo luarocks build inspect
@@ -79,17 +78,10 @@ To skip bundled (`third-party/*`) dependencies:
    sudo make install
    ```
 
-CMake features:
+To inspect the build, these CMake features are useful:
 
-- List all build targets:
-  ```
-  cmake --build build --target help
-  ```
-- Print all variable definitions:
-  ```
-  cmake -LAH
-  ```
-- `build/CMakeCache.txt` contains the resolved values of all CMake variables.
+- `cmake --build build --target help` lists all build targets.
+- `build/CMakeCache.txt` (or `cmake -LAH build/`) contains the resolved values of all CMake variables.
 - `build/compile_commands.json` shows the full compiler invocations for each translation unit.
 
 See the [Building Neovim](https://github.com/neovim/neovim/wiki/Building-Neovim) wiki page for details.
@@ -148,7 +140,7 @@ See `LICENSE` for details.
 [nvim-features]: https://neovim.io/doc/user/vim_diff.html#nvim-features
 [Roadmap]: https://neovim.io/roadmap/
 [advanced UIs]: https://github.com/neovim/neovim/wiki/Related-projects#gui
-[Homebrew]: https://github.com/neovim/homebrew-neovim#installation
+[Managed packages]: https://github.com/neovim/neovim/wiki/Installing-Neovim#install-from-package
 [Debian]: https://packages.debian.org/testing/neovim
 [Ubuntu]: http://packages.ubuntu.com/search?keywords=neovim
 [Fedora]: https://apps.fedoraproject.org/packages/neovim

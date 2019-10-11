@@ -1,8 +1,10 @@
 local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
 local clear, feed, eq = helpers.clear, helpers.feed, helpers.eq
+local command = helpers.command
 local feed_command = helpers.feed_command
 local insert = helpers.insert
+local funcs = helpers.funcs
 local meths = helpers.meths
 
 describe("folded lines", function()
@@ -24,6 +26,42 @@ describe("folded lines", function()
 
   after_each(function()
     screen:detach()
+  end)
+
+  it("work with more than one signcolumn", function()
+    command("set signcolumn=yes:9")
+    feed("i<cr><esc>")
+    feed("vkzf")
+    screen:expect([[
+        {5:                  ^+--  2 lines: ·············}|
+        {1:~                                            }|
+        {1:~                                            }|
+        {1:~                                            }|
+        {1:~                                            }|
+        {1:~                                            }|
+        {1:~                                            }|
+                                                     |
+    ]])
+  end)
+
+  it("highlighting with relative line numbers", function()
+    command("set relativenumber foldmethod=marker")
+    feed_command("set foldcolumn=2")
+    funcs.setline(1, '{{{1')
+    funcs.setline(2, 'line 1')
+    funcs.setline(3, '{{{1')
+    funcs.setline(4, 'line 2')
+    feed("j")
+    screen:expect([[
+      {7:+ }{5:  1 +--  2 lines: ·························}|
+      {7:+ }{5:  0 ^+--  2 lines: ·························}|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
+      :set foldcolumn=2                            |
+    ]])
   end)
 
   it("works with multibyte text", function()
@@ -71,12 +109,12 @@ describe("folded lines", function()
     feed_command("set number foldcolumn=2")
     screen:expect([[
       {7:+ }{5:  1 ^+--  2 lines: å 语 x̎͂̀̂͛͛ العَرَبِيَّة···········}|
-      {7:  }{1:~                                          }|
-      {7:  }{1:~                                          }|
-      {7:  }{1:~                                          }|
-      {7:  }{1:~                                          }|
-      {7:  }{1:~                                          }|
-      {7:  }{1:~                                          }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
       :set number foldcolumn=2                     |
     ]])
 
@@ -84,12 +122,12 @@ describe("folded lines", function()
     feed_command("set rightleft")
     screen:expect([[
       {5:+--  2 lines: å ······················^·  1 }{7: +}|
-      {1:                                          ~}{7:  }|
-      {1:                                          ~}{7:  }|
-      {1:                                          ~}{7:  }|
-      {1:                                          ~}{7:  }|
-      {1:                                          ~}{7:  }|
-      {1:                                          ~}{7:  }|
+      {1:                                            ~}|
+      {1:                                            ~}|
+      {1:                                            ~}|
+      {1:                                            ~}|
+      {1:                                            ~}|
+      {1:                                            ~}|
       :set rightleft                               |
     ]])
 
@@ -156,7 +194,7 @@ describe("folded lines", function()
       {1::}set foldmethod=manual                       |
       {1::}let x = 1                                   |
       {1::}^                                            |
-      {1::~                                           }|
+      {1:~                                            }|
       {3:[Command Line]                               }|
       :                                            |
     ]])
@@ -167,8 +205,8 @@ describe("folded lines", function()
       {2:[No Name]                                    }|
       {1::}{5:^+--  2 lines: set foldmethod=manual·········}|
       {1::}                                            |
-      {1::~                                           }|
-      {1::~                                           }|
+      {1:~                                            }|
+      {1:~                                            }|
       {3:[Command Line]                               }|
       :                                            |
     ]])
@@ -192,7 +230,7 @@ describe("folded lines", function()
       {1:/}alpha                                       |
       {1:/}{6:omega}                                       |
       {1:/}^                                            |
-      {1:/~                                           }|
+      {1:~                                            }|
       {3:[Command Line]                               }|
       /                                            |
     ]])
@@ -202,9 +240,9 @@ describe("folded lines", function()
                                                    |
       {2:[No Name]                                    }|
       {1:/}{5:^+--  3 lines: alpha·························}|
-      {1:/~                                           }|
-      {1:/~                                           }|
-      {1:/~                                           }|
+      {1:~                                            }|
+      {1:~                                            }|
+      {1:~                                            }|
       {3:[Command Line]                               }|
       /                                            |
     ]])

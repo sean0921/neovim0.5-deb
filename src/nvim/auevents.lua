@@ -29,6 +29,7 @@ return {
     'CmdWinLeave',            -- before leaving the cmdline window
     'ColorScheme',            -- after loading a colorscheme
     'ColorSchemePre',         -- before loading a colorscheme
+    'CompleteChanged',        -- after popup menu changed
     'CompleteDone',           -- after finishing insert complete
     'CursorHold',             -- cursor in same position for a while
     'CursorHoldI',            -- idem, in Insert mode
@@ -64,7 +65,6 @@ return {
     'InsertCharPre',          -- before inserting a char
     'InsertEnter',            -- when entering Insert mode
     'InsertLeave',            -- when leaving Insert mode
-    'JobActivity',            -- when job sent some data
     'MenuPopup',              -- just before popup menu is displayed
     'OptionSet',              -- after setting any option
     'QuickFixCmdPost',        -- after :make, :grep etc.
@@ -74,8 +74,10 @@ return {
     'SessionLoadPost',        -- after loading a session file
     'ShellCmdPost',           -- after ":!cmd"
     'ShellFilterPost',        -- after ":1,2!cmd", ":w !cmd", ":r !cmd".
+    'Signal',                 -- after nvim process received a signal
     'SourceCmd',              -- sourcing a Vim script using command
     'SourcePre',              -- before sourcing a Vim script
+    'SourcePost',             -- after sourcing a Vim script
     'SpellFileMissing',       -- spell file missing
     'StdinReadPost',          -- after reading from stdin
     'StdinReadPre',           -- before reading from stdin
@@ -87,13 +89,17 @@ return {
     'TabNew',                 -- when creating a new tab
     'TabNewEntered',          -- after entering a new tab
     'TermChanged',            -- after changing 'term'
-    'TermClose',              -- after the processs exits
+    'TermClose',              -- after the process exits
+    'TermEnter',              -- after entering Terminal mode
+    'TermLeave',              -- after leaving Terminal mode
     'TermOpen',               -- after opening a terminal buffer
     'TermResponse',           -- after setting "v:termresponse"
     'TextChanged',            -- text was modified
     'TextChangedI',           -- text was modified in Insert mode(no popup)
     'TextChangedP',           -- text was modified in Insert mode(popup)
     'TextYankPost',           -- after a yank or delete was done (y, d, c)
+    'UIEnter',                -- after UI attaches
+    'UILeave',                -- after UI detaches
     'User',                   -- user defined autocommand
     'VimEnter',               -- after starting Vim
     'VimLeave',               -- before exiting Vim
@@ -115,10 +121,13 @@ return {
   -- syntax file
   nvim_specific = {
     DirChanged=true,
+    Signal=true,
     TabClosed=true,
     TabNew=true,
     TabNewEntered=true,
     TermClose=true,
     TermOpen=true,
+    UIEnter=true,
+    UILeave=true,
   },
 }

@@ -72,33 +72,25 @@
 # define VIMRC_FILE     ".nvimrc"
 #endif
 
-typedef enum {
-  kNone  = -1,
-  kFalse = 0,
-  kTrue  = 1,
-} TriState;
-
 EXTERN struct nvim_stats_s {
   int64_t fsync;
   int64_t redraw;
 } g_stats INIT(= { 0, 0 });
 
-/* Values for "starting" */
-#define NO_SCREEN       2       /* no screen updating yet */
-#define NO_BUFFERS      1       /* not all buffers loaded yet */
-/*                      0          not starting anymore */
+// Values for "starting".
+#define NO_SCREEN       2       // no screen updating yet
+#define NO_BUFFERS      1       // not all buffers loaded yet
+//                      0          not starting anymore
 
-/*
- * Number of Rows and Columns in the screen.
- * Must be long to be able to use them as options in option.c.
- * Note: Use screen_Rows and screen_Columns to access items in ScreenLines[].
- * They may have different values when the screen wasn't (re)allocated yet
- * after setting Rows or Columns (e.g., when starting up).
- */
+// Number of Rows and Columns in the screen.
+// Note: Use default_grid.Rows and default_grid.Columns to access items in
+// default_grid.chars[]. They may have different values when the screen
+// wasn't (re)allocated yet after setting Rows or Columns (e.g., when starting
+// up).
 #define DFLT_COLS       80              // default value for 'columns'
 #define DFLT_ROWS       24              // default value for 'lines'
-EXTERN long Rows INIT(= DFLT_ROWS);     // nr of rows in the screen
-EXTERN long Columns INIT(= DFLT_COLS);  // nr of columns in the screen
+EXTERN int Rows INIT(= DFLT_ROWS);     // nr of rows in the screen
+EXTERN int Columns INIT(= DFLT_COLS);  // nr of columns in the screen
 
 // We use 64-bit file functions here, if available.  E.g. ftello() returns
 // off_t instead of long, which helps if long is 32 bit and off_t is 64 bit.
@@ -129,45 +121,6 @@ typedef off_t off_T;
 #endif
 
 /*
- * The characters and attributes cached for the screen.
- */
-typedef char_u schar_T[(MAX_MCO+1) * 4 + 1];
-typedef int16_t sattr_T;
-
-/// ScreenLines[] contains a copy of the whole screen, as it currently is
-/// displayed. It is a single block of screen cells, the size of the screen
-/// plus one line. The extra line used as a buffer while redrawing a window
-/// line, so it can be compared with the previous state of that line. This way
-/// we can avoid sending bigger updates than neccessary to the Ul layer.
-///
-/// Screen cells are stored as NUL-terminated UTF-8 strings, and a cell can
-/// contain up to MAX_MCO composing characters after the base character.
-/// The composing characters are to be drawn on top of the original character.
-/// The content after the NUL is not defined (so comparison must be done a
-/// single cell at a time). Double-width characters are stored in the left cell,
-/// and the right cell should only contain the empty string. When a part of the
-/// screen is cleared, the cells should be filled with a single whitespace char.
-///
-/// ScreenAttrs[] contains the highlighting attribute for each cell.
-/// LineOffset[n] is the offset from ScreenLines[] and ScreenAttrs[] for the
-/// start of line 'n'. These offsets are in general not linear, as full screen
-/// scrolling is implemented by rotating the offsets in the LineOffset array.
-/// LineWraps[] is an array of boolean flags indicating if the screen line wraps
-/// to the next line. It can only be true if a window occupies the entire screen
-/// width.
-///
-///
-/// Note: before the screen is initialized and when out of memory these can be
-/// NULL.
-EXTERN schar_T  *ScreenLines INIT(= NULL);
-EXTERN sattr_T  *ScreenAttrs INIT(= NULL);
-EXTERN unsigned *LineOffset INIT(= NULL);
-EXTERN char_u   *LineWraps INIT(= NULL);        /* line wraps to next line */
-
-EXTERN int screen_Rows INIT(= 0);           /* actual size of ScreenLines[] */
-EXTERN int screen_Columns INIT(= 0);        /* actual size of ScreenLines[] */
-
-/*
  * When vgetc() is called, it sets mod_mask to the set of modifiers that are
  * held down based on the MOD_MASK_* symbols that are read first.
  */
@@ -184,12 +137,14 @@ EXTERN int mod_mask INIT(= 0x0);                /* current key modifiers */
  */
 EXTERN int cmdline_row;
 
-EXTERN int redraw_cmdline INIT(= FALSE);        /* cmdline must be redrawn */
-EXTERN int clear_cmdline INIT(= FALSE);         /* cmdline must be cleared */
-EXTERN int mode_displayed INIT(= FALSE);        /* mode is being displayed */
-EXTERN int cmdline_star INIT(= FALSE);          /* cmdline is crypted */
+EXTERN int redraw_cmdline INIT(= false);          // cmdline must be redrawn
+EXTERN int clear_cmdline INIT(= false);           // cmdline must be cleared
+EXTERN int mode_displayed INIT(= false);          // mode is being displayed
+EXTERN int cmdline_star INIT(= false);            // cmdline is crypted
+EXTERN int redrawing_cmdline INIT(= false);       // cmdline is being redrawn
+EXTERN int cmdline_was_last_drawn INIT(= false);  // cmdline was last drawn
 
-EXTERN int exec_from_reg INIT(= FALSE);         /* executing register */
+EXTERN int exec_from_reg INIT(= false);         // executing register
 
 /*
  * When '$' is included in 'cpoptions' option set:
@@ -228,19 +183,19 @@ EXTERN int compl_cont_status INIT(= 0);
 # define CONT_LOCAL     32      /* for ctrl_x_mode 0, ^X^P/^X^N do a local
                                  * expansion, (eg use complete=.) */
 
-/*
- * Functions for putting characters in the command line,
- * while keeping ScreenLines[] updated.
- */
-EXTERN int cmdmsg_rl INIT(= FALSE);         /* cmdline is drawn right to left */
+// state for putting characters in the message area
+EXTERN int cmdmsg_rl INIT(= false);  // cmdline is drawn right to left
 EXTERN int msg_col;
 EXTERN int msg_row;
-EXTERN int msg_scrolled;        /* Number of screen lines that windows have
-                                * scrolled because of printing messages. */
-EXTERN int msg_scrolled_ign INIT(= FALSE);
-/* when TRUE don't set need_wait_return in
-   msg_puts_attr() when msg_scrolled is
-   non-zero */
+EXTERN int msg_scrolled;        // Number of screen lines that windows have
+                                // scrolled because of printing messages.
+// when true don't set need_wait_return in msg_puts_attr()
+// when msg_scrolled is non-zero
+EXTERN bool msg_scrolled_ign INIT(= false);
+// Whether the screen is damaged due to scrolling. Sometimes msg_scrolled
+// is reset before the screen is redrawn, so we need to keep track of this.
+EXTERN bool msg_did_scroll INIT(= false);
+
 
 EXTERN char_u   *keep_msg INIT(= NULL);     /* msg to be shown after redraw */
 EXTERN int keep_msg_attr INIT(= 0);         /* highlight attr for keep_msg */
@@ -265,6 +220,7 @@ EXTERN dict_T vimvardict;                   /* Dictionary with v: variables */
 EXTERN dict_T globvardict;                  /* Dictionary with g: variables */
 EXTERN int did_emsg;                        /* set by emsg() when the message
                                                is displayed or thrown */
+EXTERN bool called_vim_beep;                // set if vim_beep() is called
 EXTERN int did_emsg_syntax;                 /* did_emsg set because of a
                                                syntax error */
 EXTERN int called_emsg;                     /* always set by emsg() */
@@ -376,8 +332,8 @@ EXTERN int garbage_collect_at_exit INIT(= false);
 #define SID_LUA         -7      // for Lua scripts/chunks
 #define SID_API_CLIENT  -8      // for API clients
 
-// ID of script being sourced or was sourced to define the current function.
-EXTERN scid_T current_SID INIT(= 0);
+// Script CTX being sourced or was sourced to define the current function.
+EXTERN sctx_T current_sctx INIT(= { 0 COMMA 0 COMMA 0 });
 // ID of the current channel making a client API call
 EXTERN uint64_t current_channel_id INIT(= 0);
 
@@ -386,8 +342,8 @@ EXTERN bool did_source_packages INIT(= false);
 // Scope information for the code that indirectly triggered the current
 // provider function call
 EXTERN struct caller_scope {
-  scid_T SID;
-  uint8_t *sourcing_name, *autocmd_fname, *autocmd_match; 
+  sctx_T script_ctx;
+  uint8_t *sourcing_name, *autocmd_fname, *autocmd_match;
   linenr_T sourcing_lnum;
   int autocmd_bufnr;
   void *funccalp;
@@ -435,9 +391,8 @@ EXTERN bufref_T au_new_curbuf INIT(= { NULL, 0, 0 });
 EXTERN buf_T *au_pending_free_buf INIT(= NULL);
 EXTERN win_T *au_pending_free_win INIT(= NULL);
 
-/*
- * Mouse coordinates, set by check_termcode()
- */
+// Mouse coordinates, set by handle_mouse_event()
+EXTERN int mouse_grid;
 EXTERN int mouse_row;
 EXTERN int mouse_col;
 EXTERN bool mouse_past_bottom INIT(= false);    /* mouse below last line */
@@ -471,10 +426,11 @@ EXTERN win_T    *firstwin;              /* first window */
 EXTERN win_T    *lastwin;               /* last window */
 EXTERN win_T    *prevwin INIT(= NULL);  /* previous window */
 # define ONE_WINDOW (firstwin == lastwin)
-/*
- * When using this macro "break" only breaks out of the inner loop. Use "goto"
- * to break out of the tabpage loop.
- */
+# define FOR_ALL_FRAMES(frp, first_frame) \
+  for (frp = first_frame; frp != NULL; frp = frp->fr_next)  // NOLINT
+
+// When using this macro "break" only breaks out of the inner loop. Use "goto"
+// to break out of the tabpage loop.
 # define FOR_ALL_TAB_WINDOWS(tp, wp) \
   FOR_ALL_TABS(tp) \
     FOR_ALL_WINDOWS_IN_TAB(wp, tp)
@@ -520,6 +476,11 @@ EXTERN buf_T    *curbuf INIT(= NULL);    // currently active buffer
 #define FOR_ALL_BUFFERS_BACKWARDS(buf) \
   for (buf_T *buf = lastbuf; buf != NULL; buf = buf->b_prev)
 
+// Iterate through all the signs placed in a buffer
+#define FOR_ALL_SIGNS_IN_BUF(buf, sign) \
+  for (sign = buf->b_signlist; sign != NULL; sign = sign->next)   // NOLINT
+
+
 /*
  * List of files being edited (global argument list).  curwin->w_alist points
  * to this when the window is using the global argument list.
@@ -541,7 +502,7 @@ EXTERN int sc_col;              /* column for shown command */
 // First NO_SCREEN, then NO_BUFFERS, then 0 when startup finished.
 EXTERN int starting INIT(= NO_SCREEN);
 // true when planning to exit. Might keep running if there is a changed buffer.
-EXTERN int exiting INIT(= false);
+EXTERN bool exiting INIT(= false);
 // is stdin a terminal?
 EXTERN int stdin_isatty INIT(= true);
 // is stdout a terminal?
@@ -641,7 +602,7 @@ EXTERN bool can_si INIT(= false);
 EXTERN bool can_si_back INIT(= false);
 
 // w_cursor before formatting text.
-EXTERN pos_T saved_cursor INIT(= INIT_POS_T(0, 0, 0));
+EXTERN pos_T saved_cursor INIT(= { 0, 0, 0 });
 
 /*
  * Stuff for insert mode.
@@ -660,6 +621,8 @@ EXTERN pos_T Insstart_orig;
 EXTERN int orig_line_count INIT(= 0);       /* Line count when "gR" started */
 EXTERN int vr_lines_changed INIT(= 0);      /* #Lines changed by "gR" so far */
 
+// increase around internal delete/replace
+EXTERN int inhibit_delete_count INIT(= 0);
 
 /*
  * These flags are set based upon 'fileencoding'.
@@ -680,40 +643,32 @@ EXTERN int vr_lines_changed INIT(= 0);      /* #Lines changed by "gR" so far */
 // mbyte flags that used to depend on 'encoding'. These are now deprecated, as
 // 'encoding' is always "utf-8". Code that use them can be refactored to
 // remove dead code.
-#define enc_dbcs 0
 #define enc_utf8 true
 #define has_mbyte true
 
 /// Encoding used when 'fencs' is set to "default"
 EXTERN char_u *fenc_default INIT(= NULL);
 
-# if defined(USE_ICONV) && defined(DYNAMIC_ICONV)
-/* Pointers to functions and variables to be loaded at runtime */
-EXTERN size_t (*iconv)(iconv_t cd, const char **inbuf, size_t *inbytesleft,
-                       char **outbuf, size_t *outbytesleft);
-EXTERN iconv_t (*iconv_open)(const char *tocode, const char *fromcode);
-EXTERN int (*iconv_close)(iconv_t cd);
-EXTERN int (*iconvctl)(iconv_t cd, int request, void *argument);
-EXTERN int* (*iconv_errno)(void);
-# endif
-
 /// "State" is the main state of Vim.
 /// There are other variables that modify the state:
 ///    Visual_mode:    When State is NORMAL or INSERT.
 ///    finish_op  :    When State is NORMAL, after typing the operator and
 ///                    before typing the motion command.
+///    motion_force:   Last motion_force from do_pending_operator()
+///    debug_mode:     Debug mode
 EXTERN int State INIT(= NORMAL);        // This is the current state of the
                                         // command interpreter.
-
+EXTERN bool debug_mode INIT(= false);
 EXTERN bool finish_op INIT(= false);    // true while an operator is pending
 EXTERN long opcount INIT(= 0);          // count for pending operator
+EXTERN int motion_force INIT(=0);       // motion force for pending operator
 
 // Ex Mode (Q) state
 EXTERN int exmode_active INIT(= 0);     // Zero, EXMODE_NORMAL or EXMODE_VIM.
 EXTERN int ex_no_reprint INIT(=false);  // No need to print after z or p.
 
-EXTERN int Recording INIT(= false);     // TRUE when recording into a reg.
-EXTERN int Exec_reg INIT(= false);      // TRUE when executing a register.
+EXTERN int reg_recording INIT(= 0);     // register for recording  or zero
+EXTERN int reg_executing INIT(= 0);     // register being executed or zero
 
 EXTERN int no_mapping INIT(= false);    // currently no mapping allowed
 EXTERN int no_zero_mapping INIT(= 0);   // mapping zero not allowed
@@ -730,11 +685,10 @@ EXTERN int arrow_used;                  /* Normally FALSE, set to TRUE after
                                          * to call u_sync() */
 EXTERN int ins_at_eol INIT(= FALSE);      /* put cursor after eol when
                                              restarting edit after CTRL-O */
-EXTERN char_u   *edit_submode INIT(= NULL); /* msg for CTRL-X submode */
-EXTERN char_u   *edit_submode_pre INIT(= NULL); /* prepended to edit_submode */
-EXTERN char_u   *edit_submode_extra INIT(= NULL); /* appended to edit_submode */
-EXTERN hlf_T edit_submode_highl;        /* highl. method for extra info */
-EXTERN int ctrl_x_mode INIT(= 0);       /* Which Ctrl-X mode are we in? */
+EXTERN char_u *edit_submode INIT(= NULL);  // msg for CTRL-X submode
+EXTERN char_u *edit_submode_pre INIT(= NULL);  // prepended to edit_submode
+EXTERN char_u *edit_submode_extra INIT(= NULL);  // appended to edit_submode
+EXTERN hlf_T edit_submode_highl;        // highl. method for extra info
 
 EXTERN int no_abbr INIT(= TRUE);        /* TRUE when no abbreviations loaded */
 
@@ -787,12 +741,13 @@ EXTERN bool KeyTyped;                    // true if user typed current char
 EXTERN int KeyStuffed;                   // TRUE if current char from stuffbuf
 EXTERN int maptick INIT(= 0);            // tick for each non-mapped char
 
-EXTERN int must_redraw INIT(= 0);           /* type of redraw necessary */
-EXTERN int skip_redraw INIT(= FALSE);       /* skip redraw once */
-EXTERN int do_redraw INIT(= FALSE);         /* extra redraw once */
+EXTERN int must_redraw INIT(= 0);           // type of redraw necessary
+EXTERN bool skip_redraw INIT(= false);      // skip redraw once
+EXTERN bool do_redraw INIT(= false);        // extra redraw once
+EXTERN bool must_redraw_pum INIT(= false);  // redraw pum. NB: must_redraw
+                                            // should also be set.
 
 EXTERN int need_highlight_changed INIT(= true);
-EXTERN char *used_shada_file INIT(= NULL);  // name of the ShaDa file to use
 
 EXTERN FILE *scriptout INIT(= NULL);  ///< Stream to write script to.
 
@@ -826,8 +781,6 @@ EXTERN char_u *autocmd_fname INIT(= NULL);     // fname for <afile> on cmdline
 EXTERN int autocmd_bufnr INIT(= 0);            // fnum for <abuf> on cmdline
 EXTERN char_u *autocmd_match INIT(= NULL);     // name for <amatch> on cmdline
 EXTERN int did_cursorhold INIT(= false);       // set when CursorHold t'gerd
-// for CursorMoved event
-EXTERN pos_T last_cursormoved INIT(= INIT_POS_T(0, 0, 0));
 
 EXTERN int postponed_split INIT(= 0);       /* for CTRL-W CTRL-] command */
 EXTERN int postponed_split_flags INIT(= 0);       /* args for win_split() */
@@ -882,26 +835,6 @@ extern char_u *compiled_sys;
  * directory is not a local directory, globaldir is NULL. */
 EXTERN char_u   *globaldir INIT(= NULL);
 
-// 'listchars' characters. Defaults are overridden in set_chars_option().
-EXTERN int lcs_eol INIT(= '$');
-EXTERN int lcs_ext INIT(= NUL);
-EXTERN int lcs_prec INIT(= NUL);
-EXTERN int lcs_nbsp INIT(= NUL);
-EXTERN int lcs_space INIT(= NUL);
-EXTERN int lcs_tab1 INIT(= NUL);
-EXTERN int lcs_tab2 INIT(= NUL);
-EXTERN int lcs_trail INIT(= NUL);
-EXTERN int lcs_conceal INIT(= ' ');
-
-// 'fillchars' characters. Defaults are overridden in set_chars_option().
-EXTERN int fill_stl INIT(= ' ');
-EXTERN int fill_stlnc INIT(= ' ');
-EXTERN int fill_vert INIT(= 9474);  // │
-EXTERN int fill_fold INIT(= 183);   // ·
-EXTERN int fill_diff INIT(= '-');
-EXTERN int fill_msgsep INIT(= ' ');
-EXTERN int fill_eob INIT(= '~');
-
 /* Whether 'keymodel' contains "stopsel" and "startsel". */
 EXTERN int km_stopsel INIT(= FALSE);
 EXTERN int km_startsel INIT(= FALSE);
@@ -929,8 +862,8 @@ EXTERN char_u wim_flags[4];
 # define STL_IN_TITLE   2
 EXTERN int stl_syntax INIT(= 0);
 
-/* don't use 'hlsearch' temporarily */
-EXTERN int no_hlsearch INIT(= FALSE);
+// don't use 'hlsearch' temporarily
+EXTERN bool no_hlsearch INIT(= false);
 
 /* Page number used for %N in 'pageheader' and 'guitablabel'. */
 EXTERN linenr_T printer_page_num;
@@ -956,15 +889,6 @@ EXTERN disptick_T display_tick INIT(= 0);
 /* Line in which spell checking wasn't highlighted because it touched the
  * cursor position in Insert mode. */
 EXTERN linenr_T spell_redraw_lnum INIT(= 0);
-
-/* Set when the cursor line needs to be redrawn. */
-EXTERN int need_cursor_line_redraw INIT(= FALSE);
-
-
-#ifdef USE_MCH_ERRMSG
-// Grow array to collect error messages in until they can be displayed.
-EXTERN garray_T error_ga INIT(= GA_EMPTY_INIT_VALUE);
-#endif
 
 
 /*
@@ -995,6 +919,10 @@ EXTERN char_u e_interr[] INIT(= N_("Interrupted"));
 EXTERN char_u e_invaddr[] INIT(= N_("E14: Invalid address"));
 EXTERN char_u e_invarg[] INIT(= N_("E474: Invalid argument"));
 EXTERN char_u e_invarg2[] INIT(= N_("E475: Invalid argument: %s"));
+EXTERN char_u e_invargval[] INIT(= N_("E475: Invalid value for argument %s"));
+EXTERN char_u e_invargNval[] INIT(= N_(
+    "E475: Invalid value for argument %s: %s"));
+EXTERN char_u e_duparg2[] INIT(= N_("E983: Duplicate argument: %s"));
 EXTERN char_u e_invexpr2[] INIT(= N_("E15: Invalid expression: %s"));
 EXTERN char_u e_invrange[] INIT(= N_("E16: Invalid range"));
 EXTERN char_u e_invcmd[] INIT(= N_("E476: Invalid command"));
@@ -1014,6 +942,7 @@ EXTERN char_u e_streamkey[] INIT(= N_(
     "E5210: dict key '%s' already set for buffered stream in channel %"
     PRIu64));
 EXTERN char_u e_libcall[] INIT(= N_("E364: Library call failed for \"%s()\""));
+EXTERN char e_fsync[] INIT(= N_("E667: Fsync failed: %s"));
 EXTERN char_u e_mkdir[] INIT(= N_("E739: Cannot create directory %s: %s"));
 EXTERN char_u e_markinval[] INIT(= N_("E19: Mark has invalid line number"));
 EXTERN char_u e_marknotset[] INIT(= N_("E20: Mark not set"));
@@ -1040,9 +969,6 @@ EXTERN char_u e_notmp[] INIT(= N_("E483: Can't get temp file name"));
 EXTERN char_u e_notopen[] INIT(= N_("E484: Can't open file %s"));
 EXTERN char_u e_notopen_2[] INIT(= N_("E484: Can't open file %s: %s"));
 EXTERN char_u e_notread[] INIT(= N_("E485: Can't read file %s"));
-EXTERN char_u e_nowrtmsg[] INIT(= N_(
-        "E37: No write since last change (add ! to override)"));
-EXTERN char_u e_nowrtmsg_nobang[] INIT(= N_("E37: No write since last change"));
 EXTERN char_u e_null[] INIT(= N_("E38: Null argument"));
 EXTERN char_u e_number_exp[] INIT(= N_("E39: Number expected"));
 EXTERN char_u e_openerrf[] INIT(= N_("E40: Can't open errorfile %s"));
@@ -1102,6 +1028,7 @@ EXTERN char_u e_au_recursive[] INIT(= N_(
 EXTERN char_u e_unsupportedoption[] INIT(= N_("E519: Option not supported"));
 EXTERN char_u e_fnametoolong[] INIT(= N_("E856: Filename too long"));
 EXTERN char_u e_float_as_string[] INIT(= N_("E806: using Float as a String"));
+
 EXTERN char_u e_autocmd_err[] INIT(=N_(
     "E5500: autocmd has thrown an exception: %s"));
 EXTERN char_u e_cmdmap_err[] INIT(=N_(
@@ -1111,20 +1038,29 @@ EXTERN char_u e_cmdmap_repeated[] INIT(=N_(
 EXTERN char_u e_cmdmap_key[] INIT(=N_(
     "E5522: <Cmd> mapping must not include %s key"));
 
+EXTERN char_u e_api_error[] INIT(=N_(
+    "E5555: API call: %s"));
+
+EXTERN char e_luv_api_disabled[] INIT(=N_(
+    "E5560: %s must not be called in a lua loop callback"));
+
+EXTERN char_u e_floatonly[] INIT(=N_(
+    "E5601: Cannot close window, only floating window would remain"));
+EXTERN char_u e_floatexchange[] INIT(=N_(
+    "E5602: Cannot exchange or rotate float"));
+
 
 EXTERN char top_bot_msg[] INIT(= N_("search hit TOP, continuing at BOTTOM"));
 EXTERN char bot_top_msg[] INIT(= N_("search hit BOTTOM, continuing at TOP"));
 
-/* For undo we need to know the lowest time possible. */
+// For undo we need to know the lowest time possible.
 EXTERN time_t starttime;
 
 EXTERN FILE *time_fd INIT(= NULL);  /* where to write startup timing */
 
-/*
- * Some compilers warn for not using a return value, but in some situations we
- * can't do anything useful with the value.  Assign to this variable to avoid
- * the warning.
- */
+// Some compilers warn for not using a return value, but in some situations we
+// can't do anything useful with the value.  Assign to this variable to avoid
+// the warning.
 EXTERN int vim_ignored;
 
 // Start a msgpack-rpc channel over stdin/stdout.

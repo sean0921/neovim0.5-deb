@@ -129,10 +129,6 @@ func Test_highlight_eol_with_cursorline()
 endfunc
 
 func Test_highlight_eol_with_cursorline_vertsplit()
-  if !has('vertsplit')
-    return
-  endif
-
   let [hiCursorLine, hi_ul, hi_bg] = HiCursorLine()
 
   call NewWindow('topleft 5', 5)
@@ -532,4 +528,66 @@ func Test_termguicolors()
   redraw
   set t_Co=0
   redraw
+endfunc
+
+func Test_cursorline_after_yank()
+  if !CanRunVimInTerminal()
+    throw 'Skipped: cannot make screendumps'
+  endif
+
+  call writefile([
+	\ 'set cul rnu',
+	\ 'call setline(1, ["","1","2","3",""])',
+	\ ], 'Xtest_cursorline_yank')
+  let buf = RunVimInTerminal('-S Xtest_cursorline_yank', {'rows': 8})
+  call term_wait(buf)
+  call term_sendkeys(buf, "Gy3k")
+  call term_wait(buf)
+  call term_sendkeys(buf, "jj")
+
+  call VerifyScreenDump(buf, 'Test_cursorline_yank_01', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
+  call delete('Xtest_cursorline_yank')
+endfunc
+
+" test for issue https://github.com/vim/vim/issues/4862
+func Test_put_before_cursorline()
+  new
+  only!
+  call setline(1, 'A')
+  redraw
+  let std_attr = screenattr(1, 1)
+  set cursorline
+  redraw
+  let cul_attr = screenattr(1, 1)
+  normal yyP
+  redraw
+  " Line 1 has cursor so it should be highlighted with CursorLine.
+  call assert_equal(cul_attr, screenattr(1, 1))
+  " And CursorLine highlighting from the second line should be gone.
+  call assert_equal(std_attr, screenattr(2, 1))
+  set nocursorline
+  bwipe!
+endfunc
+
+func Test_cursorline_with_visualmode()
+  if !CanRunVimInTerminal()
+    throw 'Skipped: cannot make screendumps'
+  endif
+
+  call writefile([
+	\ 'set cul',
+	\ 'call setline(1, repeat(["abc"], 50))',
+	\ ], 'Xtest_cursorline_with_visualmode')
+  let buf = RunVimInTerminal('-S Xtest_cursorline_with_visualmode', {'rows': 12})
+  call term_wait(buf)
+  call term_sendkeys(buf, "V\<C-f>kkkjk")
+
+  call VerifyScreenDump(buf, 'Test_cursorline_with_visualmode_01', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
+  call delete('Xtest_cursorline_with_visualmode')
 endfunc

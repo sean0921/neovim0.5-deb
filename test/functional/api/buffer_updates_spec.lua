@@ -3,8 +3,8 @@ local clear = helpers.clear
 local eq, ok = helpers.eq, helpers.ok
 local buffer, command, eval, nvim, next_msg = helpers.buffer,
   helpers.command, helpers.eval, helpers.nvim, helpers.next_msg
-local expect_err = helpers.expect_err
 local nvim_prog = helpers.nvim_prog
+local pcall_err = helpers.pcall_err
 local sleep = helpers.sleep
 local write_file = helpers.write_file
 
@@ -678,6 +678,32 @@ describe('API: buffer events:', function()
     expectn('Hello There', {})
   end)
 
+  it(':edit! (reload) causes detach #9642', function()
+    local b, tick = editoriginal(true, {'AAA', 'BBB'})
+    command('set undoreload=1')
+
+    command('normal! x')
+    tick = tick + 1
+    expectn('nvim_buf_lines_event', {b, tick, 0, 1, {'AA'}, false})
+
+    command('edit!')
+    expectn('nvim_buf_detach_event', {b})
+  end)
+
+  it(':enew! does not detach hidden buffer', function()
+    local b, tick = editoriginal(true, {'AAA', 'BBB'})
+    local channel = nvim('get_api_info')[1]
+
+    command('set undoreload=1 hidden')
+    command('normal! x')
+    tick = tick + 1
+    expectn('nvim_buf_lines_event', {b, tick, 0, 1, {'AA'}, false})
+
+    command('enew!')
+    eval('rpcnotify('..channel..', "Hello There")')
+    expectn('Hello There', {})
+  end)
+
   it('stays attached if the buffer is hidden', function()
     local b, tick = editoriginal(true, {'AAA'})
     local channel = nvim('get_api_info')[1]
@@ -734,7 +760,7 @@ describe('API: buffer events:', function()
   it('returns a proper error on nonempty options dict', function()
     clear()
     local b = editoriginal(false)
-    expect_err("dict isn't empty", buffer, 'attach', b, false, {builtin="asfd"})
+    eq("unexpected key: builtin", pcall_err(buffer, 'attach', b, false, {builtin="asfd"}))
   end)
 
   it('nvim_buf_attach returns response after delay #8634', function()

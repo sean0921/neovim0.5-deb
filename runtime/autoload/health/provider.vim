@@ -106,7 +106,8 @@ endfunction
 
 " Fetch the contents of a URL.
 function! s:download(url) abort
-  if executable('curl')
+  let has_curl = executable('curl')
+  if has_curl && system(['curl', '-V']) =~# 'Protocols:.*https'
     let rv = s:system(['curl', '-sL', a:url], '', 1, 1)
     return s:shell_error ? 'curl error with '.a:url.': '.s:shell_error : rv
   elseif executable('python')
@@ -124,7 +125,9 @@ function! s:download(url) abort
           \ ? 'python urllib.request error: '.s:shell_error
           \ : rv
   endif
-  return 'missing `curl` and `python`, cannot make pypi request'
+  return 'missing `curl` '
+          \ .(has_curl ? '(with HTTPS support) ' : '')
+          \ .'and `python`, cannot make web request'
 endfunction
 
 " Check for clipboard tools.
@@ -561,7 +564,10 @@ function! s:check_node() abort
   endif
   call health#report_info('Neovim node.js host: '. host)
 
-  let latest_npm_cmd = has('win32') ? 'cmd /c npm info neovim --json' : 'npm info neovim --json'
+  let manager = executable('npm') ? 'npm' : 'yarn'
+  let latest_npm_cmd = has('win32') ?
+        \ 'cmd /c '. manager .' info neovim --json' :
+        \ manager .' info neovim --json'
   let latest_npm = s:system(split(latest_npm_cmd))
   if s:shell_error || empty(latest_npm)
     call health#report_error('Failed to run: '. latest_npm_cmd,
@@ -590,7 +596,8 @@ function! s:check_node() abort
     call health#report_warn(
           \ printf('Package "neovim" is out-of-date. Installed: %s, latest: %s',
           \ current_npm, latest_npm),
-          \ ['Run in shell: npm install -g neovim'])
+          \ ['Run in shell: npm install -g neovim',
+          \  'Run in shell (if you use yarn): yarn global add neovim'])
   else
     call health#report_ok('Latest "neovim" npm/yarn package is installed: '. current_npm)
   endif

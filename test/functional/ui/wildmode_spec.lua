@@ -1,5 +1,3 @@
-local global_helpers = require('test.helpers')
-local shallowcopy = global_helpers.shallowcopy
 local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
 local clear, feed, command = helpers.clear, helpers.feed, helpers.command
@@ -8,6 +6,7 @@ local funcs = helpers.funcs
 local eq = helpers.eq
 local eval = helpers.eval
 local retry = helpers.retry
+local nvim_dir = helpers.nvim_dir
 
 describe("'wildmenu'", function()
   local screen
@@ -16,21 +15,9 @@ describe("'wildmenu'", function()
     screen = Screen.new(25, 5)
     screen:attach()
   end)
-  after_each(function()
-    screen:detach()
-  end)
-
-  -- expect the screen stayed unchanged some time after first seen success
-  local function expect_stay_unchanged(args)
-    screen:expect(args)
-    args = shallowcopy(args)
-    args.unchanged = true
-    screen:expect(args)
-  end
 
   it(':sign <tab> shows wildmenu completions', function()
-    command('set wildmode=full')
-    command('set wildmenu')
+    command('set wildmenu wildmode=full')
     feed(':sign <tab>')
     screen:expect([[
                                |
@@ -88,42 +75,29 @@ describe("'wildmenu'", function()
   it('is preserved during :terminal activity', function()
     command('set wildmenu wildmode=full')
     command('set scrollback=4')
-    if iswin() then
-      feed([[:terminal for /L \%I in (1,1,5000) do @(echo foo & echo foo & echo foo)<cr>]])
-    else
-      feed([[:terminal for i in $(seq 1 5000); do printf 'foo\nfoo\nfoo\n'; sleep 0.1; done<cr>]])
-    end
-
-    feed([[<C-\><C-N>gg]])
+    feed([[:terminal "]]..nvim_dir..[[/shell-test" REP 5000 !terminal_output!<cr>]])
+    feed('G')  -- Follow :terminal output.
     feed([[:sign <Tab>]])   -- Invoke wildmenu.
-    expect_stay_unchanged{grid=[[
-      foo                      |
-      foo                      |
-      foo                      |
-      define  jump  list  >    |
-      :sign define^             |
-    ]]}
+    -- NB: in earlier versions terminal output was redrawn during cmdline mode.
+    -- For now just assert that the screen remains unchanged.
+    screen:expect{any='define  jump  list  >    |\n:sign define^             |'}
+    screen:expect_unchanged()
 
     -- cmdline CTRL-D display should also be preserved.
-    feed([[<C-\><C-N>]])
-    feed([[:sign <C-D>]])   -- Invoke cmdline CTRL-D.
-    expect_stay_unchanged{grid=[[
+    feed([[<C-U>]])
+    feed([[sign <C-D>]])   -- Invoke cmdline CTRL-D.
+    screen:expect{grid=[[
       :sign                    |
       define    place          |
       jump      undefine       |
       list      unplace        |
       :sign ^                   |
     ]]}
+    screen:expect_unchanged()
 
     -- Exiting cmdline should show the buffer.
     feed([[<C-\><C-N>]])
-    screen:expect([[
-      ^foo                      |
-      foo                      |
-      foo                      |
-      foo                      |
-                               |
-    ]])
+    screen:expect{any=[[!terminal_output!]]}
   end)
 
   it('ignores :redrawstatus called from a timer #7108', function()
@@ -131,13 +105,14 @@ describe("'wildmenu'", function()
     command([[call timer_start(10, {->execute('redrawstatus')}, {'repeat':-1})]])
     feed([[<C-\><C-N>]])
     feed([[:sign <Tab>]])   -- Invoke wildmenu.
-    expect_stay_unchanged{grid=[[
+    screen:expect{grid=[[
                                |
       ~                        |
       ~                        |
       define  jump  list  >    |
       :sign define^             |
     ]]}
+    screen:expect_unchanged()
   end)
 
   it('with laststatus=0, :vsplit, :term #2255', function()
@@ -165,25 +140,143 @@ describe("'wildmenu'", function()
     feed([[:<Tab>]])      -- Invoke wildmenu.
     -- Check only the last 2 lines, because the shell output is
     -- system-dependent.
-    expect_stay_unchanged{any='!  #  &  <  =  >  @  >   \n:!^'}
+    screen:expect{any='!  #  &  <  =  >  @  >   |\n:!^'}
+    screen:expect_unchanged()
+  end)
+
+  it('wildmode=list,full and display+=msgsep interaction #10092', function()
+    -- Need more than 5 rows, else tabline is covered and will be redrawn.
+    screen:try_resize(25, 7)
+
+    command('set display+=msgsep')
+    command('set wildmenu wildmode=list,full')
+    command('set showtabline=2')
+    feed(':set wildm<tab>')
+    screen:expect([[
+       [No Name]               |
+                               |
+      ~                        |
+                               |
+      :set wildm               |
+      wildmenu  wildmode       |
+      :set wildm^               |
+    ]])
+    feed('<tab>') -- trigger wildmode full
+    screen:expect([[
+       [No Name]               |
+                               |
+                               |
+      :set wildm               |
+      wildmenu  wildmode       |
+      wildmenu  wildmode       |
+      :set wildmenu^            |
+    ]])
+    feed('<Esc>')
+    screen:expect([[
+       [No Name]               |
+      ^                         |
+      ~                        |
+      ~                        |
+      ~                        |
+      ~                        |
+                               |
+    ]])
+  end)
+
+  it('wildmode=list,full and display-=msgsep interaction', function()
+    -- Need more than 5 rows, else tabline is covered and will be redrawn.
+    screen:try_resize(25, 7)
+
+    command('set display-=msgsep')
+    command('set wildmenu wildmode=list,full')
+    feed(':set wildm<tab>')
+    screen:expect([[
+      ~                        |
+      ~                        |
+      ~                        |
+      ~                        |
+      :set wildm               |
+      wildmenu  wildmode       |
+      :set wildm^               |
+    ]])
+    feed('<tab>') -- trigger wildmode full
+    screen:expect([[
+      ~                        |
+      ~                        |
+      ~                        |
+      :set wildm               |
+      wildmenu  wildmode       |
+      wildmenu  wildmode       |
+      :set wildmenu^            |
+    ]])
+    feed('<Esc>')
+    screen:expect([[
+      ^                         |
+      ~                        |
+      ~                        |
+      ~                        |
+      ~                        |
+      ~                        |
+                               |
+    ]])
+  end)
+
+  it('multiple <C-D> renders correctly', function()
+    screen:try_resize(25, 7)
+
+    command('set laststatus=2')
+    command('set display+=msgsep')
+    feed(':set wildm')
+    feed('<c-d>')
+    screen:expect([[
+                               |
+      ~                        |
+      ~                        |
+                               |
+      :set wildm               |
+      wildmenu  wildmode       |
+      :set wildm^               |
+    ]])
+    feed('<c-d>')
+    screen:expect([[
+                               |
+                               |
+      :set wildm               |
+      wildmenu  wildmode       |
+      :set wildm               |
+      wildmenu  wildmode       |
+      :set wildm^               |
+    ]])
+    feed('<Esc>')
+    screen:expect([[
+      ^                         |
+      ~                        |
+      ~                        |
+      ~                        |
+      ~                        |
+      [No Name]                |
+                               |
+    ]])
   end)
 end)
 
 describe('command line completion', function()
   local screen
-
   before_each(function()
-    clear()
     screen = Screen.new(40, 5)
-    screen:attach()
-    screen:set_default_attr_ids({[1]={bold=true, foreground=Screen.colors.Blue}})
+    screen:set_default_attr_ids({
+     [1] = {bold = true, foreground = Screen.colors.Blue1},
+     [2] = {foreground = Screen.colors.Grey0, background = Screen.colors.Yellow},
+     [3] = {bold = true, reverse = true},
+    })
   end)
-
   after_each(function()
     os.remove('Xtest-functional-viml-compl-dir')
   end)
 
   it('lists directories with empty PATH', function()
+    clear()
+    screen:attach()
     local tmp = funcs.tempname()
     command('e '.. tmp)
     command('cd %:h')
@@ -198,6 +291,38 @@ describe('command line completion', function()
       :!Xtest-functional-viml-compl-dir^       |
     ]])
   end)
+
+  it('completes env var names #9681', function()
+    clear()
+    screen:attach()
+    command('let $XTEST_1 = "foo" | let $XTEST_2 = "bar"')
+    command('set wildmenu wildmode=full')
+    feed(':!echo $XTEST_<tab>')
+    screen:expect([[
+                                              |
+      {1:~                                       }|
+      {1:~                                       }|
+      {2:XTEST_1}{3:  XTEST_2                        }|
+      :!echo $XTEST_1^                         |
+    ]])
+  end)
+
+  it('completes (multibyte) env var names #9655', function()
+    clear({env={
+      ['XTEST_1AaあB']='foo',
+      ['XTEST_2']='bar',
+    }})
+    screen:attach()
+    command('set wildmenu wildmode=full')
+    feed(':!echo $XTEST_<tab>')
+    screen:expect([[
+                                              |
+      {1:~                                       }|
+      {1:~                                       }|
+      {2:XTEST_1AaあB}{3:  XTEST_2                   }|
+      :!echo $XTEST_1AaあB^                    |
+    ]])
+  end)
 end)
 
 describe('ui/ext_wildmenu', function()
@@ -207,10 +332,6 @@ describe('ui/ext_wildmenu', function()
     clear()
     screen = Screen.new(25, 5)
     screen:attach({rgb=true, ext_wildmenu=true})
-  end)
-
-  after_each(function()
-    screen:detach()
   end)
 
   it('works with :sign <tab>', function()

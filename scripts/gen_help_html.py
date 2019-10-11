@@ -1,5 +1,10 @@
 # Converts Vim/Nvim documentation to HTML.
 #
+# USAGE:
+#   1. python3 scripts/gen_help_html.py runtime/doc/ ~/neovim.github.io/t/
+#   3. cd ~/neovim.github.io/ && jekyll serve --host 0.0.0.0
+#   2. Visit http://localhost:4000/t/help.txt.html
+#
 # Adapted from https://github.com/c4rlo/vimhelp/
 # License: MIT
 #
@@ -23,7 +28,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import re, urllib.parse
+import os
+import re
+import urllib.parse
+import datetime
+import sys
 from itertools import chain
 
 HEAD = """\
@@ -32,6 +41,17 @@ HEAD = """\
 <html>
 <head>
 <meta http-equiv="Content-type" content="text/html; charset={encoding}"/>
+<style>
+.h {{
+  font-weight: bold;
+}}
+h1 {{
+  font-family: sans-serif;
+}}
+pre {{
+  font-family: sans-serif;
+}}
+</style>
 <title>Nvim: {filename}</title>
 """
 
@@ -39,22 +59,19 @@ HEAD_END = '</head>\n<body>\n'
 
 INTRO = """
 <h1>Nvim help files</h1>
-<p>HTML export of the <a href="https://neovim.io/">Nvim</a> help pages{vers-note}.
-Updated <a href="https://github.com/neovim/bot-ci" class="d">automatically</a> from the <a
-href="https://github.com/vim/vim/tree/master/runtime/doc" class="d">Nvim source repository</a>.
-Also includes the <a href="vim_faq.txt.html">Vim FAQ</a>, pulled from its
-<a href="https://github.com/chrisbra/vim_faq" class="d">source repository</a>.</p>
+<p>
+<a href="https://neovim.io/">Nvim</a> help pages{vers-note}.
+Updated <a href="https://github.com/neovim/bot-ci" class="d">automatically</a>
+from the <a href="https://github.com/neovim/neovim" class="d">Nvim source</a>.
+</p>
 """
 
-VERSION_NOTE = ", current as of Vim {version}"
+VERSION_NOTE = ", current as of Nvim {version}"
 
 SITENAVI_LINKS = """
-Quick links:
-<a href="/">help overview</a> &middot;
-<a href="quickref.txt.html">quick reference</a> &middot;
-<a href="usr_toc.txt.html">user manual toc</a> &middot;
-<a href="{helptxt}#reference_toc">reference manual toc</a> &middot;
-<a href="vim_faq.txt.html">faq</a>
+<a href="quickref.txt.html">Quick reference</a> &middot;
+<a href="usr_toc.txt.html">User manual</a> &middot;
+<a href="{helptxt}#reference_toc">Reference manual</a> &middot;
 """
 
 SITENAVI_LINKS_PLAIN = SITENAVI_LINKS.format(helptxt='help.txt.html')
@@ -64,12 +81,12 @@ SITENAVI_PLAIN = '<p>' + SITENAVI_LINKS_PLAIN + '</p>'
 SITENAVI_WEB = '<p>' + SITENAVI_LINKS_WEB + '</p>'
 
 SITENAVI_SEARCH = '<table width="100%"><tbody><tr><td>' + SITENAVI_LINKS_WEB + \
-'</td><td style="text-align: right; max-width: 25vw"><div class="gcse-searchbox">' \
-'</div></td></tr></tbody></table><div class="gcse-searchresults"></div>'
+    '</td><td style="text-align: right; max-width: 25vw"><div class="gcse-searchbox">' \
+    '</div></td></tr></tbody></table><div class="gcse-searchresults"></div>'
 
 TEXTSTART = """
 <div id="d1">
-<pre id="sp">                                                                                </pre>
+<pre id="sp">""" + (" " * 80) + """</pre>
 <div id="d2">
 <pre>
 """
@@ -77,62 +94,64 @@ TEXTSTART = """
 FOOTER = '</pre>'
 
 FOOTER2 = """
-<p id="footer">This site is maintained by Carlo Teubner (<i>(my first name) dot (my last name) at gmail dot com</i>).</p>
+<p id="footer">Generated {generated_date} from <code>{commit}</code></p>
 </div>
 </div>
 </body>
 </html>
-"""
-
-VIM_FAQ_LINE = '<a href="vim_faq.txt.html#vim_faq.txt" class="l">' \
-               'vim_faq.txt</a>   Frequently Asked Questions\n'
+""".format(
+    generated_date='{0:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now()),
+    commit='?')
 
 RE_TAGLINE = re.compile(r'(\S+)\s+(\S+)')
 
 PAT_WORDCHAR = '[!#-)+-{}~\xC0-\xFF]'
 
-PAT_HEADER   = r'(^.*~$)'
-PAT_GRAPHIC  = r'(^.* `$)'
+PAT_HEADER = r'(^.*~$)'
+PAT_GRAPHIC = r'(^.* `$)'
 PAT_PIPEWORD = r'(?<!\\)\|([#-)!+-~]+)\|'
 PAT_STARWORD = r'\*([#-)!+-~]+)\*(?:(?=\s)|$)'
-PAT_COMMAND  = r'`([^` ]+)`'
-PAT_OPTWORD  = r"('(?:[a-z]{2,}|t_..)')"
-PAT_CTRL     = r'(CTRL-(?:W_)?(?:\{char\}|<[A-Za-z]+?>|.)?)'
-PAT_SPECIAL  = r'(<.+?>|\{.+?}|' \
-               r'\[(?:range|line|count|offset|\+?cmd|[-+]?num|\+\+opt|' \
-               r'arg|arguments|ident|addr|group)]|' \
-               r'(?<=\s)\[[-a-z^A-Z0-9_]{2,}])'
-PAT_TITLE    = r'(Vim version [0-9.a-z]+|VIM REFERENCE.*)'
-PAT_NOTE     = r'((?<!' + PAT_WORDCHAR + r')(?:note|NOTE|Notes?):?' \
-                 r'(?!' + PAT_WORDCHAR + r'))'
-PAT_URL      = r'((?:https?|ftp)://[^\'"<> \t]+[a-zA-Z0-9/])'
-PAT_WORD     = r'((?<!' + PAT_WORDCHAR + r')' + PAT_WORDCHAR + r'+' \
-                 r'(?!' + PAT_WORDCHAR + r'))'
+PAT_COMMAND = r'`([^` ]+)`'
+PAT_OPTWORD = r"('(?:[a-z]{2,}|t_..)')"
+PAT_CTRL = r'(CTRL-(?:W_)?(?:\{char\}|<[A-Za-z]+?>|.)?)'
+PAT_SPECIAL = r'(<.+?>|\{.+?}|' \
+    r'\[(?:range|line|count|offset|\+?cmd|[-+]?num|\+\+opt|' \
+    r'arg|arguments|ident|addr|group)]|' \
+    r'(?<=\s)\[[-a-z^A-Z0-9_]{2,}])'
+PAT_TITLE = r'(Vim version [0-9.a-z]+|VIM REFERENCE.*)'
+PAT_NOTE = r'((?<!' + PAT_WORDCHAR + r')(?:note|NOTE|Notes?):?' \
+    r'(?!' + PAT_WORDCHAR + r'))'
+PAT_URL = r'((?:https?|ftp)://[^\'"<> \t]+[a-zA-Z0-9/])'
+PAT_WORD = r'((?<!' + PAT_WORDCHAR + r')' + PAT_WORDCHAR + r'+' \
+    r'(?!' + PAT_WORDCHAR + r'))'
 
 RE_LINKWORD = re.compile(
-        PAT_OPTWORD  + '|' +
-        PAT_CTRL     + '|' +
-        PAT_SPECIAL)
+    PAT_OPTWORD + '|' +
+    PAT_CTRL + '|' +
+    PAT_SPECIAL)
 RE_TAGWORD = re.compile(
-        PAT_HEADER   + '|' +
-        PAT_GRAPHIC  + '|' +
-        PAT_PIPEWORD + '|' +
-        PAT_STARWORD + '|' +
-        PAT_COMMAND  + '|' +
-        PAT_OPTWORD  + '|' +
-        PAT_CTRL     + '|' +
-        PAT_SPECIAL  + '|' +
-        PAT_TITLE    + '|' +
-        PAT_NOTE     + '|' +
-        PAT_URL      + '|' +
-        PAT_WORD)
-RE_NEWLINE   = re.compile(r'[\r\n]')
-RE_HRULE     = re.compile(r'[-=]{3,}.*[-=]{3,3}$')
-RE_EG_START  = re.compile(r'(?:.* )?>$')
-RE_EG_END    = re.compile(r'\S')
-RE_SECTION   = re.compile(r'[-A-Z .][-A-Z0-9 .()]*(?=\s+\*)')
-RE_STARTAG   = re.compile(r'\s\*([^ \t|]+)\*(?:\s|$)')
+    PAT_HEADER + '|' +
+    PAT_GRAPHIC + '|' +
+    PAT_PIPEWORD + '|' +
+    PAT_STARWORD + '|' +
+    PAT_COMMAND + '|' +
+    PAT_OPTWORD + '|' +
+    PAT_CTRL + '|' +
+    PAT_SPECIAL + '|' +
+    PAT_TITLE + '|' +
+    PAT_NOTE + '|' +
+    PAT_URL + '|' +
+    PAT_WORD)
+RE_NEWLINE = re.compile(r'[\r\n]')
+# H1 header "=====…"
+# H2 header "-----…"
+RE_HRULE = re.compile(r'[-=]{3,}.*[-=]{3,3}$')
+RE_EG_START = re.compile(r'(?:.* )?>$')
+RE_EG_END = re.compile(r'\S')
+RE_SECTION = re.compile(r'[-A-Z .][-A-Z0-9 .()]*(?=\s+\*)')
+RE_STARTAG = re.compile(r'\s\*([^ \t|]+)\*(?:\s|$)')
 RE_LOCAL_ADD = re.compile(r'LOCAL ADDITIONS:\s+\*local-additions\*$')
+
 
 class Link(object):
     __slots__ = 'link_plain_same',    'link_pipe_same', \
@@ -140,16 +159,17 @@ class Link(object):
                 'filename'
 
     def __init__(self, link_plain_same, link_plain_foreign,
-                       link_pipe_same,  link_pipe_foreign, filename):
-        self.link_plain_same    = link_plain_same
+                 link_pipe_same,  link_pipe_foreign, filename):
+        self.link_plain_same = link_plain_same
         self.link_plain_foreign = link_plain_foreign
-        self.link_pipe_same     = link_pipe_same
-        self.link_pipe_foreign  = link_pipe_foreign
-        self.filename           = filename
+        self.link_pipe_same = link_pipe_same
+        self.link_pipe_foreign = link_pipe_foreign
+        self.filename = filename
+
 
 class VimH2H(object):
     def __init__(self, tags, version=None, is_web_version=True):
-        self._urls = { }
+        self._urls = {}
         self._version = version
         self._is_web_version = is_web_version
         for line in RE_NEWLINE.split(tags):
@@ -165,6 +185,7 @@ class VimH2H(object):
 
     def do_add_tag(self, filename, tag):
         tag_quoted = urllib.parse.quote_plus(tag)
+
         def mkpart1(doc):
             return '<a href="' + doc + '#' + tag_quoted + '" class="'
         part1_same = mkpart1('')
@@ -174,16 +195,20 @@ class VimH2H(object):
             doc = filename + '.html'
         part1_foreign = mkpart1(doc)
         part2 = '">' + html_escape[tag] + '</a>'
+
         def mklinks(cssclass):
-            return (part1_same    + cssclass + part2,
+            return (part1_same + cssclass + part2,
                     part1_foreign + cssclass + part2)
         cssclass_plain = 'd'
         m = RE_LINKWORD.match(tag)
         if m:
             opt, ctrl, special = m.groups()
-            if opt       is not None: cssclass_plain = 'o'
-            elif ctrl    is not None: cssclass_plain = 'k'
-            elif special is not None: cssclass_plain = 's'
+            if opt is not None:
+                cssclass_plain = 'o'
+            elif ctrl is not None:
+                cssclass_plain = 'k'
+            elif special is not None:
+                cssclass_plain = 's'
         links_plain = mklinks(cssclass_plain)
         links_pipe = mklinks('l')
         self._urls[tag] = Link(
@@ -195,37 +220,50 @@ class VimH2H(object):
         links = self._urls.get(tag)
         if links is not None:
             if links.filename == curr_filename:
-                if css_class == 'l': return links.link_pipe_same
-                else:                return links.link_plain_same
+                if css_class == 'l':
+                    return links.link_pipe_same
+                else:
+                    return links.link_plain_same
             else:
-                if css_class == 'l': return links.link_pipe_foreign
-                else:                return links.link_plain_foreign
+                if css_class == 'l':
+                    return links.link_pipe_foreign
+                else:
+                    return links.link_plain_foreign
         elif css_class is not None:
             return '<span class="' + css_class + '">' + html_escape[tag] + \
-                    '</span>'
-        else: return html_escape[tag]
+                '</span>'
+        else:
+            return html_escape[tag]
 
     def to_html(self, filename, contents, encoding):
-        out = [ ]
+        out = []
 
         inexample = 0
         filename = str(filename)
         is_help_txt = (filename == 'help.txt')
-        faq_line = False
+        last = ''
         for line in RE_NEWLINE.split(contents):
             line = line.rstrip('\r\n')
             line_tabs = line
             line = line.expandtabs()
+            if last == 'h1':
+                out.extend(('</pre>'))  # XXX
+                out.extend(('<h1>', line.rstrip(), '</h1>\n'))
+                out.extend(('<pre>'))
+                last = ''
+                continue
             if RE_HRULE.match(line):
-                out.extend(('<span class="h">', line, '</span>\n'))
+                # out.extend(('<span class="h">', line, '</span>\n'))
+                last = 'h1'
                 continue
             if inexample == 2:
                 if RE_EG_END.match(line):
                     inexample = 0
-                    if line[0] == '<': line = line[1:]
+                    if line[0] == '<':
+                        line = line[1:]
                 else:
                     out.extend(('<span class="e">', html_escape[line],
-                               '</span>\n'))
+                                '</span>\n'))
                     continue
             if RE_EG_START.match(line_tabs):
                 inexample = 1
@@ -234,8 +272,6 @@ class VimH2H(object):
                 m = RE_SECTION.match(line)
                 out.extend((r'<span class="c">', m.group(0), r'</span>'))
                 line = line[m.end():]
-            if is_help_txt and RE_LOCAL_ADD.match(line_tabs):
-                faq_line = True
             lastpos = 0
             for match in RE_TAGWORD.finditer(line):
                 pos = match.start()
@@ -243,12 +279,12 @@ class VimH2H(object):
                     out.append(html_escape[line[lastpos:pos]])
                 lastpos = match.end()
                 header, graphic, pipeword, starword, command, opt, ctrl, \
-                        special, title, note, url, word = match.groups()
+                    special, title, note, url, word = match.groups()
                 if pipeword is not None:
                     out.append(self.maplink(pipeword, filename, 'l'))
                 elif starword is not None:
                     out.extend(('<a name="', urllib.parse.quote_plus(starword),
-                            '" class="t">', html_escape[starword], '</a>'))
+                                '" class="t">', html_escape[starword], '</a>'))
                 elif command is not None:
                     out.extend(('<span class="e">', html_escape[command],
                                 '</span>'))
@@ -277,17 +313,15 @@ class VimH2H(object):
             if lastpos < len(line):
                 out.append(html_escape[line[lastpos:]])
             out.append('\n')
-            if inexample == 1: inexample = 2
-            if faq_line:
-                out.append(VIM_FAQ_LINE)
-                faq_line = False
+            if inexample == 1:
+                inexample = 2
 
         header = []
         header.append(HEAD.format(encoding=encoding, filename=filename))
         header.append(HEAD_END)
         if self._is_web_version and is_help_txt:
             vers_note = VERSION_NOTE.replace('{version}', self._version) \
-                    if self._version else ''
+                if self._version else ''
             header.append(INTRO.replace('{vers-note}', vers_note))
         if self._is_web_version:
             header.append(SITENAVI_SEARCH)
@@ -298,6 +332,7 @@ class VimH2H(object):
         header.append(TEXTSTART)
         return ''.join(chain(header, out, (FOOTER, sitenavi_footer, FOOTER2)))
 
+
 class HtmlEscCache(dict):
     def __missing__(self, key):
         r = key.replace('&', '&amp;') \
@@ -306,13 +341,9 @@ class HtmlEscCache(dict):
         self[key] = r
         return r
 
+
 html_escape = HtmlEscCache()
 
-
-
-import sys, os, os.path
-#import cProfile
-sys.path.append('.')
 
 def slurp(filename):
     try:
@@ -323,17 +354,20 @@ def slurp(filename):
         with open(filename, encoding='latin-1') as f:
             return f.read(), 'latin-1'
 
+
 def usage():
     return "usage: " + sys.argv[0] + " IN_DIR OUT_DIR [BASENAMES...]"
 
+
 def main():
-    if len(sys.argv) < 3: sys.exit(usage())
+    if len(sys.argv) < 3:
+        sys.exit(usage())
 
     in_dir = sys.argv[1]
     out_dir = sys.argv[2]
     basenames = sys.argv[3:]
 
-    print( "Processing tags...")
+    print("Processing tags...")
     h2h = VimH2H(slurp(os.path.join(in_dir, 'tags'))[0], is_web_version=False)
 
     if len(basenames) == 0:
@@ -341,9 +375,9 @@ def main():
 
     for basename in basenames:
         if os.path.splitext(basename)[1] != '.txt' and basename != 'tags':
-            print( "Ignoring " + basename)
+            print("Ignoring " + basename)
             continue
-        print( "Processing " + basename + "...")
+        print("Processing " + basename + "...")
         path = os.path.join(in_dir, basename)
         text, encoding = slurp(path)
         outpath = os.path.join(out_dir, basename + '.html')
@@ -351,5 +385,5 @@ def main():
         of.write(h2h.to_html(basename, text, encoding))
         of.close()
 
+
 main()
-#cProfile.run('main()')

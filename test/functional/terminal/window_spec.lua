@@ -1,5 +1,6 @@
 local helpers = require('test.functional.helpers')(after_each)
 local thelpers = require('test.functional.terminal.helpers')
+local feed_data = thelpers.feed_data
 local feed, clear = helpers.feed, helpers.clear
 local wait = helpers.wait
 local iswin = helpers.iswin
@@ -19,11 +20,10 @@ describe(':terminal window', function()
   it('sets topline correctly #8556', function()
     -- Test has hardcoded assumptions of dimensions.
     eq(7, eval('&lines'))
-    command('set shell=sh')
-    command('terminal')
-    retry(nil, nil, function() assert(nil ~= eval('b:terminal_job_pid')) end)
+    feed_data('\n\n\n')  -- Add blank lines.
     -- Terminal/shell contents must exceed the height of this window.
     command('topleft 1split')
+    eq('terminal', eval('&buftype'))
     feed([[i<cr>]])
     -- Check topline _while_ in terminal-mode.
     retry(nil, nil, function() eq(6, eval('winsaveview()["topline"]')) end)
@@ -42,7 +42,7 @@ describe(':terminal window', function()
         {7:6 }                                                |
         {3:-- TERMINAL --}                                    |
       ]])
-      thelpers.feed_data({'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'})
+      feed_data({'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'})
       screen:expect([[
         {7:1 }tty ready                                       |
         {7:2 }rows: 6, cols: 48                               |
@@ -69,7 +69,7 @@ describe(':terminal window', function()
         {7:       6 }                                         |
         {3:-- TERMINAL --}                                    |
       ]])
-      thelpers.feed_data({' abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'})
+      feed_data({' abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'})
       screen:expect([[
         {7:       1 }tty ready                                |
         {7:       2 }rows: 6, cols: 48                        |
@@ -113,7 +113,7 @@ describe(':terminal window', function()
   describe('with fold set', function()
     before_each(function()
       feed([[<C-\><C-N>:set foldenable foldmethod=manual<CR>i]])
-      thelpers.feed_data({'line1', 'line2', 'line3', 'line4', ''})
+      feed_data({'line1', 'line2', 'line3', 'line4', ''})
       screen:expect([[
         tty ready                                         |
         line1                                             |
@@ -141,3 +141,109 @@ describe(':terminal window', function()
   end)
 end)
 
+describe(':terminal with multigrid', function()
+  local screen
+
+  before_each(function()
+    clear()
+    screen = thelpers.screen_setup(0,nil,50,{ext_multigrid=true})
+  end)
+
+  it('resizes to requested size', function()
+    screen:expect([[
+    ## grid 1
+      [2:--------------------------------------------------]|
+      [2:--------------------------------------------------]|
+      [2:--------------------------------------------------]|
+      [2:--------------------------------------------------]|
+      [2:--------------------------------------------------]|
+      [2:--------------------------------------------------]|
+      [3:--------------------------------------------------]|
+    ## grid 2
+      tty ready                                         |
+      {1: }                                                 |
+                                                        |
+                                                        |
+                                                        |
+                                                        |
+    ## grid 3
+      {3:-- TERMINAL --}                                    |
+    ]])
+
+    screen:try_resize_grid(2, 20, 10)
+    if iswin() then
+      screen:expect{any="rows: 10, cols: 20"}
+    else
+      screen:expect([[
+      ## grid 1
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [3:--------------------------------------------------]|
+      ## grid 2
+        tty ready           |
+        rows: 10, cols: 20  |
+        {1: }                   |
+                            |
+                            |
+                            |
+                            |
+                            |
+                            |
+                            |
+      ## grid 3
+        {3:-- TERMINAL --}                                    |
+      ]])
+    end
+
+    screen:try_resize_grid(2, 70, 3)
+    if iswin() then
+      screen:expect{any="rows: 3, cols: 70"}
+    else
+      screen:expect([[
+      ## grid 1
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [3:--------------------------------------------------]|
+      ## grid 2
+        rows: 10, cols: 20                                                    |
+        rows: 3, cols: 70                                                     |
+        {1: }                                                                     |
+      ## grid 3
+        {3:-- TERMINAL --}                                    |
+      ]])
+    end
+
+    screen:try_resize_grid(2, 0, 0)
+    if iswin() then
+      screen:expect{any="rows: 6, cols: 50"}
+    else
+      screen:expect([[
+      ## grid 1
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|
+        [3:--------------------------------------------------]|
+      ## grid 2
+        tty ready                                         |
+        rows: 10, cols: 20                                |
+        rows: 3, cols: 70                                 |
+        rows: 6, cols: 50                                 |
+        {1: }                                                 |
+                                                          |
+      ## grid 3
+        {3:-- TERMINAL --}                                    |
+      ]])
+    end
+  end)
+end)

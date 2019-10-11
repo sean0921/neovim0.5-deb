@@ -88,12 +88,13 @@ char_u *parse_shape_opt(int what)
   char_u      *colonp;
   char_u      *commap;
   char_u      *slashp;
-  char_u      *p, *endp;
-  int idx = 0;                          /* init for GCC */
+  char_u      *p = NULL;
+  char_u      *endp;
+  int idx = 0;                          // init for GCC
   int all_idx;
   int len;
   int i;
-  int found_ve = false;                 /* found "ve" flag */
+  int found_ve = false;                 // found "ve" flag
   int round;
 
   // First round: check for errors; second round: do it for real.
@@ -103,7 +104,7 @@ char_u *parse_shape_opt(int what)
     if (*p_guicursor == NUL) {
       modep = (char_u *)"a:block-blinkon0";
     }
-    while (*modep != NUL) {
+    while (modep != NULL && *modep != NUL) {
       colonp = vim_strchr(modep, ':');
       commap = vim_strchr(modep, ',');
 
@@ -117,7 +118,6 @@ char_u *parse_shape_opt(int what)
       // Repeat for all modes before the colon.
       // For the 'a' mode, we loop to handle all the modes.
       all_idx = -1;
-      assert(modep < colonp);
       while (modep < colonp || all_idx >= 0) {
         if (all_idx < 0) {
           // Find the mode
@@ -176,15 +176,17 @@ char_u *parse_shape_opt(int what)
               p += len;
               if (!ascii_isdigit(*p))
                 return (char_u *)N_("E548: digit expected");
-              int n = getdigits_int(&p);
-              if (len == 3) {               /* "ver" or "hor" */
-                if (n == 0)
+              int n = getdigits_int(&p, false, 0);
+              if (len == 3) {               // "ver" or "hor"
+                if (n == 0) {
                   return (char_u *)N_("E549: Illegal percentage");
+                }
                 if (round == 2) {
-                  if (TOLOWER_ASC(i) == 'v')
+                  if (TOLOWER_ASC(i) == 'v') {
                     shape_table[idx].shape = SHAPE_VER;
-                  else
+                  } else {
                     shape_table[idx].shape = SHAPE_HOR;
+                  }
                   shape_table[idx].percentage = n;
                 }
               } else if (round == 2) {
@@ -229,8 +231,9 @@ char_u *parse_shape_opt(int what)
         }
       }
       modep = p;
-      if (*modep == ',')
-        ++modep;
+      if (modep != NULL && *modep == ',') {
+        modep++;
+      }
     }
   }
 
@@ -254,6 +257,16 @@ char_u *parse_shape_opt(int what)
   return NULL;
 }
 
+/// Returns true if the cursor is non-blinking "block" shape during
+/// visual selection.
+///
+/// @param exclusive If 'selection' option is "exclusive".
+bool cursor_is_block_during_visual(bool exclusive)
+{
+  int mode_idx = exclusive ? SHAPE_IDX_VE : SHAPE_IDX_V;
+  return (SHAPE_BLOCK == shape_table[mode_idx].shape
+          && 0 == shape_table[mode_idx].blinkon);
+}
 
 /// Map cursor mode from string to integer
 ///

@@ -453,13 +453,13 @@ char *FullName_save(const char *fname, bool force)
 /// Saves the absolute path.
 /// @param name An absolute or relative path.
 /// @return The absolute path of `name`.
-char_u *save_abs_path(const char_u *name)
+char *save_abs_path(const char *name)
   FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
-  if (!path_is_absolute(name)) {
-    return (char_u *)FullName_save((char *)name, true);
+  if (!path_is_absolute((char_u *)name)) {
+    return FullName_save(name, true);
   }
-  return vim_strsave((char_u *) name);
+  return (char *)vim_strsave((char_u *)name);
 }
 
 /// Checks if a path has a wildcard character including '~', unless at the end.
@@ -852,8 +852,13 @@ static char_u *get_path_cutoff(char_u *fname, garray_T *gap)
     int j = 0;
 
     while ((fname[j] == path_part[i][j]
-            ) && fname[j] != NUL && path_part[i][j] != NUL)
+#ifdef WIN32
+            || (vim_ispathsep(fname[j]) && vim_ispathsep(path_part[i][j]))
+#endif
+            )  // NOLINT(whitespace/parens)
+           && fname[j] != NUL && path_part[i][j] != NUL) {
       j++;
+    }
     if (j > maxlen) {
       maxlen = j;
       cutoff = &fname[j];
@@ -1257,7 +1262,10 @@ int gen_expand_wildcards(int num_pat, char_u **pat, int *num_file,
       } else {
         addfile(&ga, t, flags);
       }
-      xfree(t);
+
+      if (t != p) {
+        xfree(t);
+      }
     }
 
     if (did_expand_in_path && !GA_EMPTY(&ga) && (flags & EW_PATH))
@@ -1267,7 +1275,7 @@ int gen_expand_wildcards(int num_pat, char_u **pat, int *num_file,
   }
 
   *num_file = ga.ga_len;
-  *file = (ga.ga_data != NULL) ? (char_u **)ga.ga_data : (char_u **)"";
+  *file = (ga.ga_data != NULL) ? (char_u **)ga.ga_data : NULL;
 
   recursive = false;
 
@@ -1346,6 +1354,15 @@ void slash_adjust(char_u *p)
   if (path_with_url((const char *)p)) {
     return;
   }
+
+  if (*p == '`') {
+    // don't replace backslash in backtick quoted strings
+    const size_t len = STRLEN(p);
+    if (len > 2 && *(p + len - 1) == '`') {
+      return;
+    }
+  }
+
   while (*p) {
     if (*p == (char_u)psepcN) {
       *p = (char_u)psepc;
@@ -1392,7 +1409,7 @@ void addfile(
   // If the file isn't executable, may not add it.  Do accept directories.
   // When invoked from expand_shellcmd() do not use $PATH.
   if (!isdir && (flags & EW_EXEC)
-      && !os_can_exe(f, NULL, !(flags & EW_SHELLCMD))) {
+      && !os_can_exe((char *)f, NULL, !(flags & EW_SHELLCMD))) {
     return;
   }
 
@@ -2038,12 +2055,12 @@ int expand_wildcards(int num_pat, char_u **pat, int *num_files, char_u ***files,
   if (*p_wig) {
     char_u  *ffname;
 
-    // check all filess in (*files)[]
+    // check all files in (*files)[]
+    assert(*num_files == 0 || *files != NULL);
     for (i = 0; i < *num_files; i++) {
       ffname = (char_u *)FullName_save((char *)(*files)[i], false);
-      if (ffname == NULL) {               // out of memory
-        break;
-      }
+      assert((*files)[i] != NULL);
+      assert(ffname != NULL);
       if (match_file_list(p_wig, (*files)[i], ffname)) {
         // remove this matching file from the list
         xfree((*files)[i]);
@@ -2057,16 +2074,16 @@ int expand_wildcards(int num_pat, char_u **pat, int *num_files, char_u ***files,
     }
   }
 
-  /*
-   * Move the names where 'suffixes' match to the end.
-   */
+  //
+  // Move the names where 'suffixes' match to the end.
+  //
+  assert(*num_files == 0 || *files != NULL);
   if (*num_files > 1) {
     non_suf_match = 0;
     for (i = 0; i < *num_files; i++) {
       if (!match_suffix((*files)[i])) {
         //
-        // Move the name without matching suffix to the front
-        // of the list.
+        // Move the name without matching suffix to the front of the list.
         //
         p = (*files)[i];
         for (j = i; j > non_suf_match; j--) {
@@ -2079,8 +2096,7 @@ int expand_wildcards(int num_pat, char_u **pat, int *num_files, char_u ***files,
 
   // Free empty array of matches
   if (*num_files == 0) {
-    xfree(*files);
-    *files = NULL;
+    XFREE_CLEAR(*files);
     return FAIL;
   }
 
@@ -2271,7 +2287,7 @@ int path_is_absolute(const char_u *fname)
 void path_guess_exepath(const char *argv0, char *buf, size_t bufsize)
   FUNC_ATTR_NONNULL_ALL
 {
-  char *path = getenv("PATH");
+  const char *path = os_getenv("PATH");
 
   if (path == NULL || path_is_absolute((char_u *)argv0)) {
     xstrlcpy(buf, argv0, bufsize);
@@ -2298,7 +2314,7 @@ void path_guess_exepath(const char *argv0, char *buf, size_t bufsize)
       xstrlcpy((char *)NameBuff, dir, dir_len + 1);
       xstrlcat((char *)NameBuff, PATHSEPSTR, sizeof(NameBuff));
       xstrlcat((char *)NameBuff, argv0, sizeof(NameBuff));
-      if (os_can_exe(NameBuff, NULL, false)) {
+      if (os_can_exe((char *)NameBuff, NULL, false)) {
         xstrlcpy(buf, (char *)NameBuff, bufsize);
         return;
       }
