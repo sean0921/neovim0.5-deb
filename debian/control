@@ -42,6 +42,7 @@ Package: neovim
 Architecture: any
 Depends:
  neovim-runtime (= ${source:Version}),
+ ${neovim:Depends},
  ${misc:Depends},
  ${shlibs:Depends}
 Recommends: python-neovim, python3-neovim, xclip | xsel, xxd

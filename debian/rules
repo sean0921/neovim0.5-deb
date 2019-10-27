@@ -13,6 +13,7 @@ CXXFLAGS += $(CPPFLAGS)
 
 export CFLAGS CXXFLAGS LDFLAGS
 
+BITOP_DEPENDS = lua-bitop
 PREFER_LUA = ON
 FUNCTIONALTEST =
 UNITTEST =
@@ -21,6 +22,7 @@ ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim
 endif
 
 ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit 2>&1)))
+  BITOP_DEPENDS =
   PREFER_LUA = OFF
   UNITTEST = unittest
 endif
@@ -56,6 +58,9 @@ override_dh_install:
 override_dh_auto_clean:
 	$(MAKE) clean
 	dh_auto_clean
+
+override_dh_gencontrol:
+	dh_gencontrol -- -Vneovim:Depends=$(BITOP_DEPENDS)
 
 debian/passwd:
 	printf -- "$(USER):x:$(ID):$(GID):nvim test:$(CURDIR)/debian/fakehome:/bin/false\n" > debian/passwd
