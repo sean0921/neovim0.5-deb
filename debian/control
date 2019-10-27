@@ -21,6 +21,7 @@ Build-Depends:
  locales,
  lua-bitop,
  lua-busted <!nocheck>,
+ lua-filesystem (>= 1.7) <!nocheck>,
  lua-inspect <!nocheck>,
  lua-lpeg,
  lua-luv-dev (>= 1.30.1-1),
