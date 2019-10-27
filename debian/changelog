@@ -1,3 +1,9 @@
+neovim (0.4.2-1) UNRELEASED; urgency=medium
+
+  * 
+
+ -- James McCoy <jamessan@debian.org>  Sun, 27 Oct 2019 10:09:14 -0400
+
 neovim (0.3.8-1) unstable; urgency=medium
 
   * New upstream release
