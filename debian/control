@@ -17,7 +17,7 @@ Build-Depends:
  libtermkey-dev,
  libunibilium-dev,
  libuv1-dev,
- libvterm-dev,
+ libvterm-dev (>= 0.1),
  locales,
  lua-bitop,
  lua-busted <!nocheck>,
