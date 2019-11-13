@@ -34,18 +34,21 @@ Files: src/nvim/api/*
        src/nvim/bufhl_defs.h
        src/nvim/channel.*
        src/nvim/CMakeLists.txt
+       src/nvim/context.*
        src/nvim/cursor_shape.*
        src/nvim/eval.lua
        src/nvim/eval/*
        src/nvim/event/*
        src/nvim/func_attr.h
        src/nvim/generators/*
+       src/nvim/grid_defs.h
        src/nvim/highlight.*
        src/nvim/highlight_defs.h
        src/nvim/lib/ringbuf.h
        src/nvim/log.*
        src/nvim/lua/*
        src/nvim/map.*
+       src/nvim/math.*
        src/nvim/memory.*
        src/nvim/msgpack_rpc/*
        src/nvim/os/fileio.*
@@ -98,6 +101,7 @@ Files: src/nvim/api/*
        runtime/syntax/man.vim
        runtime/syntax/tutor.vim
        runtime/tutor/*
+       scripts/*
 Copyright: Neovim contributors
 License: Apache
 
@@ -162,6 +166,14 @@ License: LGPL-2.1+
 Files: src/nvim/xdiff/xhistogram.c
 Copyright: 2010 Google Inc. and other copyright owners as documented in JGit's IP log
 License: EDL-1
+
+Files: runtime/lua/vim/inspect.lua
+Copyright: (c) 2013 Enrique García Cota
+License: Expat
+
+Files: scripts/lua2dox*
+Copyright: (C) 2012 by Simon Dales
+License: GPL-2+
 
 License: Apache
  Copyright Neovim contributors. All rights reserved.
