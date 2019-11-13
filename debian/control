@@ -65,8 +65,6 @@ Package: neovim-runtime
 Architecture: all
 Depends: ${misc:Depends}
 Multi-Arch: foreign
-Breaks: neovim (<< 0.1.1-2~)
-Replaces: neovim (<< 0.1.1-2~)
 Description: heavily refactored vim fork (runtime files)
  Neovim is a fork of Vim focused on modern code and features, rather than
  running in legacy environments.
