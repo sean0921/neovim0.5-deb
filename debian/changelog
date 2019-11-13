@@ -1,8 +1,19 @@
-neovim (0.4.3-1) UNRELEASED; urgency=medium
+neovim (0.4.3-1) unstable; urgency=medium
 
-  * 
+  * New upstream release
+    + Fix crash when $CDPATH is invalid (Closes: #930079)
+  * control:
+    + neovim: Depend on lua-bitop when not built against LuaJIT
+    + Build-Depend on lua-luv-dev (>= 1.30.1), per new upstream requirements
+    + Add explicit lua-filesystem (>= 1.7) Build-Depends for tests
+    + Build-Depend on libvterm-dev (>= 0.1), per new upstream requirements
+    + Remove obsolete Breaks/Replaces from neovim-runtime
+  * rules:
+    + Explicitly use lua5.1/luajit to run functionaltest/unittest
+    + Stop disabling jemalloc, since upstream no longer uses it
+  * Declare compliance with Policy 4.4.1, no changes needed
 
- -- James McCoy <jamessan@debian.org>  Wed, 06 Nov 2019 21:30:23 -0500
+ -- James McCoy <jamessan@debian.org>  Tue, 12 Nov 2019 22:35:34 -0500
 
 neovim (0.3.8-1) unstable; urgency=medium
 
