@@ -1,0 +1,49 @@
+From: James McCoy <jamessan@jamessan.com>
+Date: Wed, 13 Nov 2019 22:20:57 -0500
+X-Dgit-Generated: 0.4.3-2 ac901aaeed4da687ca6493b595c8182b4ef2cf8c
+Subject: f_getenv/setenv: Access v_special when v_type is VAR_SPECIAL
+
+Multiple Debian builds were failing these tests:
+
+    Failures:
+    	From test_environ.vim:
+    	Found errors in Test_external_env():
+    	function RunTheTest[37]..Test_external_env line 16: Expected '' but got 'FOO=null\n'
+    	Found errors in Test_getenv():
+    	function RunTheTest[37]..Test_getenv line 2: Expected v:null but got v:false
+    	Found errors in Test_setenv():
+    	function RunTheTest[37]..Test_setenv line 5: Expected v:null but got 'null'
+
+This is because nvim has a separate tag (`v_special`) in `typval_T` for
+special variables, whereas vim re-uses the `v_number` tag.
+
+On little-endian architectures, using the incorrect tag is not an issue
+because the byte representation is the same.  However, on big-endian
+systems this caused the `v_number == kSpecialVarNull` checks to fail,
+and the non-special code to execute.
+
+(cherry picked from commit 4c48cf3020202a614d826f2ef2893380a3e9c8cc)
+Signed-off-by: James McCoy <jamessan@debian.org>
+
+---
+
+--- neovim-0.4.3.orig/src/nvim/eval.c
++++ neovim-0.4.3/src/nvim/eval.c
+@@ -8492,7 +8492,7 @@ static void f_getenv(typval_T *argvars,
+ 
+   if (p == NULL) {
+     rettv->v_type = VAR_SPECIAL;
+-    rettv->vval.v_number = kSpecialVarNull;
++    rettv->vval.v_special = kSpecialVarNull;
+     return;
+   }
+   rettv->vval.v_string = p;
+@@ -15441,7 +15441,7 @@ static void f_setenv(typval_T *argvars,
+   const char *name = tv_get_string_buf(&argvars[0], namebuf);
+ 
+   if (argvars[1].v_type == VAR_SPECIAL
+-      && argvars[1].vval.v_number == kSpecialVarNull) {
++      && argvars[1].vval.v_special == kSpecialVarNull) {
+     os_unsetenv(name);
+   } else {
+     os_setenv(name, tv_get_string_buf(&argvars[1], valbuf), 1);
