@@ -12651,7 +12651,7 @@ static void libcall_common(typval_T *argvars, typval_T *rettv, int out_type)
   const char *libname = (char *) argvars[0].vval.v_string;
   const char *funcname = (char *) argvars[1].vval.v_string;
 
-  int in_type = argvars[2].v_type;
+  VarType in_type = argvars[2].v_type;
 
   // input variables
   char *str_in = (in_type == VAR_STRING)
@@ -12660,8 +12660,8 @@ static void libcall_common(typval_T *argvars, typval_T *rettv, int out_type)
 
   // output variables
   char **str_out = (out_type == VAR_STRING)
-      ? (char **) &rettv->vval.v_string : NULL;
-  int64_t int_out = 0;
+      ? (char **)&rettv->vval.v_string : NULL;
+  int int_out = 0;
 
   bool success = os_libcall(libname, funcname,
                             str_in, int_in,
@@ -12673,7 +12673,7 @@ static void libcall_common(typval_T *argvars, typval_T *rettv, int out_type)
   }
 
   if (out_type == VAR_NUMBER) {
-     rettv->vval.v_number = (int) int_out;
+     rettv->vval.v_number = (varnumber_T)int_out;
   }
 }
 
@@ -20872,6 +20872,7 @@ void ex_echo(exarg_T *eap)
   char_u      *arg = eap->arg;
   typval_T rettv;
   bool atstart = true;
+  bool need_clear = true;
   const int did_emsg_before = did_emsg;
 
   if (eap->skip)
@@ -20914,7 +20915,7 @@ void ex_echo(exarg_T *eap)
       char *tofree = encode_tv2echo(&rettv, NULL);
       if (*tofree != NUL) {
         msg_ext_set_kind("echo");
-        msg_multiline_attr(tofree, echo_attr, true);
+        msg_multiline_attr(tofree, echo_attr, true, &need_clear);
       }
       xfree(tofree);
     }
@@ -20927,7 +20928,9 @@ void ex_echo(exarg_T *eap)
     emsg_skip--;
   } else {
     // remove text that may still be there from the command
-    msg_clr_eos();
+    if (need_clear) {
+      msg_clr_eos();
+    }
     if (eap->cmdidx == CMD_echo) {
       msg_end();
     }
