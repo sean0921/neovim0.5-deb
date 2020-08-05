@@ -1,3 +1,11 @@
+neovim (0.4.4-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+    + Fix FTBFS with GCC 10 (Closes: #957592)
+    + Fix crash with true color escape sequences in :term (Closes: #960732)
+
+ -- James McCoy <jamessan@debian.org>  Tue, 04 Aug 2020 23:43:34 -0400
+
 neovim (0.4.3-3) unstable; urgency=medium
 
   * Remove python-neovim from Recommends (Closes: #945709)
