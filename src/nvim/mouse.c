@@ -72,7 +72,7 @@ int jump_to_mouse(int flags,
   int row = mouse_row;
   int col = mouse_col;
   int grid = mouse_grid;
-  int mouse_char;
+  int fdc = 0;
 
   mouse_past_bottom = false;
   mouse_past_eol = false;
@@ -92,10 +92,12 @@ int jump_to_mouse(int flags,
 retnomove:
     // before moving the cursor for a left click which is NOT in a status
     // line, stop Visual mode
-    if (on_status_line)
+    if (on_status_line) {
       return IN_STATUS_LINE;
-    if (on_sep_line)
+    }
+    if (on_sep_line) {
       return IN_SEP_LINE;
+    }
     if (flags & MOUSE_MAY_STOP_VIS) {
       end_visual_mode();
       redraw_curbuf_later(INVERTED);            // delete the inversion
@@ -109,16 +111,6 @@ retnomove:
   if (flags & MOUSE_SETPOS)
     goto retnomove;                             // ugly goto...
 
-  // Remember the character under the mouse, it might be a '-' or '+' in the
-  // fold column. NB: only works for ASCII chars!
-  if (row >= 0 && row < Rows && col >= 0 && col <= Columns
-      && default_grid.chars != NULL) {
-    mouse_char = default_grid.chars[default_grid.line_offset[row]
-                                    + (unsigned)col][0];
-  } else {
-    mouse_char = ' ';
-  }
-
   old_curwin = curwin;
   old_cursor = curwin->w_cursor;
 
@@ -131,7 +123,13 @@ retnomove:
     if (wp == NULL) {
       return IN_UNKNOWN;
     }
+    fdc = win_fdccol_count(wp);
     dragwin = NULL;
+
+    if (row == -1) {
+      return IN_OTHER_WIN;
+    }
+
     // winpos and height may change in win_enter()!
     if (grid == DEFAULT_GRID_HANDLE && row >= wp->w_height) {
       // In (or below) status line
@@ -165,9 +163,8 @@ retnomove:
             || (!on_status_line
                 && !on_sep_line
                 && (wp->w_p_rl
-                    ? col < wp->w_width_inner - wp->w_p_fdc
-                    : col >= wp->w_p_fdc + (cmdwin_type == 0 && wp == curwin
-                                            ? 0 : 1))
+                    ? col < wp->w_width_inner - fdc
+                    : col >= fdc + (cmdwin_type == 0 && wp == curwin ? 0 : 1))
                 && (flags & MOUSE_MAY_STOP_VIS)))) {
       end_visual_mode();
       redraw_curbuf_later(INVERTED);            // delete the inversion
@@ -257,7 +254,7 @@ retnomove:
       check_topfill(curwin, false);
       curwin->w_valid &=
         ~(VALID_WROW|VALID_CROW|VALID_BOTLINE|VALID_BOTLINE_AP);
-      redraw_later(VALID);
+      redraw_later(curwin, VALID);
       row = 0;
     } else if (row >= curwin->w_height_inner)   {
       count = 0;
@@ -287,7 +284,7 @@ retnomove:
         }
       }
       check_topfill(curwin, false);
-      redraw_later(VALID);
+      redraw_later(curwin, VALID);
       curwin->w_valid &=
         ~(VALID_WROW|VALID_CROW|VALID_BOTLINE|VALID_BOTLINE_AP);
       row = curwin->w_height_inner - 1;
@@ -302,12 +299,6 @@ retnomove:
         curwin->w_valid &= ~(VALID_TOPLINE);
       }
     }
-  }
-
-  // Check for position outside of the fold column.
-  if (curwin->w_p_rl ? col < curwin->w_width_inner - curwin->w_p_fdc :
-      col >= curwin->w_p_fdc + (cmdwin_type == 0 ? 0 : 1)) {
-    mouse_char = ' ';
   }
 
   // compute the position in the buffer line from the posn on the screen
@@ -350,11 +341,7 @@ retnomove:
     count |= CURSOR_MOVED;              // Cursor has moved
   }
 
-  if (mouse_char == '+') {
-    count |= MOUSE_FOLD_OPEN;
-  } else if (mouse_char != ' ') {
-    count |= MOUSE_FOLD_CLOSE;
-  }
+  count |= mouse_check_fold();
 
   return count;
 }
@@ -421,7 +408,7 @@ bool mouse_comp_pos(win_T *win, int *rowp, int *colp, linenr_T *lnump)
 
   // skip line number and fold column in front of the line
   col -= win_col_off(win);
-  if (col < 0) {
+  if (col <= 0) {
     col = 0;
   }
 
@@ -479,25 +466,25 @@ win_T *mouse_find_win(int *gridp, int *rowp, int *colp)
 static win_T *mouse_find_grid_win(int *gridp, int *rowp, int *colp)
 {
   if (*gridp == msg_grid.handle) {
-    rowp += msg_grid_pos;
+    // rowp += msg_grid_pos;  // PVS: dead store #11612
     *gridp = DEFAULT_GRID_HANDLE;
   } else if (*gridp > 1) {
     win_T *wp = get_win_by_grid_handle(*gridp);
-    if (wp && wp->w_grid.chars
+    if (wp && wp->w_grid_alloc.chars
         && !(wp->w_floating && !wp->w_float_config.focusable)) {
-      *rowp = MIN(*rowp, wp->w_grid.Rows-1);
-      *colp = MIN(*colp, wp->w_grid.Columns-1);
+      *rowp = MIN(*rowp-wp->w_grid.row_offset, wp->w_grid.Rows-1);
+      *colp = MIN(*colp-wp->w_grid.col_offset, wp->w_grid.Columns-1);
       return wp;
     }
   } else if (*gridp == 0) {
     ScreenGrid *grid = ui_comp_mouse_focus(*rowp, *colp);
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-      if (&wp->w_grid != grid) {
+      if (&wp->w_grid_alloc != grid) {
         continue;
       }
       *gridp = grid->handle;
-      *rowp -= grid->comp_row;
-      *colp -= grid->comp_col;
+      *rowp -= grid->comp_row+wp->w_grid.row_offset;
+      *colp -= grid->comp_col+wp->w_grid.col_offset;
       return wp;
     }
 
@@ -508,60 +495,15 @@ static win_T *mouse_find_grid_win(int *gridp, int *rowp, int *colp)
   return NULL;
 }
 
-/*
- * setmouse() - switch mouse on/off depending on current mode and 'mouse'
- */
+/// Set UI mouse depending on current mode and 'mouse'.
+///
+/// Emits mouse_on/mouse_off UI event (unless 'mouse' is empty).
 void setmouse(void)
 {
-  int checkfor;
-
   ui_cursor_shape();
-
-  /* be quick when mouse is off */
-  if (*p_mouse == NUL)
-    return;
-
-  if (VIsual_active)
-    checkfor = MOUSE_VISUAL;
-  else if (State == HITRETURN || State == ASKMORE || State == SETWSIZE)
-    checkfor = MOUSE_RETURN;
-  else if (State & INSERT)
-    checkfor = MOUSE_INSERT;
-  else if (State & CMDLINE)
-    checkfor = MOUSE_COMMAND;
-  else if (State == CONFIRM || State == EXTERNCMD)
-    checkfor = ' ';     /* don't use mouse for ":confirm" or ":!cmd" */
-  else
-    checkfor = MOUSE_NORMAL;        /* assume normal mode */
-
-  if (mouse_has(checkfor)) {
-    ui_call_mouse_on();
-  } else {
-    ui_call_mouse_off();
-  }
+  ui_check_mouse();
 }
 
-/*
- * Return true if
- * - "c" is in 'mouse', or
- * - 'a' is in 'mouse' and "c" is in MOUSE_A, or
- * - the current buffer is a help file and 'h' is in 'mouse' and we are in a
- *   normal editing mode (not at hit-return message).
- */
-int mouse_has(int c)
-{
-  for (char_u *p = p_mouse; *p; ++p)
-    switch (*p) {
-    case 'a': if (vim_strchr((char_u *)MOUSE_A, c) != NULL)
-        return true;
-      break;
-    case MOUSE_HELP: if (c != MOUSE_RETURN && curbuf->b_help)
-        return true;
-      break;
-    default: if (c == *p) return true; break;
-    }
-  return false;
-}
 
 // Set orig_topline.  Used when jumping to another window, so that a double
 // click still works.
@@ -770,4 +712,47 @@ static int mouse_adjust_click(win_T *wp, int row, int col)
   }
 
   return col + nudge;
+}
+
+// Check clicked cell is foldcolumn
+int mouse_check_fold(void)
+{
+  int click_grid = mouse_grid;
+  int click_row = mouse_row;
+  int click_col = mouse_col;
+  int mouse_char = ' ';
+
+  win_T *wp;
+
+  wp = mouse_find_win(&click_grid, &click_row, &click_col);
+
+  if (wp && mouse_row >= 0 && mouse_row < Rows
+      && mouse_col >= 0 && mouse_col <= Columns) {
+    int multigrid = ui_has(kUIMultigrid);
+    ScreenGrid *gp = multigrid ? &wp->w_grid_alloc : &default_grid;
+    int fdc = win_fdccol_count(wp);
+    int row = multigrid && mouse_grid == 0 ? click_row : mouse_row;
+    int col = multigrid && mouse_grid == 0 ? click_col : mouse_col;
+
+    // Remember the character under the mouse, might be one of foldclose or
+    // foldopen fillchars in the fold column.
+    if (gp->chars != NULL) {
+      mouse_char = utf_ptr2char(gp->chars[gp->line_offset[row]
+                                          + (unsigned)col]);
+    }
+
+    // Check for position outside of the fold column.
+    if (wp->w_p_rl ? click_col < wp->w_width_inner - fdc :
+        click_col >= fdc + (cmdwin_type == 0 ? 0 : 1)) {
+      mouse_char = ' ';
+    }
+  }
+
+  if (wp && mouse_char == wp->w_p_fcs_chars.foldclosed) {
+    return MOUSE_FOLD_OPEN;
+  } else if (mouse_char != ' ') {
+    return MOUSE_FOLD_CLOSE;
+  }
+
+  return 0;
 }

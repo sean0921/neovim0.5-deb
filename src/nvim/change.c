@@ -17,6 +17,7 @@
 #include "nvim/indent.h"
 #include "nvim/indent_c.h"
 #include "nvim/mark.h"
+#include "nvim/extmark.h"
 #include "nvim/memline.h"
 #include "nvim/misc1.h"
 #include "nvim/move.h"
@@ -67,7 +68,7 @@ void change_warning(int col)
     (void)msg_end();
     if (msg_silent == 0 && !silent_mode && ui_active()) {
       ui_flush();
-      os_delay(1000L, true);  // give the user time to think about it
+      os_delay(1002L, true);  // give the user time to think about it
     }
     curbuf->b_did_warn = true;
     redraw_cmdline = false;  // don't redraw and erase the message
@@ -108,7 +109,7 @@ void changed(void)
       // and don't let the emsg() set msg_scroll.
       if (need_wait_return && emsg_silent == 0) {
         ui_flush();
-        os_delay(2000L, true);
+        os_delay(2002L, true);
         wait_return(true);
         msg_scroll = save_msg_scroll;
       } else {
@@ -128,6 +129,7 @@ void changed(void)
 void changed_internal(void)
 {
   curbuf->b_changed = true;
+  curbuf->b_changed_invalid = true;
   ml_setflags(curbuf);
   check_status(curbuf);
   redraw_tabline = true;
@@ -141,7 +143,6 @@ static void changed_common(linenr_T lnum, colnr_T col, linenr_T lnume,
                            long xtra)
 {
   int i;
-  int cols;
   pos_T       *p;
   int add;
 
@@ -169,7 +170,7 @@ static void changed_common(linenr_T lnum, colnr_T col, linenr_T lnume,
         if (p->lnum != lnum) {
             add = true;
         } else {
-          cols = comp_textwidth(false);
+          int cols = comp_textwidth(false);
           if (cols == 0) {
               cols = 79;
           }
@@ -294,7 +295,7 @@ static void changed_common(linenr_T lnum, colnr_T col, linenr_T lnume,
       // change.
       if (wp->w_p_rnu
           || (wp->w_p_cul && lnum <= wp->w_last_cursorline)) {
-        redraw_win_later(wp, SOME_VALID);
+        redraw_later(wp, SOME_VALID);
       }
     }
   }
@@ -348,7 +349,7 @@ void changed_bytes(linenr_T lnum, colnr_T col)
 
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
       if (wp->w_p_diff && wp != curwin) {
-        redraw_win_later(wp, VALID);
+        redraw_later(wp, VALID);
         wlnum = diff_lnum_win(lnum, wp);
         if (wlnum > 0) {
             changedOneline(wp->w_buffer, wlnum);
@@ -356,6 +357,18 @@ void changed_bytes(linenr_T lnum, colnr_T col)
       }
     }
   }
+}
+
+/// insert/delete bytes at column
+///
+/// Like changed_bytes() but also adjust extmark for "new" bytes.
+void inserted_bytes(linenr_T lnum, colnr_T col, int old, int new)
+{
+  if (curbuf_splice_pending == 0) {
+    extmark_splice_cols(curbuf, (int)lnum-1, col, old, new, kExtmarkUndo);
+  }
+
+  changed_bytes(lnum, col);
 }
 
 /// Appended "count" lines below line "lnum" in the current buffer.
@@ -372,7 +385,10 @@ void appended_lines_mark(linenr_T lnum, long count)
   // Skip mark_adjust when adding a line after the last one, there can't
   // be marks there. But it's still needed in diff mode.
   if (lnum + count < curbuf->b_ml.ml_line_count || curwin->w_p_diff) {
-    mark_adjust(lnum + 1, (linenr_T)MAXLNUM, count, 0L, false);
+    mark_adjust(lnum + 1, (linenr_T)MAXLNUM, count, 0L, kExtmarkUndo);
+  } else {
+    extmark_adjust(curbuf, lnum + 1, (linenr_T)MAXLNUM, count, 0L,
+                   kExtmarkUndo);
   }
   changed_lines(lnum + 1, 0, lnum + 1, count, true);
 }
@@ -390,7 +406,8 @@ void deleted_lines(linenr_T lnum, long count)
 /// be triggered to display the cursor.
 void deleted_lines_mark(linenr_T lnum, long count)
 {
-  mark_adjust(lnum, (linenr_T)(lnum + count - 1), (long)MAXLNUM, -count, false);
+  mark_adjust(lnum, (linenr_T)(lnum + count - 1), (long)MAXLNUM, -count,
+              kExtmarkUndo);
   changed_lines(lnum, 0, lnum + count, -count, true);
 }
 
@@ -459,7 +476,7 @@ changed_lines(
 
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
       if (wp->w_p_diff && wp != curwin) {
-        redraw_win_later(wp, VALID);
+        redraw_later(wp, VALID);
         wlnum = diff_lnum_win(lnum, wp);
         if (wlnum > 0) {
           changed_lines_buf(wp->w_buffer, wlnum,
@@ -486,6 +503,7 @@ void unchanged(buf_T *buf, int ff, bool always_inc_changedtick)
 {
   if (buf->b_changed || (ff && file_ff_differs(buf, false))) {
     buf->b_changed = false;
+    buf->b_changed_invalid = true;
     ml_setflags(buf);
     if (ff) {
       save_file_ff(buf);
@@ -512,12 +530,8 @@ void ins_bytes_len(char_u *p, size_t len)
 {
   size_t n;
   for (size_t i = 0; i < len; i += n) {
-    if (enc_utf8) {
-      // avoid reading past p[len]
-      n = (size_t)utfc_ptr2len_len(p + i, (int)(len - i));
-    } else {
-      n = (size_t)(*mb_ptr2len)(p + i);
-    }
+    // avoid reading past p[len]
+    n = (size_t)utfc_ptr2len_len(p + i, (int)(len - i));
     ins_char_bytes(p + i, n);
   }
 }
@@ -628,7 +642,7 @@ void ins_char_bytes(char_u *buf, size_t charlen)
   ml_replace(lnum, newp, false);
 
   // mark the buffer as changed and prepare for displaying
-  changed_bytes(lnum, (colnr_T)col);
+  inserted_bytes(lnum, (colnr_T)col, (int)oldlen, (int)newlen);
 
   // If we're in Insert or Replace mode and 'showmatch' is set, then briefly
   // show the match for right parens and braces.
@@ -674,7 +688,7 @@ void ins_str(char_u *s)
   assert(bytes >= 0);
   memmove(newp + col + newlen, oldp + col, (size_t)bytes);
   ml_replace(lnum, newp, false);
-  changed_bytes(lnum, col);
+  inserted_bytes(lnum, col, 0, newlen);
   curwin->w_cursor.col += newlen;
 }
 
@@ -737,13 +751,13 @@ int del_bytes(colnr_T count, bool fixpos_arg, bool use_delcombine)
   }
   // If "count" is negative the caller must be doing something wrong.
   if (count < 1) {
-    IEMSGN("E950: Invalid count for del_bytes(): %ld", count);
+    IEMSGN("E292: Invalid count for del_bytes(): %ld", count);
     return FAIL;
   }
 
   // If 'delcombine' is set and deleting (less than) one character, only
   // delete the last combining character.
-  if (p_deco && use_delcombine && enc_utf8
+  if (p_deco && use_delcombine
       && utfc_ptr2len(oldp + col) >= count) {
     int cc[MAX_MCO];
     int n;
@@ -795,7 +809,7 @@ int del_bytes(colnr_T count, bool fixpos_arg, bool use_delcombine)
   }
 
   // mark the buffer as changed and prepare for displaying
-  changed_bytes(lnum, curwin->w_cursor.col);
+  inserted_bytes(lnum, col, count, 0);
 
   return OK;
 }
@@ -814,6 +828,7 @@ int copy_indent(int size, char_u *src)
   int tab_pad;
   int ind_done;
   int round;
+  int ind_col;
 
   // Round 1: compute the number of characters needed for the indent
   // Round 2: copy the characters.
@@ -821,13 +836,15 @@ int copy_indent(int size, char_u *src)
     todo = size;
     ind_len = 0;
     ind_done = 0;
+    ind_col = 0;
     s = src;
 
     // Count/copy the usable portion of the source line.
     while (todo > 0 && ascii_iswhite(*s)) {
       if (*s == TAB) {
-        tab_pad = (int)curbuf->b_p_ts
-                  - (ind_done % (int)curbuf->b_p_ts);
+        tab_pad = tabstop_padding(ind_done,
+                                  curbuf->b_p_ts,
+                                  curbuf->b_p_vts_array);
 
         // Stop if this tab will overshoot the target.
         if (todo < tab_pad) {
@@ -835,9 +852,11 @@ int copy_indent(int size, char_u *src)
         }
         todo -= tab_pad;
         ind_done += tab_pad;
+        ind_col += tab_pad;
       } else {
         todo--;
         ind_done++;
+        ind_col++;
       }
       ind_len++;
 
@@ -848,11 +867,12 @@ int copy_indent(int size, char_u *src)
     }
 
     // Fill to next tabstop with a tab, if possible.
-    tab_pad = (int)curbuf->b_p_ts - (ind_done % (int)curbuf->b_p_ts);
+    tab_pad = tabstop_padding(ind_done, curbuf->b_p_ts, curbuf->b_p_vts_array);
 
     if ((todo >= tab_pad) && !curbuf->b_p_et) {
       todo -= tab_pad;
       ind_len++;
+      ind_col += tab_pad;
 
       if (p != NULL) {
         *p++ = TAB;
@@ -860,12 +880,20 @@ int copy_indent(int size, char_u *src)
     }
 
     // Add tabs required for indent.
-    while (todo >= (int)curbuf->b_p_ts && !curbuf->b_p_et) {
-      todo -= (int)curbuf->b_p_ts;
-      ind_len++;
-
-      if (p != NULL) {
-        *p++ = TAB;
+    if (!curbuf->b_p_et) {
+      for (;;) {
+        tab_pad = tabstop_padding(ind_col,
+                                  curbuf->b_p_ts,
+                                  curbuf->b_p_vts_array);
+        if (todo < tab_pad) {
+          break;
+        }
+        todo -= tab_pad;
+        ind_len++;
+        ind_col += tab_pad;
+        if (p != NULL) {
+          *p++ = TAB;
+        }
       }
     }
 
@@ -951,6 +979,9 @@ int open_line(
   bool did_append;                // appended a new line
   int saved_pi = curbuf->b_p_pi;  // copy of preserveindent setting
 
+  linenr_T lnum = curwin->w_cursor.lnum;
+  colnr_T mincol = curwin->w_cursor.col + 1;
+
   // make a copy of the current line so we can mess with it
   char_u *saved_line = vim_strsave(get_cursor_line_ptr());
 
@@ -1012,7 +1043,9 @@ int open_line(
       || do_si
       ) {
     // count white space on current line
-    newindent = get_indent_str(saved_line, (int)curbuf->b_p_ts, false);
+    newindent = get_indent_str_vtab(saved_line,
+                                    curbuf->b_p_ts,
+                                    curbuf->b_p_vts_array, false);
     if (newindent == 0 && !(flags & OPENLINE_COM_LIST)) {
       newindent = second_line_indent;  // for ^^D command in insert mode
     }
@@ -1436,7 +1469,9 @@ int open_line(
         if (curbuf->b_p_ai
             || do_si
             ) {
-          newindent = get_indent_str(leader, (int)curbuf->b_p_ts, false);
+          newindent = get_indent_str_vtab(leader,
+                                          curbuf->b_p_ts,
+                                          curbuf->b_p_vts_array, false);
         }
 
         // Add the indent offset
@@ -1560,6 +1595,7 @@ int open_line(
     end_comment_pending = NUL;  // turns out there was no leader
   }
 
+  curbuf_splice_pending++;
   old_cursor = curwin->w_cursor;
   if (dir == BACKWARD) {
     curwin->w_cursor.lnum--;
@@ -1574,7 +1610,8 @@ int open_line(
     // be marks there. But still needed in diff mode.
     if (curwin->w_cursor.lnum + 1 < curbuf->b_ml.ml_line_count
         || curwin->w_p_diff) {
-      mark_adjust(curwin->w_cursor.lnum + 1, (linenr_T)MAXLNUM, 1L, 0L, false);
+      mark_adjust(curwin->w_cursor.lnum + 1, (linenr_T)MAXLNUM, 1L, 0L,
+                  kExtmarkNOOP);
     }
     did_append = true;
   } else {
@@ -1588,6 +1625,7 @@ int open_line(
     }
     ml_replace(curwin->w_cursor.lnum, p_extra, true);
     changed_bytes(curwin->w_cursor.lnum, 0);
+    // TODO(vigoux): extmark_splice_cols here??
     curwin->w_cursor.lnum--;
     did_append = false;
   }
@@ -1614,7 +1652,7 @@ int open_line(
       // it.  It gets restored at the function end.
       curbuf->b_p_pi = true;
     } else {
-      (void)set_indent(newindent, SIN_INSERT);
+      (void)set_indent(newindent, SIN_INSERT|SIN_NOMARK);
     }
     less_cols -= curwin->w_cursor.col;
 
@@ -1653,6 +1691,18 @@ int open_line(
         truncate_spaces(saved_line);
       }
       ml_replace(curwin->w_cursor.lnum, saved_line, false);
+
+      int new_len = (int)STRLEN(saved_line);
+
+      // TODO(vigoux): maybe there is issues there with expandtabs ?
+      int cols_spliced = 0;
+      if (new_len < curwin->w_cursor.col) {
+        extmark_splice_cols(
+            curbuf, (int)curwin->w_cursor.lnum - 1,
+            new_len, curwin->w_cursor.col - new_len, 0, kExtmarkUndo);
+        cols_spliced = curwin->w_cursor.col - new_len;
+      }
+
       saved_line = NULL;
       if (did_append) {
         changed_lines(curwin->w_cursor.lnum, curwin->w_cursor.col,
@@ -1665,6 +1715,12 @@ int open_line(
                           curwin->w_cursor.col + less_cols_off,
                           1L, (long)-less_cols, 0);
         }
+        // Always move extmarks - Here we move only the line where the
+        // cursor is, the previous mark_adjust takes care of the lines after
+        int cols_added = mincol-1+less_cols_off-less_cols;
+        extmark_splice(curbuf, (int)lnum-1, mincol-1 - cols_spliced,
+                       0, less_cols_off, less_cols_off,
+                       1, cols_added, 1 + cols_added, kExtmarkUndo);
       } else {
         changed_bytes(curwin->w_cursor.lnum, curwin->w_cursor.col);
       }
@@ -1676,7 +1732,12 @@ int open_line(
   }
   if (did_append) {
     changed_lines(curwin->w_cursor.lnum, 0, curwin->w_cursor.lnum, 1L, true);
+    // bail out and just get the final lenght of the line we just manipulated
+    bcount_t extra = (bcount_t)STRLEN(ml_get(curwin->w_cursor.lnum));
+    extmark_splice(curbuf, (int)curwin->w_cursor.lnum-1, 0,
+                   0, 0, 0, 1, 0, 1+extra, kExtmarkUndo);
   }
+  curbuf_splice_pending--;
 
   curwin->w_cursor.col = newcol;
   curwin->w_cursor.coladd = 0;

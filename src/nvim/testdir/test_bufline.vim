@@ -1,7 +1,7 @@
 " Tests for setbufline(), getbufline(), appendbufline(), deletebufline()
 
 source shared.vim
-" source screendump.vim
+source screendump.vim
 
 func Test_setbufline_getbufline()
   new
@@ -112,6 +112,17 @@ func Test_deletebufline()
   call assert_equal(0, deletebufline(b, 1))
   call assert_equal(['b', 'c'], getbufline(b, 1, 2))
   exe "bwipe! " . b
+
+  edit XbufOne
+  let one = bufnr()
+  call setline(1, ['a', 'b', 'c'])
+  setlocal nomodifiable
+  split XbufTwo
+  let two = bufnr()
+  call assert_fails('call deletebufline(one, 1)', 'E21:')
+  call assert_equal(two, bufnr())
+  bwipe! XbufTwo
+  bwipe! XbufOne
 endfunc
 
 func Test_appendbufline_redraw()

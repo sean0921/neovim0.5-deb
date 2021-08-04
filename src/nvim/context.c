@@ -126,7 +126,7 @@ bool ctx_restore(Context *ctx, const int flags)
   }
 
   char_u *op_shada;
-  get_option_value((char_u *)"shada", NULL, &op_shada, OPT_GLOBAL);
+  get_option_value("shada", NULL, &op_shada, OPT_GLOBAL);
   set_option_value("shada", 0L, "!,'100,%", OPT_GLOBAL);
 
   if (flags & kCtxRegs) {
@@ -254,7 +254,7 @@ static inline void ctx_save_funcs(Context *ctx, bool scriptonly)
       size_t cmd_len = sizeof("func! ") + STRLEN(name);
       char *cmd = xmalloc(cmd_len);
       snprintf(cmd, cmd_len, "func! %s", name);
-      String func_body = nvim_command_output(cstr_as_string(cmd), &err);
+      String func_body = nvim_exec(cstr_as_string(cmd), true, &err);
       xfree(cmd);
       if (!ERROR_SET(&err)) {
         ADD(ctx->funcs, STRING_OBJ(func_body));

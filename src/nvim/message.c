@@ -131,7 +131,7 @@ static int msg_grid_scroll_discount = 0;
 
 static void ui_ext_msg_set_pos(int row, bool scrolled)
 {
-  char buf[MAX_MCO];
+  char buf[MAX_MCO + 1];
   size_t size = utf_char2bytes(curwin->w_p_fcs_chars.msgsep, (char_u *)buf);
   buf[size] = '\0';
   ui_call_msg_set_pos(msg_grid.handle, row, scrolled,
@@ -165,6 +165,7 @@ void msg_grid_validate(void)
     // TODO(bfredl): eventually should be set to "invalid". I e all callers
     // will use the grid including clear to EOS if necessary.
     grid_alloc(&msg_grid, Rows, Columns, false, true);
+    msg_grid.zindex = kZIndexMessages;
 
     xfree(msg_grid.dirty_col);
     msg_grid.dirty_col = xcalloc(Rows, sizeof(*msg_grid.dirty_col));
@@ -178,6 +179,7 @@ void msg_grid_validate(void)
     msg_grid.throttled = false;  // don't throttle in 'cmdheight' area
     msg_scrolled_at_flush = msg_scrolled;
     msg_grid.focusable = false;
+    msg_grid_adj.target = &msg_grid;
     if (!msg_scrolled) {
       msg_grid_set_pos(Rows - p_ch, false);
     }
@@ -188,6 +190,7 @@ void msg_grid_validate(void)
     ui_call_grid_destroy(msg_grid.handle);
     msg_grid.throttled = false;
     msg_grid_adj.row_offset = 0;
+    msg_grid_adj.target = &default_grid;
     redraw_cmdline = true;
   } else if (msg_grid.chars && !msg_scrolled && msg_grid_pos != Rows - p_ch) {
     msg_grid_set_pos(Rows - p_ch, false);
@@ -242,7 +245,7 @@ void msg_multiline_attr(const char *s, int attr,
 
     if (next_spec != NULL) {
       // Printing all char that are before the char found by strpbrk
-      msg_outtrans_len_attr((char_u *)s, next_spec - s, attr);
+      msg_outtrans_len_attr((const char_u *)s, next_spec - s, attr);
 
       if (*next_spec != TAB && *need_clear) {
         msg_clr_eos();
@@ -305,11 +308,6 @@ bool msg_attr_keep(char_u *s, int attr, bool keep, bool multiline)
           && STRCMP(s, last_msg_hist->msg))) {
     add_msg_hist((const char *)s, -1, attr, multiline);
   }
-
-  /* When displaying keep_msg, don't let msg_start() free it, caller must do
-   * that. */
-  if (s == keep_msg)
-    keep_msg = NULL;
 
   /* Truncate the message if needed. */
   msg_start();
@@ -405,12 +403,12 @@ void trunc_string(char_u *s, char_u *buf, int room_in, int buflen)
     }
     len += n;
     buf[e] = s[e];
-    if (has_mbyte)
-      for (n = (*mb_ptr2len)(s + e); --n > 0; ) {
-        if (++e == buflen)
-          break;
-        buf[e] = s[e];
+    for (n = utfc_ptr2len(s + e); --n > 0; ) {
+      if (++e == buflen) {
+        break;
       }
+      buf[e] = s[e];
+    }
   }
 
   // Last part: End of the string.
@@ -612,8 +610,7 @@ int emsg_not_now(void)
 static bool emsg_multiline(const char *s, bool multiline)
 {
   int attr;
-  int ignore = false;
-  int severe;
+  bool ignore = false;
 
   // Skip this if not giving error messages at the moment.
   if (emsg_not_now()) {
@@ -622,9 +619,9 @@ static bool emsg_multiline(const char *s, bool multiline)
 
   called_emsg = true;
 
-  // If "emsg_severe" is TRUE: When an error exception is to be thrown,
+  // If "emsg_severe" is true: When an error exception is to be thrown,
   // prefer this message over previous messages for the same command.
-  severe = emsg_severe;
+  bool severe = emsg_severe;
   emsg_severe = false;
 
   if (!emsg_off || vim_strchr(p_debug, 't') != NULL) {
@@ -635,7 +632,7 @@ static bool emsg_multiline(const char *s, bool multiline)
      * when the message should be ignored completely (used for the
      * interrupt message).
      */
-    if (cause_errthrow((char_u *)s, severe, &ignore) == true) {
+    if (cause_errthrow((char_u *)s, severe, &ignore)) {
       if (!ignore) {
         did_emsg++;
       }
@@ -873,29 +870,61 @@ char_u *msg_trunc_attr(char_u *s, int force, int attr)
  */
 char_u *msg_may_trunc(int force, char_u *s)
 {
-  int n;
   int room;
 
   room = (int)(Rows - cmdline_row - 1) * Columns + sc_col - 1;
   if ((force || (shortmess(SHM_TRUNC) && !exmode_active))
-      && (n = (int)STRLEN(s) - room) > 0) {
-    if (has_mbyte) {
-      int size = vim_strsize(s);
+      && (int)STRLEN(s) - room > 0) {
+    int size = vim_strsize(s);
 
-      /* There may be room anyway when there are multibyte chars. */
-      if (size <= room)
-        return s;
-
-      for (n = 0; size >= room; ) {
-        size -= utf_ptr2cells(s + n);
-        n += utfc_ptr2len(s + n);
-      }
-      --n;
+    // There may be room anyway when there are multibyte chars.
+    if (size <= room) {
+      return s;
     }
+    int n;
+    for (n = 0; size >= room; ) {
+      size -= utf_ptr2cells(s + n);
+      n += utfc_ptr2len(s + n);
+    }
+    n--;
     s += n;
     *s = '<';
   }
   return s;
+}
+
+void clear_hl_msg(HlMessage *hl_msg)
+{
+  for (size_t i = 0; i < kv_size(*hl_msg); i++) {
+    xfree(kv_A(*hl_msg, i).text.data);
+  }
+  kv_destroy(*hl_msg);
+  *hl_msg = (HlMessage)KV_INITIAL_VALUE;
+}
+
+#define LINE_BUFFER_SIZE 4096
+
+void add_hl_msg_hist(HlMessage hl_msg)
+{
+  // TODO(notomo): support multi highlighted message history
+  size_t pos = 0;
+  char buf[LINE_BUFFER_SIZE];
+  for (uint32_t i = 0; i < kv_size(hl_msg); i++) {
+    HlMessageChunk chunk = kv_A(hl_msg, i);
+    for (uint32_t j = 0; j < chunk.text.size; j++) {
+      if (pos == LINE_BUFFER_SIZE - 1) {
+        buf[pos] = NUL;
+        add_msg_hist((const char *)buf, -1, MSG_HIST, true);
+        pos = 0;
+        continue;
+      }
+      buf[pos++] = chunk.text.data[j];
+    }
+  }
+  if (pos != 0) {
+    buf[pos] = NUL;
+    add_msg_hist((const char *)buf, -1, MSG_HIST, true);
+  }
 }
 
 /// @param[in]  len  Length of s or -1.
@@ -1166,14 +1195,7 @@ void wait_return(int redraw)
              || c == K_RIGHTDRAG  || c == K_RIGHTRELEASE
              || c == K_MOUSELEFT  || c == K_MOUSERIGHT
              || c == K_MOUSEDOWN  || c == K_MOUSEUP
-             || (!mouse_has(MOUSE_RETURN)
-                 && mouse_row < msg_row
-                 && (c == K_LEFTMOUSE
-                     || c == K_MIDDLEMOUSE
-                     || c == K_RIGHTMOUSE
-                     || c == K_X1MOUSE
-                     || c == K_X2MOUSE))
-             );
+             || c == K_MOUSEMOVE);
     os_breakcheck();
     /*
      * Avoid that the mouse-up event causes visual mode to start.
@@ -1222,7 +1244,7 @@ void wait_return(int redraw)
     ui_refresh();
   } else if (!skip_redraw) {
     if (redraw == true || (msg_scrolled != 0 && redraw != -1)) {
-      redraw_later(VALID);
+      redraw_later(curwin, VALID);
     }
     if (ui_has(kUIMessages)) {
       msg_ext_clear(true);
@@ -1384,7 +1406,7 @@ static void msg_home_replace_attr(char_u *fname, int attr)
 
 /*
  * Output 'len' characters in 'str' (including NULs) with translation
- * if 'len' is -1, output upto a NUL character.
+ * if 'len' is -1, output up to a NUL character.
  * Use attributes 'attr'.
  * Return the number of characters it takes on the screen.
  */
@@ -1393,12 +1415,12 @@ int msg_outtrans(char_u *str)
   return msg_outtrans_attr(str, 0);
 }
 
-int msg_outtrans_attr(char_u *str, int attr)
+int msg_outtrans_attr(const char_u *str, int attr)
 {
   return msg_outtrans_len_attr(str, (int)STRLEN(str), attr);
 }
 
-int msg_outtrans_len(char_u *str, int len)
+int msg_outtrans_len(const char_u *str, int len)
 {
   return msg_outtrans_len_attr(str, len, 0);
 }
@@ -1411,7 +1433,7 @@ char_u *msg_outtrans_one(char_u *p, int attr)
 {
   int l;
 
-  if (has_mbyte && (l = (*mb_ptr2len)(p)) > 1) {
+  if ((l = utfc_ptr2len(p)) > 1) {
     msg_outtrans_len_attr(p, l, attr);
     return p + l;
   }
@@ -1419,7 +1441,7 @@ char_u *msg_outtrans_one(char_u *p, int attr)
   return p + 1;
 }
 
-int msg_outtrans_len_attr(char_u *msgstr, int len, int attr)
+int msg_outtrans_len_attr(const char_u *msgstr, int len, int attr)
 {
   int retval = 0;
   const char *str = (const char *)msgstr;
@@ -1436,7 +1458,7 @@ int msg_outtrans_len_attr(char_u *msgstr, int len, int attr)
 
   // If the string starts with a composing character first draw a space on
   // which the composing char can be drawn.
-  if (enc_utf8 && utf_iscomposing(utf_ptr2char(msgstr))) {
+  if (utf_iscomposing(utf_ptr2char(msgstr))) {
     msg_puts_attr(" ", attr);
   }
 
@@ -1507,7 +1529,7 @@ void msg_make(char_u *arg)
   }
 }
 
-/// Output the string 'str' upto a NUL character.
+/// Output the string 'str' up to a NUL character.
 /// Return the number of characters it takes on the screen.
 ///
 /// If K_SPECIAL is encountered, then it is taken in conjunction with the
@@ -1521,7 +1543,8 @@ void msg_make(char_u *arg)
 /// the character/string -- webb
 int msg_outtrans_special(
     const char_u *strstart,
-    int from               ///< true for LHS of a mapping
+    bool from,              ///< true for LHS of a mapping
+    int maxlen              ///< screen columns, 0 for unlimeted
 )
 {
   if (strstart == NULL) {
@@ -1541,6 +1564,9 @@ int msg_outtrans_special(
       string = str2special((const char **)&str, from, false);
     }
     const int len = vim_strsize((char_u *)string);
+    if (maxlen > 0 && retval + len >= maxlen) {
+      break;
+    }
     // Highlight special keys
     msg_puts_attr(string, (len > 1
                            && (*mb_ptr2len)((char_u *)string) <= 1
@@ -1623,7 +1649,7 @@ const char *str2special(const char **const sp, const bool replace_spaces,
 
     // Check for an illegal byte.
     if (MB_BYTE2LEN((uint8_t)(*str)) > len) {
-      transchar_nonprint((char_u *)buf, c);
+      transchar_nonprint(curbuf, (char_u *)buf, c);
       *sp = str + 1;
       return buf;
     }
@@ -1681,6 +1707,7 @@ void msg_prt_line(char_u *s, int list)
   char_u *p_extra = NULL;  // init to make SASC shut up
   int n;
   int attr = 0;
+  char_u *lead = NULL;
   char_u *trail = NULL;
   int l;
 
@@ -1688,11 +1715,24 @@ void msg_prt_line(char_u *s, int list)
     list = true;
   }
 
-  // find start of trailing whitespace
-  if (list && curwin->w_p_lcs_chars.trail) {
-    trail = s + STRLEN(s);
-    while (trail > s && ascii_iswhite(trail[-1])) {
-      trail--;
+  if (list) {
+    // find start of trailing whitespace
+    if (curwin->w_p_lcs_chars.trail) {
+      trail = s + STRLEN(s);
+      while (trail > s && ascii_iswhite(trail[-1])) {
+        trail--;
+      }
+    }
+    // find end of leading whitespace
+    if (curwin->w_p_lcs_chars.lead) {
+      lead = s;
+      while (ascii_iswhite(lead[0])) {
+        lead++;
+      }
+      // in a line full of spaces all of them are treated as trailing
+      if (*lead == NUL) {
+        lead = NULL;
+      }
     }
   }
 
@@ -1715,8 +1755,11 @@ void msg_prt_line(char_u *s, int list)
     } else if ((l = utfc_ptr2len(s)) > 1) {
       col += utf_ptr2cells(s);
       char buf[MB_MAXBYTES + 1];
-      if (curwin->w_p_lcs_chars.nbsp != NUL && list
-          && (utf_ptr2char(s) == 160 || utf_ptr2char(s) == 0x202f)) {
+      if (l >= MB_MAXBYTES) {
+        xstrlcpy(buf, "?", sizeof(buf));
+      } else if (curwin->w_p_lcs_chars.nbsp != NUL && list
+                 && (utf_ptr2char(s) == 160
+                     || utf_ptr2char(s) == 0x202f)) {
         utf_char2bytes(curwin->w_p_lcs_chars.nbsp, (char_u *)buf);
         buf[utfc_ptr2len((char_u *)buf)] = NUL;
       } else {
@@ -1731,7 +1774,9 @@ void msg_prt_line(char_u *s, int list)
       c = *s++;
       if (c == TAB && (!list || curwin->w_p_lcs_chars.tab1)) {
         // tab amount depends on current column
-        n_extra = curbuf->b_p_ts - col % curbuf->b_p_ts - 1;
+        n_extra = tabstop_padding(col,
+                                  curbuf->b_p_ts,
+                                  curbuf->b_p_vts_array) - 1;
         if (!list) {
           c = ' ';
           c_extra = ' ';
@@ -1763,6 +1808,9 @@ void msg_prt_line(char_u *s, int list)
         c = *p_extra++;
         /* Use special coloring to be able to distinguish <hex> from
          * the same in plain text. */
+        attr = HL_ATTR(HLF_8);
+      } else if (c == ' ' && lead != NULL && s <= lead) {
+        c = curwin->w_p_lcs_chars.lead;
         attr = HL_ATTR(HLF_8);
       } else if (c == ' ' && trail != NULL && s > trail) {
         c = curwin->w_p_lcs_chars.trail;
@@ -1888,6 +1936,7 @@ void msg_puts_attr_len(const char *const str, const ptrdiff_t len, int attr)
   // wait-return prompt later.  Needed when scrolling, resetting
   // need_wait_return after some prompt, and then outputting something
   // without scrolling
+  // Not needed when only using CR to move the cursor.
   bool overflow = false;
   if (ui_has(kUIMessages)) {
     int count = msg_ext_visible + (msg_ext_overwrite ? 0 : 1);
@@ -1899,7 +1948,7 @@ void msg_puts_attr_len(const char *const str, const ptrdiff_t len, int attr)
     overflow = msg_scrolled != 0;
   }
 
-  if (overflow && !msg_scrolled_ign) {
+  if (overflow && !msg_scrolled_ign && strcmp(str, "\r") != 0) {
     need_wait_return = true;
   }
   msg_didany = true;  // remember that something was outputted
@@ -2001,7 +2050,7 @@ static void msg_puts_display(const char_u *str, int maxlen, int attr,
                               || (*s == TAB && msg_col <= 7)
                               || (utf_ptr2cells(s) > 1
                                   && msg_col <= 2))
-                           : (msg_col + t_col >= Columns - 1
+                           : ((*s != '\r' && msg_col + t_col >= Columns - 1)
                               || (*s == TAB
                                   && msg_col + t_col >= ((Columns - 1) & ~7))
                               || (utf_ptr2cells(s) > 1
@@ -2218,12 +2267,14 @@ void msg_scroll_up(bool may_throttle)
 /// per screen update.
 ///
 /// NB: The bookkeeping is quite messy, and rests on a bunch of poorly
-/// documented assumtions. For instance that the message area always grows while
-/// being throttled, messages are only being output on the last line etc.
+/// documented assumptions. For instance that the message area always grows
+/// while being throttled, messages are only being output on the last line
+/// etc.
 ///
-/// Probably message scrollback storage should reimplented as a file_buffer, and
-/// message scrolling in TUI be reimplemented as a modal floating window. Then
-/// we get throttling "for free" using standard redraw_win_later code paths.
+/// Probably message scrollback storage should be reimplemented as a
+/// file_buffer, and message scrolling in TUI be reimplemented as a modal
+/// floating window. Then we get throttling "for free" using standard
+/// redraw_later code paths.
 void msg_scroll_flush(void)
 {
   if (msg_grid.throttled) {
@@ -2490,8 +2541,9 @@ static void t_puts(int *t_col, const char_u *t_s, const char_u *s, int attr)
   *t_col = 0;
   /* If the string starts with a composing character don't increment the
    * column position for it. */
-  if (enc_utf8 && utf_iscomposing(utf_ptr2char(t_s)))
-    --msg_col;
+  if (utf_iscomposing(utf_ptr2char(t_s))) {
+    msg_col--;
+  }
   if (msg_col >= Columns) {
     msg_col = 0;
     ++msg_row;
@@ -3392,12 +3444,12 @@ do_dialog (
  * Copy one character from "*from" to "*to", taking care of multi-byte
  * characters.  Return the length of the character in bytes.
  */
-static int
-copy_char (
-    char_u *from,
+static int copy_char(
+    const char_u *from,
     char_u *to,
-    int lowercase                  /* make character lower case */
+    bool lowercase  // make character lower case
 )
+  FUNC_ATTR_NONNULL_ALL
 {
   if (lowercase) {
     int c = mb_tolower(utf_ptr2char(from));
@@ -3409,7 +3461,7 @@ copy_char (
 }
 
 #define HAS_HOTKEY_LEN 30
-#define HOTK_LEN (has_mbyte ? MB_MAXBYTES : 1)
+#define HOTK_LEN MB_MAXBYTES
 
 /// Allocates memory for dialog string & for storing hotkeys
 ///
@@ -3513,7 +3565,7 @@ static void copy_hotkeys_and_msg(const char_u *message, char_u *buttons,
 
   // Define first default hotkey. Keep the hotkey string NUL
   // terminated to avoid reading past the end.
-  hotkeys_ptr[copy_char(buttons, hotkeys_ptr, TRUE)] = NUL;
+  hotkeys_ptr[copy_char(buttons, hotkeys_ptr, true)] = NUL;
 
   // Remember where the choices start, displaying starts here when
   // "hotkeys_ptr" typed at the more prompt.
@@ -3533,8 +3585,8 @@ static void copy_hotkeys_and_msg(const char_u *message, char_u *buttons,
       *msgp++ = ' ';                    // '\n' -> ', '
 
       // Advance to next hotkey and set default hotkey
-      hotkeys_ptr += (has_mbyte) ? STRLEN(hotkeys_ptr): 1;
-      hotkeys_ptr[copy_char(r + 1, hotkeys_ptr, TRUE)] = NUL;
+      hotkeys_ptr += STRLEN(hotkeys_ptr);
+      hotkeys_ptr[copy_char(r + 1, hotkeys_ptr, true)] = NUL;
 
       if (default_button_idx) {
         default_button_idx--;
@@ -3556,15 +3608,15 @@ static void copy_hotkeys_and_msg(const char_u *message, char_u *buttons,
       } else {
         // '&a' -> '[a]'
         *msgp++ = (default_button_idx == 1) ? '[' : '(';
-        msgp += copy_char(r, msgp, FALSE);
+        msgp += copy_char(r, msgp, false);
         *msgp++ = (default_button_idx == 1) ? ']' : ')';
 
         // redefine hotkey
-        hotkeys_ptr[copy_char(r, hotkeys_ptr, TRUE)] = NUL;
+        hotkeys_ptr[copy_char(r, hotkeys_ptr, true)] = NUL;
       }
     } else {
       // everything else copy literally
-      msgp += copy_char(r, msgp, FALSE);
+      msgp += copy_char(r, msgp, false);
     }
 
     // advance to the next character

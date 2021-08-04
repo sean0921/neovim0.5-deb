@@ -30,7 +30,6 @@
 #include "nvim/indent_c.h"
 #include "nvim/buffer_updates.h"
 #include "nvim/main.h"
-#include "nvim/mark.h"
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
 #include "nvim/memory.h"
@@ -74,7 +73,8 @@ static garray_T ga_users = GA_EMPTY_INIT_VALUE;
  * If "include_space" is set, include trailing whitespace while calculating the
  * length.
  */
-int get_leader_len(char_u *line, char_u **flags, int backward, int include_space)
+int get_leader_len(char_u *line, char_u **flags,
+                   bool backward, bool include_space)
 {
   int i, j;
   int result;
@@ -278,7 +278,7 @@ int get_last_leader_offset(char_u *line, char_u **flags)
         // whitespace.  Otherwise we would think we are inside a
         // comment if the middle part appears somewhere in the middle
         // of the line.  E.g. for C the "*" appears often.
-        for (j = 0; ascii_iswhite(line[j]) && j <= i; j++) {
+        for (j = 0; j <= i && ascii_iswhite(line[j]); j++) {
         }
         if (j < i) {
           continue;
@@ -412,7 +412,7 @@ int plines_win_nofold(win_T *wp, linenr_T lnum)
   s = ml_get_buf(wp->w_buffer, lnum, FALSE);
   if (*s == NUL)                /* empty line */
     return 1;
-  col = win_linetabsize(wp, s, (colnr_T)MAXCOL);
+  col = win_linetabsize(wp, s, MAXCOL);
 
   // If list mode is on, then the '$' at the end of the line may take up one
   // extra column.
@@ -484,25 +484,39 @@ int plines_win_col(win_T *wp, linenr_T lnum, long column)
   return lines;
 }
 
+/// Get the number of screen lines lnum takes up. This takes care of
+/// both folds and topfill, and limits to the current window height.
+///
+/// @param[in]  wp       window line is in
+/// @param[in]  lnum     line number
+/// @param[out] nextp    if not NULL, the line after a fold
+/// @param[out] foldedp  if not NULL, whether lnum is on a fold
+/// @param[in]  cache    whether to use the window's cache for folds
+///
+/// @return the total number of screen lines
+int plines_win_full(win_T *wp, linenr_T lnum, linenr_T *const nextp,
+                    bool *const foldedp, const bool cache)
+{
+  bool folded = hasFoldingWin(wp, lnum, NULL, nextp, cache, NULL);
+  if (foldedp) {
+    *foldedp = folded;
+  }
+  if (folded) {
+    return 1;
+  } else if (lnum == wp->w_topline) {
+    return plines_win_nofill(wp, lnum, true) + wp->w_topfill;
+  }
+  return plines_win(wp, lnum, true);
+}
+
 int plines_m_win(win_T *wp, linenr_T first, linenr_T last)
 {
   int count = 0;
 
   while (first <= last) {
-    // Check if there are any really folded lines, but also included lines
-    // that are maybe folded.
-    linenr_T x = foldedCount(wp, first, NULL);
-    if (x > 0) {
-      ++count;              /* count 1 for "+-- folded" line */
-      first += x;
-    } else {
-      if (first == wp->w_topline) {
-        count += plines_win_nofill(wp, first, true) + wp->w_topfill;
-      } else {
-        count += plines_win(wp, first, true);
-      }
-      first++;
-    }
+    linenr_T next = first;
+    count += plines_win_full(wp, first, &next, NULL, false);
+    first = next + 1;
   }
   return count;
 }
@@ -588,6 +602,7 @@ int is_mouse_key(int c)
          || c == K_LEFTDRAG
          || c == K_LEFTRELEASE
          || c == K_LEFTRELEASE_NM
+         || c == K_MOUSEMOVE
          || c == K_MIDDLEMOUSE
          || c == K_MIDDLEDRAG
          || c == K_MIDDLERELEASE
@@ -738,8 +753,12 @@ get_number (
       skip_redraw = TRUE;           /* skip redraw once */
       do_redraw = FALSE;
       break;
-    } else if (c == CAR || c == NL || c == Ctrl_C || c == ESC)
+    } else if (c == Ctrl_C || c == ESC || c == 'q') {
+      n = 0;
       break;
+    } else if (c == CAR || c == NL) {
+      break;
+    }
   }
   no_mapping--;
   return n;
@@ -756,11 +775,13 @@ int prompt_for_number(int *mouse_used)
   int save_cmdline_row;
   int save_State;
 
-  /* When using ":silent" assume that <CR> was entered. */
-  if (mouse_used != NULL)
-    MSG_PUTS(_("Type number and <Enter> or click with mouse (empty cancels): "));
-  else
-    MSG_PUTS(_("Type number and <Enter> (empty cancels): "));
+  // When using ":silent" assume that <CR> was entered.
+  if (mouse_used != NULL) {
+    MSG_PUTS(_("Type number and <Enter> or click with the mouse "
+               "(q or empty cancels): "));
+  } else {
+    MSG_PUTS(_("Type number and <Enter> (q or empty cancels): "));
+  }
 
   /* Set the state such that text can be selected/copied/pasted and we still
    * get mouse events. */
@@ -969,7 +990,7 @@ void preserve_exit(void)
 
   FOR_ALL_BUFFERS(buf) {
     if (buf->b_ml.ml_mfp != NULL && buf->b_ml.ml_mfp->mf_fname != NULL) {
-      mch_errmsg((uint8_t *)"Vim: preserving files...\n");
+      mch_errmsg("Vim: preserving files...\r\n");
       ui_flush();
       ml_sync_all(false, false, true);  // preserve all swap files
       break;
@@ -978,7 +999,7 @@ void preserve_exit(void)
 
   ml_close_all(false);              // close all memfiles, without deleting
 
-  mch_errmsg("Vim: Finished.\n");
+  mch_errmsg("Vim: Finished.\r\n");
 
   getout(1);
 }
@@ -1010,6 +1031,15 @@ void line_breakcheck(void)
 void fast_breakcheck(void)
 {
   if (++breakcheck_count >= BREAKCHECK_SKIP * 10) {
+    breakcheck_count = 0;
+    os_breakcheck();
+  }
+}
+
+// Like line_breakcheck() but check 100 times less often.
+void veryfast_breakcheck(void)
+{
+  if (++breakcheck_count >= BREAKCHECK_SKIP * 100) {
     breakcheck_count = 0;
     os_breakcheck();
   }
@@ -1068,8 +1098,9 @@ char_u *get_cmd_output(char_u *cmd, char_u *infile, ShellOpts flags,
 {
   char_u *buffer = NULL;
 
-  if (check_restricted() || check_secure())
+  if (check_secure()) {
     return NULL;
+  }
 
   // get a name for the temp file
   char_u *tempname = vim_tempname();
@@ -1147,4 +1178,27 @@ void FreeWild(int count, char_u **files)
 int goto_im(void)
 {
   return p_im && stuff_empty() && typebuf_typed();
+}
+
+/// Put the timestamp of an undo header in "buf[buflen]" in a nice format.
+void add_time(char_u *buf, size_t buflen, time_t tt)
+{
+  struct tm curtime;
+
+  if (time(NULL) - tt >= 100) {
+    os_localtime_r(&tt, &curtime);
+    if (time(NULL) - tt < (60L * 60L * 12L)) {
+      // within 12 hours
+      (void)strftime((char *)buf, buflen, "%H:%M:%S", &curtime);
+    } else {
+      // longer ago
+      (void)strftime((char *)buf, buflen, "%Y/%m/%d %H:%M:%S", &curtime);
+    }
+  } else {
+    int64_t seconds = time(NULL) - tt;
+    vim_snprintf((char *)buf, buflen,
+                 NGETTEXT("%" PRId64 " second ago",
+                          "%" PRId64 " seconds ago", (uint32_t)seconds),
+                 seconds);
+  }
 }

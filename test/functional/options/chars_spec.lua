@@ -16,10 +16,6 @@ describe("'fillchars'", function()
     screen:attach()
   end)
 
-  after_each(function()
-    screen:detach()
-  end)
-
   local function shouldfail(val,errval)
     errval = errval or val
     eq('Vim(set):E474: Invalid argument: fillchars='..errval,

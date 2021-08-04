@@ -51,9 +51,10 @@
 ///   expanded.
 /// @param s2 Second file name.
 /// @param checkname When both files don't exist, only compare their names.
+/// @param expandenv Whether to expand environment variables in file names.
 /// @return Enum of type FileComparison. @see FileComparison.
 FileComparison path_full_compare(char_u *const s1, char_u *const s2,
-                                 const bool checkname)
+                                 const bool checkname, const bool expandenv)
 {
   assert(s1 && s2);
   char_u exp1[MAXPATHL];
@@ -61,7 +62,11 @@ FileComparison path_full_compare(char_u *const s1, char_u *const s2,
   char_u full2[MAXPATHL];
   FileID file_id_1, file_id_2;
 
-  expand_env(s1, exp1, MAXPATHL);
+  if (expandenv) {
+      expand_env(s1, exp1, MAXPATHL);
+  } else {
+      xstrlcpy((char *)exp1, (const char *)s1, MAXPATHL);
+  }
   bool id_ok_1 = os_fileid((char *)exp1, &file_id_1);
   bool id_ok_2 = os_fileid((char *)s2, &file_id_2);
   if (!id_ok_1 && !id_ok_2) {
@@ -175,6 +180,34 @@ const char *path_next_component(const char *fname)
   return fname;
 }
 
+/// Returns the length of the path head on the current platform.
+/// @return
+///   - 3 on windows
+///   - 1 otherwise
+int path_head_length(void)
+{
+#ifdef WIN32
+  return 3;
+#else
+  return 1;
+#endif
+}
+
+/// Returns true if path begins with characters denoting the head of a path
+/// (e.g. '/' on linux and 'D:' on windows).
+/// @param path The path to be checked.
+/// @return
+///   - True if path begins with a path head
+///   - False otherwise
+bool is_path_head(const char_u *path)
+{
+#ifdef WIN32
+  return isalpha(path[0]) && path[1] == ':';
+#else
+  return vim_ispathsep(*path);
+#endif
+}
+
 /// Get a pointer to one character past the head of a path name.
 /// Unix: after "/"; Win: after "c:\"
 /// If there is no head, path is returned.
@@ -184,7 +217,7 @@ char_u *get_past_head(const char_u *path)
 
 #ifdef WIN32
   // May skip "c:"
-  if (isalpha(path[0]) && path[1] == ':') {
+  if (is_path_head(path)) {
     retval = path + 2;
   }
 #endif
@@ -255,13 +288,13 @@ char_u *shorten_dir(char_u *str)
       *d++ = *s;
       skip = false;
     } else if (!skip) {
-      *d++ = *s;                    /* copy next char */
-      if (*s != '~' && *s != '.')       /* and leading "~" and "." */
+      *d++ = *s;                     // copy next char
+      if (*s != '~' && *s != '.') {  // and leading "~" and "."
         skip = true;
-      if (has_mbyte) {
-        int l = mb_ptr2len(s);
-        while (--l > 0)
-          *d++ = *++s;
+      }
+      int l = utfc_ptr2len(s);
+      while (--l > 0) {
+        *d++ = *++s;
       }
     }
   }
@@ -333,11 +366,11 @@ int path_fnamencmp(const char *const fname1, const char *const fname2,
         && (p_fic ? (c1 != c2 && CH_FOLD(c1) != CH_FOLD(c2)) : c1 != c2)) {
       break;
     }
-    len -= (size_t)MB_PTR2LEN((const char_u *)p1);
-    p1 += MB_PTR2LEN((const char_u *)p1);
-    p2 += MB_PTR2LEN((const char_u *)p2);
+    len -= (size_t)utfc_ptr2len((const char_u *)p1);
+    p1 += utfc_ptr2len((const char_u *)p1);
+    p2 += utfc_ptr2len((const char_u *)p2);
   }
-  return c1 - c2;
+  return p_fic ? CH_FOLD(c1) - CH_FOLD(c2) : c1 - c2;
 #else
   if (p_fic) {
     return mb_strnicmp((const char_u *)fname1, (const char_u *)fname2, len);
@@ -603,13 +636,10 @@ static size_t do_path_expand(garray_T *gap, const char_u *path,
     )) {
       e = p;
     }
-    if (has_mbyte) {
-      len = (size_t)(*mb_ptr2len)(path_end);
-      memcpy(p, path_end, len);
-      p += len;
-      path_end += len;
-    } else
-      *p++ = *path_end++;
+    len = (size_t)(utfc_ptr2len(path_end));
+    memcpy(p, path_end, len);
+    p += len;
+    path_end += len;
   }
   e = p;
   *e = NUL;
@@ -1115,10 +1145,22 @@ static bool has_env_var(char_u *p)
 static bool has_special_wildchar(char_u *p)
 {
   for (; *p; MB_PTR_ADV(p)) {
-    // Allow for escaping
-    if (*p == '\\' && p[1] != NUL) {
+    // Disallow line break characters.
+    if (*p == '\r' || *p == '\n') {
+      break;
+    }
+    // Allow for escaping.
+    if (*p == '\\' && p[1] != NUL && p[1] != '\r' && p[1] != '\n') {
       p++;
     } else if (vim_strchr((char_u *)SPECIAL_WILDCHAR, *p) != NULL) {
+      // A { must be followed by a matching }.
+      if (*p == '{' && vim_strchr(p, '}') == NULL) {
+        continue;
+      }
+      // A quote and backtick must be followed by another one.
+      if ((*p == '`' || *p == '\'') && vim_strchr(p, *p) == NULL) {
+        continue;
+      }
       return true;
     }
   }
@@ -1161,7 +1203,7 @@ int gen_expand_wildcards(int num_pat, char_u **pat, int *num_file,
    */
   if (recursive)
 #ifdef SPECIAL_WILDCHAR
-    return mch_expand_wildcards(num_pat, pat, num_file, file, flags);
+    return os_expand_wildcards(num_pat, pat, num_file, file, flags);
 #else
     return FAIL;
 #endif
@@ -1176,7 +1218,7 @@ int gen_expand_wildcards(int num_pat, char_u **pat, int *num_file,
   for (int i = 0; i < num_pat; i++) {
     if (has_special_wildchar(pat[i])
         && !(vim_backtick(pat[i]) && pat[i][1] == '=')) {
-      return mch_expand_wildcards(num_pat, pat, num_file, file, flags);
+      return os_expand_wildcards(num_pat, pat, num_file, file, flags);
     }
   }
 #endif
@@ -1203,7 +1245,7 @@ int gen_expand_wildcards(int num_pat, char_u **pat, int *num_file,
       }
     } else {
       // First expand environment variables, "~/" and "~user/".
-      if (has_env_var(p) || *p == '~') {
+      if ((has_env_var(p) && !(flags & EW_NOTENV)) || *p == '~') {
         p = expand_env_save_opt(p, true);
         if (p == NULL)
           p = pat[i];
@@ -1216,8 +1258,8 @@ int gen_expand_wildcards(int num_pat, char_u **pat, int *num_file,
         else if (has_env_var(p) || *p == '~') {
           xfree(p);
           ga_clear_strings(&ga);
-          i = mch_expand_wildcards(num_pat, pat, num_file, file,
-              flags | EW_KEEPDOLLAR);
+          i = os_expand_wildcards(num_pat, pat, num_file, file,
+                                  flags | EW_KEEPDOLLAR);
           recursive = false;
           return i;
         }
@@ -1596,10 +1638,10 @@ void simplify_filename(char_u *filename)
 
 static char *eval_includeexpr(const char *const ptr, const size_t len)
 {
-  set_vim_var_string(VV_FNAME, ptr, (ptrdiff_t) len);
-  char *res = (char *) eval_to_string_safe(
-      curbuf->b_p_inex, NULL, was_set_insecurely((char_u *)"includeexpr",
-                                                 OPT_LOCAL));
+  set_vim_var_string(VV_FNAME, ptr, (ptrdiff_t)len);
+  char *res = (char *)eval_to_string_safe(
+      curbuf->b_p_inex, NULL,
+      was_set_insecurely(curwin, (char_u *)"includeexpr", OPT_LOCAL));
   set_vim_var_string(VV_FNAME, NULL, 0);
   return res;
 }
@@ -1688,6 +1730,13 @@ int path_with_url(const char *fname)
   const char *p;
   for (p = fname; isalpha(*p); p++) {}
   return path_is_url(p);
+}
+
+bool path_with_extension(const char *path, const char *extension)
+{
+  const char *last_dot = strrchr(path, '.');
+  if (!last_dot) { return false; }
+  return strcmp(last_dot + 1, extension) == 0;
 }
 
 /*
@@ -1905,16 +1954,16 @@ int pathcmp(const char *p, const char *q, int maxlen)
                    : c1 - c2;  // no match
     }
 
-    i += MB_PTR2LEN((char_u *)p + i);
-    j += MB_PTR2LEN((char_u *)q + j);
+    i += utfc_ptr2len((char_u *)p + i);
+    j += utfc_ptr2len((char_u *)q + j);
   }
   if (s == NULL) {  // "i" or "j" ran into "maxlen"
     return 0;
   }
 
   c1 = PTR2CHAR((char_u *)s + i);
-  c2 = PTR2CHAR((char_u *)s + i + MB_PTR2LEN((char_u *)s + i));
-  /* ignore a trailing slash, but not "//" or ":/" */
+  c2 = PTR2CHAR((char_u *)s + i + utfc_ptr2len((char_u *)s + i));
+  // ignore a trailing slash, but not "//" or ":/"
   if (c2 == NUL
       && i > 0
       && !after_pathsep((char *)s, (char *)s + i)
@@ -1923,10 +1972,12 @@ int pathcmp(const char *p, const char *q, int maxlen)
 #else
       && c1 == '/'
 #endif
-      )
-    return 0;       /* match with trailing slash */
-  if (s == q)
-    return -1;              /* no match */
+      ) {
+    return 0;       // match with trailing slash
+  }
+  if (s == q) {
+    return -1;      // no match
+  }
   return 1;
 }
 
@@ -1968,10 +2019,24 @@ char_u *path_shorten_fname(char_u *full_path, char_u *dir_name)
 
   assert(dir_name != NULL);
   size_t len = strlen((char *)dir_name);
+
+  // If dir_name is a path head, full_path can always be made relative.
+  if (len == (size_t)path_head_length() && is_path_head(dir_name)) {
+    return full_path + len;
+  }
+
+  // If full_path and dir_name do not match, it's impossible to make one
+  // relative to the other.
+  if (fnamencmp(dir_name, full_path, len) != 0) {
+    return NULL;
+  }
+
   char_u *p = full_path + len;
 
-  if (fnamencmp(dir_name, full_path, len) != 0
-      || !vim_ispathsep(*p)) {
+  // If *p is not pointing to a path separator, this means that full_path's
+  // last directory name is longer than *dir_name's last directory, so they
+  // don't actually match.
+  if (!vim_ispathsep(*p)) {
     return NULL;
   }
 

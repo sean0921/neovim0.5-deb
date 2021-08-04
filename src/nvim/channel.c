@@ -11,6 +11,10 @@
 #include "nvim/msgpack_rpc/channel.h"
 #include "nvim/msgpack_rpc/server.h"
 #include "nvim/os/shell.h"
+#ifdef WIN32
+# include "nvim/os/pty_conpty_win.h"
+# include "nvim/os/os_win_console.h"
+#endif
 #include "nvim/path.h"
 #include "nvim/ascii.h"
 
@@ -157,7 +161,8 @@ void channel_init(void)
 ///
 /// Channel is allocated with refcount 1, which should be decreased
 /// when the underlying stream closes.
-static Channel *channel_alloc(ChannelStreamType type)
+Channel *channel_alloc(ChannelStreamType type)
+  FUNC_ATTR_NONNULL_RET
 {
   Channel *chan = xcalloc(1, sizeof(*chan));
   if (type == kChannelStreamStdio) {
@@ -271,11 +276,35 @@ static void close_cb(Stream *stream, void *data)
   channel_decref(data);
 }
 
+
+/// Starts a job and returns the associated channel
+///
+/// @param[in]  argv  Arguments vector specifying the command to run,
+///                   NULL-terminated
+/// @param[in]  on_stdout  Callback to read the job's stdout
+/// @param[in]  on_stderr  Callback to read the job's stderr
+/// @param[in]  on_exit  Callback to receive the job's exit status
+/// @param[in]  pty  True if the job should run attached to a pty
+/// @param[in]  rpc  True to communicate with the job using msgpack-rpc,
+///                  `on_stdout` is ignored
+/// @param[in]  detach  True if the job should not be killed when nvim exits,
+///                     ignored if `pty` is true
+/// @param[in]  cwd  Initial working directory for the job.  Nvim's working
+///                  directory if `cwd` is NULL
+/// @param[in]  pty_width  Width of the pty, ignored if `pty` is false
+/// @param[in]  pty_height  Height of the pty, ignored if `pty` is false
+/// @param[in]  env  Nvim's configured environment is used if this is NULL,
+///                  otherwise defines all environment variables
+/// @param[out]  status_out  0 for invalid arguments, > 0 for the channel id,
+///                          < 0 if the job can't start
+///
+/// @returns [allocated] channel
 Channel *channel_job_start(char **argv, CallbackReader on_stdout,
                            CallbackReader on_stderr, Callback on_exit,
-                           bool pty, bool rpc, bool detach, const char *cwd,
+                           bool pty, bool rpc, bool overlapped, bool detach,
+                           const char *cwd,
                            uint16_t pty_width, uint16_t pty_height,
-                           char *term_name, varnumber_T *status_out)
+                           dict_T *env, varnumber_T *status_out)
 {
   assert(cwd == NULL || os_isdir_executable(cwd));
 
@@ -288,7 +317,9 @@ Channel *channel_job_start(char **argv, CallbackReader on_stdout,
     if (detach) {
       EMSG2(_(e_invarg2), "terminal/pty job cannot be detached");
       shell_free_argv(argv);
-      xfree(term_name);
+      if (env) {
+        tv_dict_free(env);
+      }
       channel_destroy_early(chan);
       *status_out = 0;
       return NULL;
@@ -300,9 +331,6 @@ Channel *channel_job_start(char **argv, CallbackReader on_stdout,
     if (pty_height > 0) {
       chan->stream.pty.height = pty_height;
     }
-    if (term_name) {
-      chan->stream.pty.term_name = term_name;
-    }
   } else {
     chan->stream.uv = libuv_process_init(&main_loop, chan);
   }
@@ -313,6 +341,8 @@ Channel *channel_job_start(char **argv, CallbackReader on_stdout,
   proc->events = chan->events;
   proc->detach = detach;
   proc->cwd = cwd;
+  proc->env = env;
+  proc->overlapped = overlapped;
 
   char *cmd = xstrdup(proc->argv[0]);
   bool has_out, has_err;
@@ -327,14 +357,17 @@ Channel *channel_job_start(char **argv, CallbackReader on_stdout,
   if (status) {
     EMSG3(_(e_jobspawn), os_strerror(status), cmd);
     xfree(cmd);
-    if (proc->type == kProcessTypePty) {
-      xfree(chan->stream.pty.term_name);
+    if (proc->env) {
+      tv_dict_free(proc->env);
     }
     channel_destroy_early(chan);
     *status_out = proc->status;
     return NULL;
   }
   xfree(cmd);
+  if (proc->env) {
+    tv_dict_free(proc->env);
+  }
 
   wstream_init(&proc->in, 0);
   if (has_out) {
@@ -440,8 +473,20 @@ uint64_t channel_from_stdio(bool rpc, CallbackReader on_output,
 
   Channel *channel = channel_alloc(kChannelStreamStdio);
 
-  rstream_init_fd(&main_loop, &channel->stream.stdio.in, 0, 0);
-  wstream_init_fd(&main_loop, &channel->stream.stdio.out, 1, 0);
+  int stdin_dup_fd = STDIN_FILENO;
+  int stdout_dup_fd = STDOUT_FILENO;
+#ifdef WIN32
+  // Strangely, ConPTY doesn't work if stdin and stdout are pipes. So replace
+  // stdin and stdout with CONIN$ and CONOUT$, respectively.
+  if (embedded_mode && os_has_conpty_working()) {
+    stdin_dup_fd = os_dup(STDIN_FILENO);
+    os_replace_stdin_to_conin();
+    stdout_dup_fd = os_dup(STDOUT_FILENO);
+    os_replace_stdout_and_stderr_to_conout();
+  }
+#endif
+  rstream_init_fd(&main_loop, &channel->stream.stdio.in, stdin_dup_fd, 0);
+  wstream_init_fd(&main_loop, &channel->stream.stdio.out, stdout_dup_fd, 0);
 
   if (rpc) {
     rpc_start(channel);
@@ -455,43 +500,54 @@ uint64_t channel_from_stdio(bool rpc, CallbackReader on_output,
 }
 
 /// @param data will be consumed
-size_t channel_send(uint64_t id, char *data, size_t len, const char **error)
+size_t channel_send(uint64_t id, char *data, size_t len,
+                    bool data_owned, const char **error)
 {
   Channel *chan = find_channel(id);
+  size_t written = 0;
   if (!chan) {
-    EMSG(_(e_invchan));
-    goto err;
+    *error = _(e_invchan);
+    goto retfree;
   }
 
   if (chan->streamtype == kChannelStreamStderr) {
     if (chan->stream.err.closed) {
       *error = _("Can't send data to closed stream");
-      goto err;
+      goto retfree;
     }
     // unbuffered write
-    size_t written = fwrite(data, len, 1, stderr);
-    xfree(data);
-    return len * written;
+    written = len * fwrite(data, len, 1, stderr);
+    goto retfree;
+  }
+
+  if (chan->streamtype == kChannelStreamInternal && chan->term) {
+    terminal_receive(chan->term, data, len);
+    written = len;
+    goto retfree;
   }
 
 
   Stream *in = channel_instream(chan);
   if (in->closed) {
     *error = _("Can't send data to closed stream");
-    goto err;
+    goto retfree;
   }
 
   if (chan->is_rpc) {
     *error = _("Can't send raw data to rpc channel");
-    goto err;
+    goto retfree;
   }
 
-  WBuffer *buf = wstream_new_buffer(data, len, 1, xfree);
+  // write can be delayed indefinitely, so always use an allocated buffer
+  WBuffer *buf = wstream_new_buffer(data_owned ? data : xmemdup(data, len),
+                                    len, 1, xfree);
   return wstream_write(in, buf) ? len : 0;
 
-err:
-  xfree(data);
-  return 0;
+retfree:
+  if (data_owned) {
+    xfree(data);
+  }
+  return written;
 }
 
 /// Convert binary byte array to a readfile()-style list
@@ -680,8 +736,8 @@ static void channel_callback_call(Channel *chan, CallbackReader *reader)
 /// Open terminal for channel
 ///
 /// Channel `chan` is assumed to be an open pty channel,
-/// and curbuf is assumed to be a new, unmodified buffer.
-void channel_terminal_open(Channel *chan)
+/// and `buf` is assumed to be a new, unmodified buffer.
+void channel_terminal_open(buf_T *buf, Channel *chan)
 {
   TerminalOptions topts;
   topts.data = chan;
@@ -690,8 +746,8 @@ void channel_terminal_open(Channel *chan)
   topts.write_cb = term_write;
   topts.resize_cb = term_resize;
   topts.close_cb = term_close;
-  curbuf->b_p_channel = (long)chan->id;  // 'channel' option
-  Terminal *term = terminal_open(topts);
+  buf->b_p_channel = (long)chan->id;  // 'channel' option
+  Terminal *term = terminal_open(buf, topts);
   chan->term = term;
   channel_incref(chan);
 }

@@ -1,5 +1,7 @@
 " Tests for the swap feature
 
+source check.vim
+
 func s:swapname()
   return trim(execute('swapname'))
 endfunc
@@ -221,3 +223,145 @@ func Test_swapfile_delete()
   augroup END
   augroup! test_swapfile_delete
 endfunc
+
+func Test_swap_recover()
+  autocmd! SwapExists
+  augroup test_swap_recover
+    autocmd!
+    autocmd SwapExists * let v:swapchoice = 'r'
+  augroup END
+
+
+  call mkdir('Xswap')
+  let $Xswap = 'foo'  " Check for issue #4369.
+  set dir=Xswap//
+  " Create a valid swapfile by editing a file.
+  split Xswap/text
+  call setline(1, ['one', 'two', 'three'])
+  write  " file is written, not modified
+  " read the swapfile as a Blob
+  let swapfile_name = swapname('%')
+  let swapfile_bytes = readfile(swapfile_name, 'B')
+
+  " Close the file and recreate the swap file.
+  quit
+  call writefile(swapfile_bytes, swapfile_name)
+  " Edit the file again. This triggers recovery.
+  try
+    split Xswap/text
+  catch
+    " E308 should be caught, not E305.
+    call assert_exception('E308:')  " Original file may have been changed
+  endtry
+  " The file should be recovered.
+  call assert_equal(['one', 'two', 'three'], getline(1, 3))
+  quit!
+
+  call delete('Xswap/text')
+  call delete(swapfile_name)
+  call delete('Xswap', 'd')
+  unlet $Xswap
+  set dir&
+  augroup test_swap_recover
+    autocmd!
+  augroup END
+  augroup! test_swap_recover
+endfunc
+
+func Test_swap_recover_ext()
+  autocmd! SwapExists
+  augroup test_swap_recover_ext
+    autocmd!
+    autocmd SwapExists * let v:swapchoice = 'r'
+  augroup END
+
+
+  " Create a valid swapfile by editing a file with a special extension.
+  split Xtest.scr
+  call setline(1, ['one', 'two', 'three'])
+  write  " file is written, not modified
+  write  " write again to make sure the swapfile is created
+  " read the swapfile as a Blob
+  let swapfile_name = swapname('%')
+  let swapfile_bytes = readfile(swapfile_name, 'B')
+
+  " Close and delete the file and recreate the swap file.
+  quit
+  call delete('Xtest.scr')
+  call writefile(swapfile_bytes, swapfile_name)
+  " Edit the file again. This triggers recovery.
+  try
+    split Xtest.scr
+  catch
+    " E308 should be caught, not E306.
+    call assert_exception('E308:')  " Original file may have been changed
+  endtry
+  " The file should be recovered.
+  call assert_equal(['one', 'two', 'three'], getline(1, 3))
+  quit!
+
+  call delete('Xtest.scr')
+  call delete(swapfile_name)
+  augroup test_swap_recover_ext
+    autocmd!
+  augroup END
+  augroup! test_swap_recover_ext
+endfunc
+
+" Test for selecting 'q' in the attention prompt
+func Test_swap_prompt_splitwin()
+  CheckRunVimInTerminal
+
+  call writefile(['foo bar'], 'Xfile1')
+  edit Xfile1
+  preserve  " should help to make sure the swap file exists
+
+  let buf = RunVimInTerminal('', {'rows': 20})
+  call term_sendkeys(buf, ":set nomore\n")
+  call term_sendkeys(buf, ":set noruler\n")
+  call term_sendkeys(buf, ":split Xfile1\n")
+  call term_wait(buf)
+  call WaitForAssert({-> assert_match('^\[O\]pen Read-Only, (E)dit anyway, (R)ecover, (Q)uit, (A)bort: $', term_getline(buf, 20))})
+  call term_sendkeys(buf, "q")
+  call term_wait(buf)
+  call term_sendkeys(buf, ":\<CR>")
+  call WaitForAssert({-> assert_match('^:$', term_getline(buf, 20))})
+  call term_sendkeys(buf, ":echomsg winnr('$')\<CR>")
+  call term_wait(buf)
+  call WaitForAssert({-> assert_match('^1$', term_getline(buf, 20))})
+  call StopVimInTerminal(buf)
+  %bwipe!
+  call delete('Xfile1')
+endfunc
+
+func Test_swap_symlink()
+  if !has("unix")
+    return
+  endif
+
+  call writefile(['text'], 'Xtestfile')
+  silent !ln -s -f Xtestfile Xtestlink
+
+  set dir=.
+
+  " Test that swap file uses the name of the file when editing through a
+  " symbolic link (so that editing the file twice is detected)
+  edit Xtestlink
+  call assert_match('Xtestfile\.swp$', s:swapname())
+  bwipe!
+
+  call mkdir('Xswapdir')
+  exe 'set dir=' . getcwd() . '/Xswapdir//'
+
+  " Check that this also works when 'directory' ends with '//'
+  edit Xtestlink
+  call assert_match('Xtestfile\.swp$', s:swapname())
+  bwipe!
+
+  set dir&
+  call delete('Xtestfile')
+  call delete('Xtestlink')
+  call delete('Xswapdir', 'rf')
+endfunc
+
+" vim: shiftwidth=2 sts=2 expandtab

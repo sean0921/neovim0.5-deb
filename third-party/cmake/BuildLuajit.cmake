@@ -33,8 +33,21 @@ function(BuildLuajit)
     BUILD_IN_SOURCE 1
     BUILD_COMMAND "${_luajit_BUILD_COMMAND}"
     INSTALL_COMMAND "${_luajit_INSTALL_COMMAND}")
+
+  # Create symlink for development version manually.
+  if(UNIX)
+    add_custom_command(
+      TARGET ${_luajit_TARGET}
+      COMMAND ${CMAKE_COMMAND} -E create_symlink luajit-2.1.0-beta3 ${DEPS_BIN_DIR}/luajit)
+  endif()
 endfunction()
 
+check_c_compiler_flag(-fno-stack-check HAS_NO_STACK_CHECK)
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin" AND HAS_NO_STACK_CHECK)
+  set(NO_STACK_CHECK "CFLAGS+=-fno-stack-check")
+else()
+  set(NO_STACK_CHECK "")
+endif()
 if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
   set(AMD64_ABI "LDFLAGS=-lpthread -lc++abi")
 else()
@@ -43,6 +56,7 @@ endif()
 set(INSTALLCMD_UNIX ${MAKE_PRG} CFLAGS=-fPIC
                                 CFLAGS+=-DLUA_USE_APICHECK
                                 CFLAGS+=-DLUA_USE_ASSERT
+                                ${NO_STACK_CHECK}
                                 ${AMD64_ABI}
                                 CCDEBUG+=-g
                                 Q=
@@ -50,9 +64,12 @@ set(INSTALLCMD_UNIX ${MAKE_PRG} CFLAGS=-fPIC
 
 if(UNIX)
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # Set MACOSX_DEPLOYMENT_TARGET (else luajit defaults to 10.4). #9050
-    # https://github.com/LuaJIT/LuaJIT/blob/b025b01c5b9d23f6218c7d72b7aafa3f1ab1e08a/src/Makefile#L301-L303
-    set(DEPLOYMENT_TARGET "MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    if(CMAKE_OSX_DEPLOYMENT_TARGET)
+      set(DEPLOYMENT_TARGET "MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    else()
+      # Use the same target as our nightly builds
+      set(DEPLOYMENT_TARGET "MACOSX_DEPLOYMENT_TARGET=10.11")
+    endif()
   else()
     set(DEPLOYMENT_TARGET "")
   endif()
@@ -107,8 +124,8 @@ elseif(MINGW)
 	    # Luarocks searches for lua51.dll in lib
 	    COMMAND ${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/luajit/src/lua51.dll ${DEPS_INSTALL_DIR}/lib
 	    COMMAND ${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/luajit/src/libluajit.a ${DEPS_INSTALL_DIR}/lib
-	    COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INSTALL_DIR}/include/luajit-2.0
-	    COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/luajit/src/*.h -DTO=${DEPS_INSTALL_DIR}/include/luajit-2.0 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake
+	    COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INSTALL_DIR}/include/luajit-2.1
+	    COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/luajit/src/*.h -DTO=${DEPS_INSTALL_DIR}/include/luajit-2.1 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake
           )
 elseif(MSVC)
 
@@ -122,8 +139,8 @@ elseif(MSVC)
       COMMAND ${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/luajit/src/lua51.lib ${DEPS_INSTALL_DIR}/lib/lua51.lib
       # Luv searches for luajit.lib
       COMMAND ${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/luajit/src/lua51.lib ${DEPS_INSTALL_DIR}/lib/luajit.lib
-      COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INSTALL_DIR}/include/luajit-2.0
-      COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/luajit/src/*.h -DTO=${DEPS_INSTALL_DIR}/include/luajit-2.0 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake)
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INSTALL_DIR}/include/luajit-2.1
+      COMMAND ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/luajit/src/*.h -DTO=${DEPS_INSTALL_DIR}/include/luajit-2.1 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake)
 
 else()
   message(FATAL_ERROR "Trying to build luajit in an unsupported system ${CMAKE_SYSTEM_NAME}/${CMAKE_C_COMPILER_ID}")

@@ -14,6 +14,7 @@
 #include "nvim/misc1.h"
 #include "nvim/move.h"
 #include "nvim/screen.h"
+#include "nvim/extmark.h"
 #include "nvim/state.h"
 #include "nvim/vim.h"
 #include "nvim/ascii.h"
@@ -93,11 +94,12 @@ int coladvance(colnr_T wcol)
 
 static int coladvance2(
     pos_T *pos,
-    bool addspaces,                /* change the text to achieve our goal? */
-    bool finetune,                 /* change char offset for the exact column */
-    colnr_T wcol                   /* column to move to */
+    bool addspaces,               // change the text to achieve our goal?
+    bool finetune,                // change char offset for the exact column
+    colnr_T wcol_arg              // column to move to (can be negative)
 )
 {
+  colnr_T wcol = wcol_arg;
   int idx;
   char_u      *ptr;
   char_u      *line;
@@ -165,6 +167,7 @@ static int coladvance2(
 
     if (virtual_active()
         && addspaces
+        && wcol >= 0
         && ((col != wcol && col != wcol + 1) || csize > 1)) {
       /* 'virtualedit' is set: The difference between wcol and col is
        * filled with spaces. */
@@ -179,7 +182,7 @@ static int coladvance2(
         memset(newline + idx, ' ', (size_t)correct);
 
         ml_replace(pos->lnum, newline, false);
-        changed_bytes(pos->lnum, (colnr_T)idx);
+        inserted_bytes(pos->lnum, (colnr_T)idx, 0, correct);
         idx += correct;
         col = wcol;
       } else {
@@ -204,7 +207,7 @@ static int coladvance2(
         memcpy(newline + idx + csize, line + idx + 1, n);
 
         ml_replace(pos->lnum, newline, false);
-        changed_bytes(pos->lnum, idx);
+        inserted_bytes(pos->lnum, idx, 1, csize);
         idx += (csize - 1 + correct);
         col += correct;
       }
@@ -240,12 +243,11 @@ static int coladvance2(
   }
 
   // Prevent from moving onto a trail byte.
-  if (has_mbyte) {
-    mark_mb_adjustpos(curbuf, pos);
-  }
+  mark_mb_adjustpos(curbuf, pos);
 
-  if (col < wcol)
+  if (wcol < 0 || col < wcol) {
     return FAIL;
+  }
   return OK;
 }
 
@@ -375,9 +377,7 @@ void check_cursor_col_win(win_T *win)
     } else {
       win->w_cursor.col = len - 1;
       // Move the cursor to the head byte.
-      if (has_mbyte) {
-        mark_mb_adjustpos(win->w_buffer, &win->w_cursor);
-      }
+      mark_mb_adjustpos(win->w_buffer, &win->w_cursor);
     }
   } else if (win->w_cursor.col < 0) {
     win->w_cursor.col = 0;
@@ -479,7 +479,7 @@ bool leftcol_changed(void)
 
   if (retval)
     curwin->w_set_curswant = true;
-  redraw_later(NOT_VALID);
+  redraw_later(curwin, NOT_VALID);
   return retval;
 }
 

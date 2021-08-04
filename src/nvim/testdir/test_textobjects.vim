@@ -46,8 +46,18 @@ func Test_quote_selection_selection_exclusive()
   new
   call setline(1, "a 'bcde' f")
   set selection=exclusive
+
   exe "norm! fdvhi'y"
   call assert_equal('bcde', @")
+
+  let @"='dummy'
+  exe "norm! $gevi'y"
+  call assert_equal('bcde', @")
+
+  let @"='dummy'
+  exe "norm! 0fbhvi'y"
+  call assert_equal('bcde', @")
+
   set selection&vim
   bw!
 endfunc
@@ -141,6 +151,36 @@ func Test_string_html_objects()
   put =t
   normal! dit
   call assert_equal('-<b></b>', getline('.'))
+
+  " copy the tag block from leading indentation before the start tag
+  let t = "    <b>\ntext\n</b>"
+  $put =t
+  normal! 2kvaty
+  call assert_equal("<b>\ntext\n</b>", @")
+
+  " copy the tag block from the end tag
+  let t = "<title>\nwelcome\n</title>"
+  $put =t
+  normal! $vaty
+  call assert_equal("<title>\nwelcome\n</title>", @")
+
+  " copy the outer tag block from a tag without an end tag
+  let t = "<html>\n<title>welcome\n</html>"
+  $put =t
+  normal! k$vaty
+  call assert_equal("<html>\n<title>welcome\n</html>", @")
+
+  " nested tag that has < in a different line from >
+  let t = "<div><div\n></div></div>"
+  $put =t
+  normal! k0vaty
+  call assert_equal("<div><div\n></div></div>", @")
+
+  " nested tag with attribute that has < in a different line from >
+  let t = "<div><div\nattr=\"attr\"\n></div></div>"
+  $put =t
+  normal! 2k0vaty
+  call assert_equal("<div><div\nattr=\"attr\"\n></div></div>", @")
 
   set quoteescape&
   enew!
@@ -261,7 +301,7 @@ func Test_sentence_with_quotes()
   %delete _
 endfunc
 
-func! Test_sentence_with_cursor_on_delimiter()
+func Test_sentence_with_cursor_on_delimiter()
   enew!
   call setline(1, "A '([sentence.])'  A sentence.")
 
@@ -279,6 +319,17 @@ func! Test_sentence_with_cursor_on_delimiter()
   call assert_equal("A '([sentence.])'", @")
   normal! 17|yas
   call assert_equal("A '([sentence.])'  ", @")
+
+  " don't get stuck on a quote at the start of a sentence
+  %delete _
+  call setline(1, ['A sentence.', '"A sentence"?', 'A sentence!'])
+  normal gg))
+  call assert_equal(3, getcurpos()[1])
+
+  %delete _
+  call setline(1, ['A sentence.', "'A sentence'?", 'A sentence!'])
+  normal gg))
+  call assert_equal(3, getcurpos()[1])
 
   %delete _
 endfunc

@@ -58,6 +58,26 @@ func Test_listchars()
     call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
   endfor
 
+  " tab with 3rd character and linebreak set
+  set listchars-=tab:<=>
+  set listchars+=tab:<·>
+  set linebreak
+  let expected = [
+	      \ '<······>aa<····>$',
+	      \ '..bb<··>--$',
+	      \ '...cccc>-$',
+	      \ 'dd........ee--<>$',
+	      \ '-$'
+	      \ ]
+  redraw!
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+  set nolinebreak
+  set listchars-=tab:<·>
+  set listchars+=tab:<=>
+
   set listchars-=trail:-
   let expected = [
 	      \ '<======>aa<====>$',
@@ -90,6 +110,35 @@ func Test_listchars()
 	      \ '.....h>-$',
 	      \ 'iii<<<<><<$', '$'], l)
 
+  " Test lead and trail
+  normal ggdG
+  set listchars=eol:$
+  set listchars+=lead:>,trail:<,space:x
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '          gg',
+	      \ 'h           ',
+	      \ '            ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ '>>>>ffff<<<<$',
+	      \ '>>>>>>>>>>gg$',
+	      \ 'h<<<<<<<<<<<$',
+	      \ '<<<<<<<<<<<<$',
+	      \ '>>>>0xx0<<<<$',
+              \ '$'
+	      \ ]
+  redraw!
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
 
   " test nbsp
   normal ggdG

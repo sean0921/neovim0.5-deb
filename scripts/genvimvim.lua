@@ -55,7 +55,7 @@ end
 vimcmd_start = 'syn keyword vimCommand contained '
 w(vimcmd_start)
 local prev_cmd = nil
-for _, cmd_desc in ipairs(ex_cmds) do
+for _, cmd_desc in ipairs(ex_cmds.cmds) do
   if lld.line_length > 850 then
     w('\n' .. vimcmd_start)
   end
@@ -123,7 +123,7 @@ end
 w('\n\nsyn case match')
 local vimfun_start = 'syn keyword vimFuncName contained '
 w('\n\n' .. vimfun_start)
-funcs = mpack.unpack(io.open(funcs_file):read("*all"))
+funcs = mpack.unpack(io.open(funcs_file, 'rb'):read("*all"))
 local started = 0
 for name, def in pairs(funcs) do
   if name then

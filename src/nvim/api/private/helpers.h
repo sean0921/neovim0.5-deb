@@ -7,6 +7,7 @@
 #include "nvim/vim.h"
 #include "nvim/getchar.h"
 #include "nvim/memory.h"
+#include "nvim/decoration.h"
 #include "nvim/ex_eval.h"
 #include "nvim/lib/kvec.h"
 
@@ -15,6 +16,7 @@
 #define BOOLEAN_OBJ(b) ((Object) { \
     .type = kObjectTypeBoolean, \
     .data.boolean = b })
+#define BOOL(b) BOOLEAN_OBJ(b)
 
 #define INTEGER_OBJ(i) ((Object) { \
     .type = kObjectTypeInteger, \
@@ -27,6 +29,8 @@
 #define STRING_OBJ(s) ((Object) { \
     .type = kObjectTypeString, \
     .data.string = s })
+
+#define CSTR_TO_OBJ(s) STRING_OBJ(cstr_to_string(s))
 
 #define BUFFER_OBJ(s) ((Object) { \
     .type = kObjectTypeBuffer, \
@@ -52,13 +56,22 @@
     .type = kObjectTypeLuaRef, \
     .data.luaref = r })
 
-#define NIL ((Object) {.type = kObjectTypeNil})
+#define NIL ((Object)OBJECT_INIT)
+#define NULL_STRING ((String)STRING_INIT)
 
 #define PUT(dict, k, v) \
   kv_push(dict, ((KeyValuePair) { .key = cstr_to_string(k), .value = v }))
 
+#define PUT_BOOL(dict, name, condition) PUT(dict, name, BOOLEAN_OBJ(condition));
+
 #define ADD(array, item) \
   kv_push(array, item)
+
+#define FIXED_TEMP_ARRAY(name, fixsize) \
+  Array name = ARRAY_DICT_INIT; \
+  Object name##__items[fixsize]; \
+  name.size = fixsize; \
+  name.items = name##__items; \
 
 #define STATIC_CSTR_AS_STRING(s) ((String) {.data = s, .size = sizeof(s) - 1})
 
@@ -101,6 +114,20 @@ typedef struct {
   int need_rethrow;
   int did_emsg;
 } TryState;
+
+// `msg_list` controls the collection of abort-causing non-exception errors,
+// which would otherwise be ignored.  This pattern is from do_cmdline().
+//
+// TODO(bfredl): prepare error-handling at "top level" (nv_event).
+#define TRY_WRAP(code) \
+  do { \
+    struct msglist **saved_msg_list = msg_list; \
+    struct msglist *private_msg_list; \
+    msg_list = &private_msg_list; \
+    private_msg_list = NULL; \
+    code \
+    msg_list = saved_msg_list;  /* Restore the exception context. */ \
+  } while (0)
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "api/private/helpers.h.generated.h"

@@ -27,7 +27,7 @@ describe('setqflist()', function()
     setqflist({''}, 'r', 'foo')
     command('copen')
     eq('foo', get_cur_win_var('quickfix_title'))
-    setqflist({''}, 'r', {['title'] = 'qf_title'})
+    setqflist({}, 'r', {['title'] = 'qf_title'})
     eq('qf_title', get_cur_win_var('quickfix_title'))
   end)
 
@@ -67,5 +67,18 @@ describe('setloclist()', function()
     eq('bar', get_cur_win_var('quickfix_title'))
     command('lclose | wincmd w | lopen')
     eq('foo', get_cur_win_var('quickfix_title'))
+  end)
+
+  it("doesn't crash when when window is closed in the middle #13721", function()
+    helpers.insert([[
+    hello world]])
+
+    command("vsplit")
+    command("autocmd WinLeave * :call nvim_win_close(0, v:true)")
+
+    command("call setloclist(0, [])")
+    command("lopen")
+
+    helpers.assert_alive()
   end)
 end)

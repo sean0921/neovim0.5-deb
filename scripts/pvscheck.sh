@@ -346,7 +346,7 @@ patch_sources() {(
   if test "$only_build" != "--only-build" ; then
     find \
       src/nvim test/functional/fixtures test/unit/fixtures \
-      -name '*.c' \
+      \( -name '*.c' -a '!' -path '*xdiff*' \) \
       -exec /bin/sh -c "$sh_script" - '{}' \;
   fi
 
@@ -363,11 +363,17 @@ run_analysis() {(
 
   cd "$tgt"
 
+  if [ ! -r PVS-Studio.lic ]; then
+    pvs-studio-analyzer credentials -o PVS-Studio.lic 'PVS-Studio Free' 'FREE-FREE-FREE-FREE'
+  fi
+
   # pvs-studio-analyzer exits with a non-zero exit code when there are detected
   # errors, so ignore its return
   pvs-studio-analyzer \
     analyze \
+      --lic-file PVS-Studio.lic \
       --threads "$(get_jobs_num)" \
+      --exclude-path src/nvim/xdiff \
       --output-file PVS-studio.log \
       --file build/compile_commands.json \
       --sourcetree-root . || true
@@ -383,7 +389,7 @@ run_analysis() {(
 detect_url() {
   local url="${1:-detect}"
   if test "$url" = detect ; then
-    curl --silent -L 'https://www.viva64.com/en/pvs-studio-download/' \
+    curl --silent -L 'https://pvs-studio.com/en/pvs-studio/download-all/' \
     | grep -o 'https\{0,1\}://[^"<>]\{1,\}/pvs-studio[^/"<>]*-x86_64\.tgz' \
     || echo FAILED
   else

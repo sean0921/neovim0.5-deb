@@ -1,6 +1,6 @@
 
 " Test if fnameescape is correct for special chars like !
-function! Test_fnameescape()
+func Test_fnameescape()
   let fname = 'Xspa ce'
   let status = v:false
   try
@@ -18,4 +18,10 @@ function! Test_fnameescape()
   endtry
   call assert_true(status, "ExclamationMark")
   call delete(fname)
-endfunction
+
+  call assert_equal('\-', fnameescape('-'))
+  call assert_equal('\+', fnameescape('+'))
+  call assert_equal('\>', fnameescape('>'))
+endfunc
+
+" vim: shiftwidth=2 sts=2 expandtab

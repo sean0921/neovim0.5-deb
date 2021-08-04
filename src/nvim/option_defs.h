@@ -77,12 +77,13 @@
 #define FO_ONE_LETTER   '1'
 #define FO_WHITE_PAR    'w'     // trailing white space continues paragr.
 #define FO_AUTO         'a'     // automatic formatting
+#define FO_RIGOROUS_TW  ']'     // respect textwidth rigorously
 #define FO_REMOVE_COMS  'j'     // remove comment leaders when joining lines
 #define FO_PERIOD_ABBR  'p'     // don't break a single space after a period
 
 #define DFLT_FO_VI      "vt"
 #define DFLT_FO_VIM     "tcqj"
-#define FO_ALL          "tcroq2vlb1mMBn,awjp"   // for do_set()
+#define FO_ALL          "tcroq2vlb1mMBn,aw]jp"   // for do_set()
 
 // characters for the p_cpo option:
 #define CPO_ALTREAD     'a'     // ":read" sets alternate file name
@@ -164,8 +165,8 @@ enum {
   SHM_WRI            = 'w',  ///< "[w]" instead of "written".
   SHM_ABBREVIATIONS  = 'a',  ///< Use abbreviations from #SHM_ALL_ABBREVIATIONS.
   SHM_WRITE          = 'W',  ///< Don't use "written" at all.
-  SHM_TRUNC          = 't',  ///< Trunctate file messages.
-  SHM_TRUNCALL       = 'T',  ///< Trunctate all messages.
+  SHM_TRUNC          = 't',  ///< Truncate file messages.
+  SHM_TRUNCALL       = 'T',  ///< Truncate all messages.
   SHM_OVER           = 'o',  ///< Overwrite file messages.
   SHM_OVERALL        = 'O',  ///< Overwrite more messages.
   SHM_SEARCH         = 's',  ///< No search hit bottom messages.
@@ -187,6 +188,7 @@ enum {
 #define GO_ASELML       'A'             // autoselect modeless selection
 #define GO_BOT          'b'             // use bottom scrollbar
 #define GO_CONDIALOG    'c'             // use console dialog
+#define GO_DARKTHEME    'd'             // use dark theme variant
 #define GO_TABLINE      'e'             // may show tabline
 #define GO_FORG         'f'             // start GUI in foreground
 #define GO_GREY         'g'             // use grey menu items
@@ -204,7 +206,7 @@ enum {
 #define GO_FOOTER       'F'             // add footer
 #define GO_VERTICAL     'v'             // arrange dialog buttons vertically
 #define GO_KEEPWINSIZE  'k'             // keep GUI window size
-#define GO_ALL          "aAbcefFghilmMprTvk"  // all possible flags for 'go'
+#define GO_ALL "aAbcdefFghilmMprTvk"    // all possible flags for 'go'
 
 // flags for 'comments' option
 #define COM_NEST        'n'             // comments strings nest
@@ -277,11 +279,17 @@ enum {
 #define WIM_FULL        1
 #define WIM_LONGEST     2
 #define WIM_LIST        4
+#define WIM_BUFLASTUSED 8
 
 // arguments for can_bs()
+// each defined char should be unique over all values
+// except for BS_START, that intentionally also matches BS_NOSTOP
+// because BS_NOSTOP behaves exactly the same except it
+// does not stop at the start of the insert point
 #define BS_INDENT       'i'     // "Indent"
-#define BS_EOL          'o'     // "eOl"
+#define BS_EOL          'l'     // "eoL"
 #define BS_START        's'     // "Start"
+#define BS_NOSTOP       'p'     // "nostoP
 
 #define LISPWORD_VALUE \
   "defun,define,defmacro,set!,lambda,if,case,let,flet,let*,letrec,do,do*,define-syntax,let-syntax,letrec-syntax,destructuring-bind,defpackage,defparameter,defstruct,deftype,defvar,do-all-symbols,do-external-symbols,do-symbols,dolist,dotimes,ecase,etypecase,eval-when,labels,macrolet,multiple-value-bind,multiple-value-call,multiple-value-prog1,multiple-value-setq,prog1,progv,typecase,unless,unwind-protect,when,with-input-from-string,with-open-file,with-open-stream,with-output-to-string,with-package-iterator,define-condition,handler-bind,handler-case,restart-bind,restart-case,with-simple-restart,store-value,use-value,muffle-warning,abort,continue,with-slots,with-slots*,with-accessors,with-accessors*,defclass,defmethod,print-unreadable-object"
@@ -369,10 +377,13 @@ EXTERN long p_cwh;              // 'cmdwinheight'
 EXTERN long p_ch;               // 'cmdheight'
 EXTERN long p_columns;          // 'columns'
 EXTERN int p_confirm;           // 'confirm'
-EXTERN int p_cp;                // 'compatible'
 EXTERN char_u   *p_cot;         // 'completeopt'
-EXTERN long p_ph;               // 'pumheight'
+# ifdef BACKSLASH_IN_FILENAME
+EXTERN char_u   *p_csl;         // 'completeslash'
+# endif
 EXTERN long p_pb;               // 'pumblend'
+EXTERN long p_ph;               // 'pumheight'
+EXTERN long p_pw;               // 'pumwidth'
 EXTERN char_u   *p_cpo;         // 'cpoptions'
 EXTERN char_u   *p_csprg;       // 'cscopeprg'
 EXTERN int p_csre;              // 'cscoperelative'
@@ -451,7 +462,6 @@ EXTERN char_u   *p_header;      // 'printheader'
 EXTERN int p_prompt;            // 'prompt'
 EXTERN char_u   *p_guicursor;   // 'guicursor'
 EXTERN char_u   *p_guifont;     // 'guifont'
-EXTERN char_u   *p_guifontset;  // 'guifontset'
 EXTERN char_u   *p_guifontwide;  // 'guifontwide'
 EXTERN char_u   *p_hf;          // 'helpfile'
 EXTERN long p_hh;               // 'helpheight'
@@ -473,6 +483,12 @@ EXTERN char_u   *p_isf;         // 'isfname'
 EXTERN char_u   *p_isi;         // 'isident'
 EXTERN char_u   *p_isp;         // 'isprint'
 EXTERN int p_js;                // 'joinspaces'
+EXTERN char_u *p_jop;           // 'jumpooptions'
+EXTERN unsigned jop_flags;
+#ifdef IN_OPTION_C
+static char *(p_jop_values[]) = { "stack", NULL };
+#endif
+#define JOP_STACK               0x01
 EXTERN char_u   *p_kp;          // 'keywordprg'
 EXTERN char_u   *p_km;          // 'keymodel'
 EXTERN char_u   *p_langmap;     // 'langmap'
@@ -505,6 +521,7 @@ EXTERN long p_mle;              // 'modelineexpr'
 EXTERN long p_mls;              // 'modelines'
 EXTERN char_u   *p_mouse;       // 'mouse'
 EXTERN char_u   *p_mousem;      // 'mousemodel'
+EXTERN long p_mousef;           // 'mousefocus'
 EXTERN long p_mouset;           // 'mousetime'
 EXTERN int p_more;              // 'more'
 EXTERN char_u   *p_opfunc;      // 'operatorfunc'
@@ -542,6 +559,7 @@ EXTERN int p_ri;                // 'revins'
 EXTERN int p_ru;                // 'ruler'
 EXTERN char_u   *p_ruf;         // 'rulerformat'
 EXTERN char_u   *p_pp;          // 'packpath'
+EXTERN char_u   *p_qftf;        // 'quickfixtextfunc'
 EXTERN char_u   *p_rtp;         // 'runtimepath'
 EXTERN long p_scbk;             // 'scrollback'
 EXTERN long p_sj;               // 'scrolljump'
@@ -554,11 +572,12 @@ EXTERN char_u   *p_slm;         // 'selectmode'
 EXTERN char_u   *p_ssop;        // 'sessionoptions'
 EXTERN unsigned ssop_flags;
 # ifdef IN_OPTION_C
-// Also used for 'viewoptions'!
+// Also used for 'viewoptions'!  Keep in sync with SSOP_ flags.
 static char *(p_ssop_values[]) = {
   "buffers", "winpos", "resize", "winsize",
   "localoptions", "options", "help", "blank", "globals", "slash", "unix",
-  "sesdir", "curdir", "folds", "cursor", "tabpages", NULL
+  "sesdir", "curdir", "folds", "cursor", "tabpages", "terminal", "skiprtp",
+  NULL
 };
 # endif
 # define SSOP_BUFFERS           0x001
@@ -570,13 +589,15 @@ static char *(p_ssop_values[]) = {
 # define SSOP_HELP              0x040
 # define SSOP_BLANK             0x080
 # define SSOP_GLOBALS           0x100
-# define SSOP_SLASH             0x200
-# define SSOP_UNIX              0x400
+# define SSOP_SLASH             0x200  // Deprecated, always set.
+# define SSOP_UNIX              0x400  // Deprecated, always set.
 # define SSOP_SESDIR            0x800
 # define SSOP_CURDIR            0x1000
 # define SSOP_FOLDS             0x2000
 # define SSOP_CURSOR            0x4000
 # define SSOP_TABPAGES          0x8000
+# define SSOP_TERMINAL          0x10000
+# define SSOP_SKIP_RTP          0x20000
 
 EXTERN char_u   *p_sh;          // 'shell'
 EXTERN char_u   *p_shcf;        // 'shellcmdflag'
@@ -604,6 +625,19 @@ EXTERN int p_sta;               // 'smarttab'
 EXTERN int p_sb;                // 'splitbelow'
 EXTERN long p_tpm;              // 'tabpagemax'
 EXTERN char_u   *p_tal;         // 'tabline'
+EXTERN char_u   *p_tpf;         // 'termpastefilter'
+EXTERN unsigned int tpf_flags;  ///< flags from 'termpastefilter'
+#ifdef IN_OPTION_C
+static char *(p_tpf_values[]) =
+  { "BS", "HT", "FF", "ESC", "DEL", "C0", "C1", NULL };
+#endif
+# define TPF_BS                 0x001
+# define TPF_HT                 0x002
+# define TPF_FF                 0x004
+# define TPF_ESC                0x008
+# define TPF_DEL                0x010
+# define TPF_C0                 0x020
+# define TPF_C1                 0x040
 EXTERN char_u   *p_sps;         // 'spellsuggest'
 EXTERN int p_spr;               // 'splitright'
 EXTERN int p_sol;               // 'startofline'
@@ -612,13 +646,14 @@ EXTERN char_u   *p_swb;         // 'switchbuf'
 EXTERN unsigned swb_flags;
 #ifdef IN_OPTION_C
 static char *(p_swb_values[]) =
-  { "useopen", "usetab", "split", "newtab", "vsplit", NULL };
+  { "useopen", "usetab", "split", "newtab", "vsplit", "uselast", NULL };
 #endif
 #define SWB_USEOPEN             0x001
 #define SWB_USETAB              0x002
 #define SWB_SPLIT               0x004
 #define SWB_NEWTAB              0x008
 #define SWB_VSPLIT              0x010
+#define SWB_USELAST             0x020
 EXTERN int p_tbs;               ///< 'tagbsearch'
 EXTERN char_u *p_tc;            ///< 'tagcase'
 EXTERN unsigned tc_flags;       ///< flags from 'tagcase'
@@ -734,6 +769,7 @@ enum {
   , BV_CPT
   , BV_DICT
   , BV_TSR
+  , BV_CSL
   , BV_CFU
   , BV_DEF
   , BV_INC
@@ -778,10 +814,12 @@ enum {
   , BV_SPC
   , BV_SPF
   , BV_SPL
+  , BV_SPO
   , BV_STS
   , BV_SUA
   , BV_SW
   , BV_SWF
+  , BV_TFU
   , BV_TAGS
   , BV_TC
   , BV_TS
@@ -790,6 +828,8 @@ enum {
   , BV_UDF
   , BV_UL
   , BV_WM
+  , BV_VSTS
+  , BV_VTS
   , BV_COUNT        // must be the last one
 };
 
@@ -826,6 +866,8 @@ enum {
   , WV_RLC
   , WV_SCBIND
   , WV_SCROLL
+  , WV_SISO
+  , WV_SO
   , WV_SPELL
   , WV_CUC
   , WV_CUL

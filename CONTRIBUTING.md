@@ -8,7 +8,7 @@ If you want to help but don't know where to start, here are some
 low-risk/isolated tasks:
 
 - [Merge a Vim patch].
-- Try a [complexity:low] issue.
+- Try a [good first issue](../../labels/good%20first%20issue) or [complexity:low] issue.
 - Fix bugs found by [Clang](#clang-scan-build), [PVS](#pvs-studio) or
   [Coverity](#coverity).
 
@@ -20,6 +20,7 @@ Reporting problems
 - Update Neovim to the latest version to see if your problem persists.
 - Disable plugins incrementally, to narrow down the cause of the issue.
 - When reporting a crash, [include a stacktrace](https://github.com/neovim/neovim/wiki/FAQ#backtrace-linux).
+- Use [ASAN/UBSAN](#clang-sanitizers-asan-and-ubsan) to get detailed errors for segfaults and undefined behavior.
 - [Bisect][git-bisect] to the cause of a regression, if you are able. This is _extremely_ helpful.
 - Check `$NVIM_LOG_FILE`, if it exists.
 - Include `cmake --system-information` for build-related issues.
@@ -36,6 +37,7 @@ Developer guidelines
   make distclean
   make  # Nvim build system uses ninja automatically, if available.
   ```
+- [Improve documentation][wiki-contribute-help]
 
 Pull requests (PRs)
 ---------------------
@@ -65,27 +67,39 @@ Pull requests (PRs)
 Pull requests have three stages: `[WIP]` (Work In Progress), `[RFC]` (Request
 For Comment) and `[RDY]` (Ready).
 
-- `[RFC]` is assumed by default, i.e. you are requesting a review.
-- Add `[WIP]` to the PR title if you are _not_ requesting feedback and the work
-  is still in flux.
-- Add `[RDY]` if you are _done_ and only waiting on merge.
+1. `[RFC]` is assumed by default, **do not** put "RFC" in the PR title (it adds
+   noise to merge commit messages).
+2. Add `[WIP]` to the PR title if you are _not_ requesting feedback and the work
+   is still in flux.
+3. Add `[RDY]` to the PR title if you are _done_ and only waiting on merge.
 
 ### Commit messages
 
-Follow [commit message hygiene][hygiene] to *make reviews easier* and to make
-the VCS/git logs more valuable.
+Follow the [convential commits guidelines][conventional_commits] to *make reviews easier* and to make
+the VCS/git logs more valuable. The general structure of a commit message is as follows:
 
-- Try to keep the first line under 72 characters.
-- **Prefix the commit subject with a _scope_:** `doc:`, `test:`, `foo.c:`,
+```
+<type>([optional scope]): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+- **Prefix the commit subject with a _type_:** `doc:`, `test:`
   `runtime:`, ...
     - Subject line for commits with only style/lint changes can be a single
       word: `style` or `lint`.
+- **Add the optional scope following <type> if possible:** `(lsp)`, `(treesitter)`, `(multigrid)`, ...
+- Try to keep the first line under 72 characters.
 - A blank line must separate the subject from the description.
+- Breaking changes must be indicated at the very beginning of the footer or body section of a commit. A breaking change must consist of the uppercase text BREAKING CHANGE, followed by a colon, a space, and a description of what has changed about the API.
+- Check your commit message for spelling and grammatical mistakes.
 - Use the _imperative voice_: "Fix bug" rather than "Fixed bug" or "Fixes bug."
 
 ### Automated builds (CI)
 
-Each pull request must pass the automated builds on [Travis CI], [QuickBuild]
+Each pull request must pass the automated builds on [Travis CI], [sourcehut]
 and [AppVeyor].
 
 - CI builds are compiled with [`-Werror`][gcc-warnings], so compiler warnings
@@ -100,14 +114,19 @@ and [AppVeyor].
 - The [lint](#lint) build checks modified lines _and their immediate
   neighbors_, to encourage incrementally updating the legacy style to meet our
   [style](#style). (See [#3174][3174] for background.)
-- [How to investigate QuickBuild failures](https://github.com/neovim/neovim/pull/4718#issuecomment-217631350)
-    - QuickBuild uses this invocation:
-      ```
-      mkdir -p build/${params.get("buildType")} \
-      && cd build/${params.get("buildType")} \
-      && cmake -G "Unix Makefiles" -DBUSTED_OUTPUT_TYPE=TAP -DCMAKE_BUILD_TYPE=${params.get("buildType")}
-      -DTRAVIS_CI_BUILD=ON ../.. && ${node.getAttribute("make", "make")}
-      VERBOSE=1 nvim unittest-prereqs functionaltest-prereqs
+- CI for freebsd and openbsd runs on [sourcehut].
+    - To get a backtrace on freebsd (after connecting via ssh):
+      ```sh
+      sudo pkg install tmux  # If you want tmux.
+      lldb build/bin/nvim -c nvim.core
+
+      # To get a full backtrace:
+      #   1. Rebuild with debug info.
+      rm -rf nvim.core build
+      gmake CMAKE_BUILD_TYPE=RelWithDebInfo CMAKE_EXTRA_FLAGS="-DCI_BUILD=ON -DMIN_LOG_LEVEL=3" nvim
+      #   2. Run the failing test to generate a new core file.
+      TEST_FILE=test/functional/foo.lua gmake functionaltest
+      lldb build/bin/nvim -c nvim.core
       ```
 
 ### Clang scan-build
@@ -154,7 +173,20 @@ master build. To view the defects, just request access; you will be approved.
   ```
   git log --oneline --no-merges --grep coverity
   ```
+  
+### Clang sanitizers (ASAN and UBSAN)
 
+  ASAN/UBSAN can be used to detect memory errors and other common forms of undefined behavior at runtime in debug builds.
+  To build neovim with sanitizers enabled, use
+  ```
+  rm -rf build && CMAKE_EXTRA_FLAGS="-DCMAKE_C_COMPILER=clang -DCLANG_ASAN_UBSAN=1" make
+  ```
+  When running neovim, use
+  ```
+  UBSAN_OPTIONS=print_stacktrace=1 ASAN_OPTIONS=log_path=/tmp/nvim_asan nvim args...
+  ```
+  If neovim exits unexpectedly, check `/tmp/nvim_asan.{PID}` (or your preferred `log_path`) for log files with error messages.
+  
 
 Coding
 ------
@@ -215,7 +247,7 @@ as context, use the `-W` argument as well.
 [github-issues]: https://github.com/neovim/neovim/issues
 [1820]: https://github.com/neovim/neovim/pull/1820
 [hub]: https://hub.github.com/
-[hygiene]: http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html
+[conventional_commits]: https://www.conventionalcommits.org
 [style-guide]: http://neovim.io/develop/style-guide.xml
 [ASan]: http://clang.llvm.org/docs/AddressSanitizer.html
 [run-tests]: https://github.com/neovim/neovim/blob/master/test/README.md#running-tests
@@ -223,9 +255,10 @@ as context, use the `-W` argument as well.
 [review-checklist]: https://github.com/neovim/neovim/wiki/Code-review-checklist
 [3174]: https://github.com/neovim/neovim/issues/3174
 [Travis CI]: https://travis-ci.org/neovim/neovim
-[QuickBuild]: http://neovim-qb.szakmeister.net/dashboard
+[sourcehut]: https://builds.sr.ht/~jmk
 [AppVeyor]: https://ci.appveyor.com/project/neovim/neovim
 [Merge a Vim patch]: https://github.com/neovim/neovim/wiki/Merging-patches-from-upstream-Vim
 [Clang report]: https://neovim.io/doc/reports/clang/
 [complexity:low]: https://github.com/neovim/neovim/issues?q=is%3Aopen+is%3Aissue+label%3Acomplexity%3Alow
 [master error list]: https://raw.githubusercontent.com/neovim/doc/gh-pages/reports/clint/errors.json
+[wiki-contribute-help]: https://github.com/neovim/neovim/wiki/contribute-%3Ahelp

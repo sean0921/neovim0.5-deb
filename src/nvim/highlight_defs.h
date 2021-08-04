@@ -4,6 +4,7 @@
 #include <inttypes.h>
 
 #include "nvim/macros.h"
+#include "nvim/types.h"
 
 typedef int32_t RgbValue;
 
@@ -18,6 +19,11 @@ typedef enum {
   HL_UNDERCURL       = 0x10,
   HL_STANDOUT        = 0x20,
   HL_STRIKETHROUGH   = 0x40,
+  HL_NOCOMBINE       = 0x80,
+  HL_BG_INDEXED    = 0x0100,
+  HL_FG_INDEXED    = 0x0200,
+  HL_DEFAULT       = 0x0400,
+  HL_GLOBAL        = 0x0800,
 } HlAttrFlags;
 
 /// Stores a complete highlighting entry, including colors and attributes
@@ -95,6 +101,7 @@ typedef enum {
   , HLF_MSGSEP      // message separator line
   , HLF_NFLOAT      // Floating window
   , HLF_MSG         // Message area
+  , HLF_BORDER      // Floating window border
   , HLF_COUNT       // MUST be the last one
 } hlf_T;
 
@@ -149,6 +156,7 @@ EXTERN const char *hlf_names[] INIT(= {
   [HLF_MSGSEP] = "MsgSeparator",
   [HLF_NFLOAT] = "NormalFloat",
   [HLF_MSG] = "MsgArea",
+  [HLF_BORDER] = "FloatBorder",
 });
 
 
@@ -177,6 +185,23 @@ typedef struct {
   HlKind kind;
   int id1;
   int id2;
+  int winid;
 } HlEntry;
+
+typedef struct {
+  int ns_id;
+  int syn_id;
+} ColorKey;
+#define ColorKey(n, s) (ColorKey) { .ns_id = (int)(n), .syn_id = (s) }
+
+typedef struct {
+  int attr_id;
+  int link_id;
+  int version;
+  bool is_default;
+} ColorItem;
+#define COLOR_ITEM_INITIALIZER { .attr_id = -1, .link_id = -1, \
+                                 .version = -1, .is_default = false }
+
 
 #endif  // NVIM_HIGHLIGHT_DEFS_H

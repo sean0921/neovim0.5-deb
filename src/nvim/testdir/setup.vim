@@ -19,6 +19,8 @@ set sidescroll=0
 set tags=./tags,tags
 set undodir^=.
 set wildoptions=
+set startofline
+set sessionoptions&vi
 
 " Prevent Nvim log from writing to stderr.
 let $NVIM_LOG_FILE = exists($NVIM_LOG_FILE) ? $NVIM_LOG_FILE : 'Xnvim.log'

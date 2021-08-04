@@ -21,10 +21,6 @@ describe("multibyte rendering", function()
     })
   end)
 
-  after_each(function()
-    screen:detach()
-  end)
-
   it("works with composed char at start of line", function()
     insert([[
       ̊
@@ -133,10 +129,6 @@ describe('multibyte rendering: statusline', function()
     })
     screen:attach()
     command('set laststatus=2')
-  end)
-
-  after_each(function()
-    screen:detach()
   end)
 
   it('last char shows (multibyte)', function()

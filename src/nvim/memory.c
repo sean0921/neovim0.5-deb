@@ -19,6 +19,8 @@
 #include "nvim/ui.h"
 #include "nvim/sign.h"
 #include "nvim/api/vim.h"
+#include "nvim/lua/executor.h"
+#include "nvim/decoration.h"
 
 #ifdef UNIT_TESTING
 # define malloc(size) mem_malloc(size)
@@ -693,6 +695,12 @@ void free_all_mem(void)
 
   clear_hl_tables(false);
   list_free_log();
+
+  check_quickfix_busy();
+
+  decor_free_all_mem();
+
+  nlua_free_all_mem();
 }
 
 #endif

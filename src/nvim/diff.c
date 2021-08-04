@@ -44,7 +44,7 @@
 #include "nvim/os/shell.h"
 
 static int diff_busy = false;         // using diff structs, don't change them
-static int diff_need_update = false;  // ex_diffupdate needs to be called
+static bool diff_need_update = false;  // ex_diffupdate needs to be called
 
 // Flags obtained from the 'diffopt' option
 #define DIFF_FILLER     0x001   // display filler lines
@@ -57,8 +57,10 @@ static int diff_need_update = false;  // ex_diffupdate needs to be called
 #define DIFF_VERTICAL   0x080   // vertical splits
 #define DIFF_HIDDEN_OFF 0x100   // diffoff when hidden
 #define DIFF_INTERNAL   0x200   // use internal xdiff algorithm
+#define DIFF_CLOSE_OFF  0x400   // diffoff when closing window
+#define DIFF_FOLLOWWRAP 0x800   // follow the wrap option
 #define ALL_WHITE_DIFF (DIFF_IWHITE | DIFF_IWHITEALL | DIFF_IWHITEEOL)
-static int diff_flags = DIFF_INTERNAL | DIFF_FILLER;
+static int diff_flags = DIFF_INTERNAL | DIFF_FILLER | DIFF_CLOSE_OFF;
 
 static long diff_algorithm = 0;
 
@@ -490,7 +492,8 @@ static void diff_mark_adjust_tp(tabpage_T *tp, int idx, linenr_T line1,
   }
 
   if (tp == curtab) {
-    diff_redraw(true);
+    // Don't redraw right away, this updates the diffs, which can be slow.
+    need_diff_redraw = true;
 
     // Need to recompute the scroll binding, may remove or add filler
     // lines (e.g., when adding lines above w_topline). But it's slow when
@@ -634,19 +637,20 @@ static int diff_check_sanity(tabpage_T *tp, diff_T *dp)
 /// Mark all diff buffers in the current tab page for redraw.
 ///
 /// @param dofold Also recompute the folds
-static void diff_redraw(int dofold)
+void diff_redraw(bool dofold)
 {
+  need_diff_redraw = false;
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
     if (!wp->w_p_diff) {
       continue;
     }
-    redraw_win_later(wp, SOME_VALID);
+    redraw_later(wp, SOME_VALID);
     if (dofold && foldmethodIsDiff(wp)) {
       foldUpdateAll(wp);
     }
 
-    /* A change may have made filler lines invalid, need to take care
-     * of that for other windows. */
+    // A change may have made filler lines invalid, need to take care
+    // of that for other windows.
     int n = diff_check(wp, wp->w_topline);
 
     if (((wp != curwin) && (wp->w_topfill > 0)) || (n > 0)) {
@@ -716,15 +720,12 @@ static int diff_write_buffer(buf_T *buf, diffin_T *din)
   for (lnum = 1; lnum <= buf->b_ml.ml_line_count; lnum++) {
     for (s = ml_get_buf(buf, lnum, false); *s != NUL; ) {
       if (diff_flags & DIFF_ICASE) {
-        int c;
-
-        // xdiff doesn't support ignoring case, fold-case the text.
-        int     orig_len;
         char_u  cbuf[MB_MAXBYTES + 1];
 
-        c = PTR2CHAR(s);
-        c = enc_utf8 ? utf_fold(c) : TOLOWER_LOC(c);
-        orig_len = MB_PTR2LEN(s);
+        // xdiff doesn't support ignoring case, fold-case the text.
+        int c = PTR2CHAR(s);
+        c = utf_fold(c);
+        const int orig_len = utfc_ptr2len(s);
         if (utf_char2bytes(c, cbuf) != orig_len) {
           // TODO(Bram): handle byte length difference
           memmove(ptr + len, s, orig_len);
@@ -805,7 +806,7 @@ static void diff_try_update(diffio_T    *dio,
     for (idx_new = idx_orig; idx_new < DB_COUNT; idx_new++) {
       buf = curtab->tp_diffbuf[idx_new];
       if (buf_valid(buf)) {
-        buf_check_timestamp(buf, false);
+        buf_check_timestamp(buf);
       }
     }
   }
@@ -981,12 +982,14 @@ static int check_external_diff(diffio_T *diffio)
           char_u linebuf[LBUFLEN];
 
           for (;;) {
-            // There must be a line that contains "1c1".
+            // For normal diff there must be a line that contains
+            // "1c1".  For unified diff "@@ -1 +1 @@".
             if (vim_fgets(linebuf, LBUFLEN, fd)) {
               break;
             }
 
-            if (STRNCMP(linebuf, "1c1", 3) == 0) {
+            if (STRNCMP(linebuf, "1c1", 3) == 0
+                || STRNCMP(linebuf, "@@ -1 +1 @@", 11) == 0) {
               ok = kTrue;
             }
           }
@@ -1225,8 +1228,7 @@ void ex_diffpatch(exarg_T *eap)
     EMSG(_("E816: Cannot read patch output"));
   } else {
     if (curbuf->b_fname != NULL) {
-      newname = vim_strnsave(curbuf->b_fname,
-                             (int)(STRLEN(curbuf->b_fname) + 4));
+      newname = vim_strnsave(curbuf->b_fname, STRLEN(curbuf->b_fname) + 4);
       STRCAT(newname, ".new");
     }
 
@@ -1362,11 +1364,12 @@ void diff_win_options(win_T *wp, int addbuf)
     wp->w_p_crb_save = wp->w_p_crb;
   }
   wp->w_p_crb = true;
-
-  if (!wp->w_p_diff) {
-    wp->w_p_wrap_save = wp->w_p_wrap;
+  if (!(diff_flags & DIFF_FOLLOWWRAP)) {
+    if (!wp->w_p_diff) {
+      wp->w_p_wrap_save = wp->w_p_wrap;
+    }
+    wp->w_p_wrap = false;
   }
-  wp->w_p_wrap = false;
   curwin = wp;  // -V519
   curbuf = curwin->w_buffer;
 
@@ -1376,17 +1379,24 @@ void diff_win_options(win_T *wp, int addbuf)
     }
     wp->w_p_fdm_save = vim_strsave(wp->w_p_fdm);
   }
-  set_string_option_direct((char_u *)"fdm", -1, (char_u *)"diff",
+  set_string_option_direct("fdm", -1, (char_u *)"diff",
                            OPT_LOCAL | OPT_FREE, 0);
   curwin = old_curwin;
   curbuf = curwin->w_buffer;
 
   if (!wp->w_p_diff) {
-    wp->w_p_fdc_save = wp->w_p_fdc;
     wp->w_p_fen_save = wp->w_p_fen;
     wp->w_p_fdl_save = wp->w_p_fdl;
+
+    if (wp->w_p_diff_saved) {
+      free_string_option(wp->w_p_fdc_save);
+    }
+    wp->w_p_fdc_save = vim_strsave(wp->w_p_fdc);
   }
-  wp->w_p_fdc = diff_foldcolumn;
+  xfree(wp->w_p_fdc);
+  wp->w_p_fdc = (char_u *)xstrdup("2");
+  assert(diff_foldcolumn >= 0 && diff_foldcolumn <= 9);
+  snprintf((char *)wp->w_p_fdc, STRLEN(wp->w_p_fdc) + 1, "%d", diff_foldcolumn);
   wp->w_p_fen = true;
   wp->w_p_fdl = 0;
   foldUpdateAll(wp);
@@ -1405,7 +1415,7 @@ void diff_win_options(win_T *wp, int addbuf)
   if (addbuf) {
     diff_buf_add(wp->w_buffer);
   }
-  redraw_win_later(wp, NOT_VALID);
+  redraw_later(wp, NOT_VALID);
 }
 
 /// Set options not to show diffs.  For the current window or all windows.
@@ -1431,18 +1441,18 @@ void ex_diffoff(exarg_T *eap)
         if (wp->w_p_crb) {
           wp->w_p_crb = wp->w_p_crb_save;
         }
-
-        if (!wp->w_p_wrap) {
-          wp->w_p_wrap = wp->w_p_wrap_save;
+        if (!(diff_flags & DIFF_FOLLOWWRAP)) {
+          if (!wp->w_p_wrap) {
+            wp->w_p_wrap = wp->w_p_wrap_save;
+          }
         }
-
         free_string_option(wp->w_p_fdm);
         wp->w_p_fdm = vim_strsave(*wp->w_p_fdm_save
                                   ? wp->w_p_fdm_save
                                   : (char_u *)"manual");
-        if (wp->w_p_fdc == diff_foldcolumn) {
-          wp->w_p_fdc = wp->w_p_fdc_save;
-        }
+        free_string_option(wp->w_p_fdc);
+        wp->w_p_fdc = vim_strsave(wp->w_p_fdc_save);
+
         if (wp->w_p_fdl == 0) {
           wp->w_p_fdl = wp->w_p_fdl_save;
         }
@@ -1470,6 +1480,13 @@ void ex_diffoff(exarg_T *eap)
   // Also remove hidden buffers from the list.
   if (eap->forceit) {
     diff_buf_clear();
+  }
+
+  if (!diffwin) {
+    diff_need_update = false;
+    curtab->tp_diff_invalid = false;
+    curtab->tp_diff_update = false;
+    diff_clear(curtab);
   }
 
   // Remove "hor" from from 'scrollopt' if there are no diff windows left.
@@ -1712,6 +1729,7 @@ static void diff_copy_entry(diff_T *dprev, diff_T *dp, int idx_orig,
 ///
 /// @param tp
 void diff_clear(tabpage_T *tp)
+  FUNC_ATTR_NONNULL_ALL
 {
   diff_T *p;
   diff_T *next_p;
@@ -2141,6 +2159,12 @@ int diffopt_changed(void)
     } else if (STRNCMP(p, "hiddenoff", 9) == 0) {
       p += 9;
       diff_flags_new |= DIFF_HIDDEN_OFF;
+    } else if (STRNCMP(p, "closeoff", 8) == 0) {
+      p += 8;
+      diff_flags_new |= DIFF_CLOSE_OFF;
+    } else if (STRNCMP(p, "followwrap", 10) == 0) {
+      p += 10;
+      diff_flags_new |= DIFF_FOLLOWWRAP;
     } else if (STRNCMP(p, "indent-heuristic", 16) == 0) {
       p += 16;
       diff_indent_heuristic = XDF_INDENT_HEURISTIC;
@@ -2214,6 +2238,13 @@ bool diffopt_horizontal(void)
 bool diffopt_hiddenoff(void)
 {
   return (diff_flags & DIFF_HIDDEN_OFF) != 0;
+}
+
+// Return true if 'diffopt' contains "closeoff".
+bool diffopt_closeoff(void)
+  FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
+{
+  return (diff_flags & DIFF_CLOSE_OFF) != 0;
 }
 
 /// Find the difference within a changed line.
@@ -2411,6 +2442,10 @@ void nv_diffgetput(bool put, size_t count)
   exarg_T ea;
   char buf[30];
 
+  if (bt_prompt(curbuf)) {
+    vim_beep(BO_OPER);
+    return;
+  }
   if (count == 0) {
     ea.arg = (char_u *)"";
   } else {
@@ -2690,7 +2725,8 @@ void ex_diffgetput(exarg_T *eap)
 
       // Adjust marks.  This will change the following entries!
       if (added != 0) {
-        mark_adjust(lnum, lnum + count - 1, (long)MAXLNUM, (long)added, false);
+        mark_adjust(lnum, lnum + count - 1, (long)MAXLNUM, (long)added,
+                    kExtmarkUndo);
         if (curwin->w_cursor.lnum >= lnum) {
           // Adjust the cursor position if it's in/after the changed
           // lines.

@@ -75,6 +75,34 @@ getkey:
   }
 }
 
+/// process events on main_loop, but interrupt if input is available
+///
+/// This should be used to handle K_EVENT in states accepting input
+/// otherwise bursts of events can block break checking indefinitely.
+void state_handle_k_event(void)
+{
+  while (true) {
+    Event event = multiqueue_get(main_loop.events);
+    if (event.handler) {
+      event.handler(event.argv);
+    }
+
+    if (multiqueue_empty(main_loop.events)) {
+      // don't breakcheck before return, caller should return to main-loop
+      // and handle input already.
+      return;
+    }
+
+    // TODO(bfredl): as an further micro-optimization, we could check whether
+    // event.handler already checked input.
+    os_breakcheck();
+    if (input_available() || got_int) {
+      return;
+    }
+  }
+}
+
+
 /// Return true if in the current mode we need to use virtual.
 bool virtual_active(void)
 {
@@ -156,7 +184,7 @@ char *get_mode(void)
     buf[0] = 'n';
     if (finish_op) {
       buf[1] = 'o';
-      // to be able to detect force-linewise/blockwise/characterwise operations
+      // to be able to detect force-linewise/blockwise/charwise operations
       buf[2] = (char)motion_force;
     } else if (restart_edit == 'I' || restart_edit == 'R'
                || restart_edit == 'V') {

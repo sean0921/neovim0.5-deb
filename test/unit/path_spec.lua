@@ -66,10 +66,10 @@ describe('path.c', function()
   end)
 
   describe('path_full_compare', function()
-    local function path_full_compare(s1, s2, cn)
+    local function path_full_compare(s1, s2, cn, ee)
       s1 = to_cstr(s1)
       s2 = to_cstr(s2)
-      return cimp.path_full_compare(s1, s2, cn or 0)
+      return cimp.path_full_compare(s1, s2, cn or 0, ee or 1)
     end
 
     local f1 = 'f1.o'
@@ -456,7 +456,7 @@ describe('path.c', function()
     end)
 
     itp('fails and uses filename when the path is relative to HOME', function()
-      eq(false, cimp.os_isdir('~')) -- sanity check: no literal "~" directory.
+      eq(false, cimp.os_isdir('~'), 'sanity check: no literal "~" directory')
       local absolute_path = '~/home.file'
       local buflen = string.len(absolute_path) + 1
       local do_expand = 1
@@ -601,6 +601,23 @@ describe('path.c', function()
 
     itp('returns false if filename starts not with slash nor tilde', function()
       eq(FAIL, path_is_absolute('not/in/my/home~/directory'))
+    end)
+  end)
+
+  describe('path_with_extension', function()
+    local function path_with_extension(filename, extension)
+      local c_filename = to_cstr(filename)
+      local c_extension = to_cstr(extension)
+      return cimp.path_with_extension(c_filename, c_extension)
+    end
+
+    itp('returns true if filename includes a provided extension', function()
+      eq(true, path_with_extension('/some/path/file.lua', 'lua'))
+    end)
+
+    itp('returns false if filename does not include a provided extension', function()
+      eq(false, path_with_extension('/some/path/file.vim', 'lua'))
+      eq(false, path_with_extension('/some/path/file', 'lua'))
     end)
   end)
 end)

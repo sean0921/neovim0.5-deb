@@ -8,7 +8,6 @@
 #include <assert.h>
 #include <string.h>
 #include <wctype.h>
-#include <wchar.h>  // for towupper() and towlower()
 #include <inttypes.h>
 
 #include "nvim/vim.h"
@@ -46,8 +45,6 @@ static bool chartab_initialized = false;
     (buf)->b_chartab[(unsigned)(c) >> 6] &= ~(1ull << ((c) & 0x3f))
 #define GET_CHARTAB_TAB(chartab, c) \
     ((chartab)[(unsigned)(c) >> 6] & (1ull << ((c) & 0x3f)))
-#define GET_CHARTAB(buf, c) \
-    GET_CHARTAB_TAB((buf)->b_chartab, c)
 
 // Table used below, see init_chartab() for an explanation
 static char_u g_chartab[256];
@@ -510,7 +507,7 @@ char_u* str_foldcase(char_u *str, int orglen, char_u *buf, int buflen)
 // Does NOT work for multi-byte characters, c must be <= 255.
 // Also doesn't work for the first byte of a multi-byte, "c" must be a
 // character!
-static char_u transchar_buf[11];
+static char_u transchar_charbuf[11];
 
 /// Translate a character into a printable one, leaving printable ASCII intact
 ///
@@ -521,11 +518,17 @@ static char_u transchar_buf[11];
 /// @return translated character into a static buffer.
 char_u *transchar(int c)
 {
+  return transchar_buf(curbuf, c);
+}
+
+char_u *transchar_buf(const buf_T *buf, int c)
+  FUNC_ATTR_NONNULL_ALL
+{
   int i = 0;
   if (IS_SPECIAL(c)) {
     // special key code, display as ~@ char
-    transchar_buf[0] = '~';
-    transchar_buf[1] = '@';
+    transchar_charbuf[0] = '~';
+    transchar_charbuf[1] = '@';
     i = 2;
     c = K_SECOND(c);
   }
@@ -533,14 +536,14 @@ char_u *transchar(int c)
   if ((!chartab_initialized && (((c >= ' ') && (c <= '~'))))
       || ((c <= 0xFF) && vim_isprintc_strict(c))) {
     // printable character
-    transchar_buf[i] = (char_u)c;
-    transchar_buf[i + 1] = NUL;
+    transchar_charbuf[i] = (char_u)c;
+    transchar_charbuf[i + 1] = NUL;
   } else if (c <= 0xFF) {
-    transchar_nonprint(transchar_buf + i, c);
+    transchar_nonprint(buf, transchar_charbuf + i, c);
   } else {
-    transchar_hex((char *)transchar_buf + i, c);
+    transchar_hex((char *)transchar_charbuf + i, c);
   }
-  return transchar_buf;
+  return transchar_charbuf;
 }
 
 /// Like transchar(), but called with a byte instead of a character
@@ -549,13 +552,13 @@ char_u *transchar(int c)
 ///
 /// @param[in]  c  Byte to translate.
 ///
-/// @return pointer to translated character in transchar_buf.
+/// @return pointer to translated character in transchar_charbuf.
 char_u *transchar_byte(const int c)
   FUNC_ATTR_WARN_UNUSED_RESULT
 {
   if (c >= 0x80) {
-    transchar_nonprint(transchar_buf, c);
-    return transchar_buf;
+    transchar_nonprint(curbuf, transchar_charbuf, c);
+    return transchar_charbuf;
   }
   return transchar(c);
 }
@@ -564,16 +567,18 @@ char_u *transchar_byte(const int c)
 ///
 /// @warning Does not work for multi-byte characters, c must be <= 255.
 ///
-/// @param[out]  buf  Buffer to store result in, must be able to hold at least
-///                   5 bytes (conversion result + NUL).
+/// @param[in]  buf  Required to check the file format
+/// @param[out]  charbuf  Buffer to store result in, must be able to hold
+///                       at least 5 bytes (conversion result + NUL).
 /// @param[in]  c  Character to convert. NUL is assumed to be NL according to
 ///                `:h NL-used-for-NUL`.
-void transchar_nonprint(char_u *buf, int c)
+void transchar_nonprint(const buf_T *buf, char_u *charbuf, int c)
+  FUNC_ATTR_NONNULL_ALL
 {
   if (c == NL) {
     // we use newline in place of a NUL
     c = NUL;
-  } else if ((c == CAR) && (get_fileformat(curbuf) == EOL_MAC)) {
+  } else if ((c == CAR) && (get_fileformat(buf) == EOL_MAC)) {
     // we use CR in place of  NL in this case
     c = NL;
   }
@@ -581,14 +586,14 @@ void transchar_nonprint(char_u *buf, int c)
 
   if (dy_flags & DY_UHEX || c > 0x7f) {
     // 'display' has "uhex"
-    transchar_hex((char *)buf, c);
+    transchar_hex((char *)charbuf, c);
   } else {
     // 0x00 - 0x1f and 0x7f
-    buf[0] = '^';
+    charbuf[0] = '^';
     // DEL displayed as ^?
-    buf[1] = (char_u)(c ^ 0x40);
+    charbuf[1] = (char_u)(c ^ 0x40);
 
-    buf[2] = NUL;
+    charbuf[2] = NUL;
   }
 }
 
@@ -703,7 +708,7 @@ int ptr2cells(const char_u *p)
 /// @return number of character cells.
 int vim_strsize(char_u *s)
 {
-  return vim_strnsize(s, (int)MAXCOL);
+  return vim_strnsize(s, MAXCOL);
 }
 
 /// Return the number of character cells string "s[len]" will take on the
@@ -739,8 +744,7 @@ int vim_strnsize(char_u *s, int len)
 /// @return Number of characters.
 #define RET_WIN_BUF_CHARTABSIZE(wp, buf, p, col) \
   if (*(p) == TAB && (!(wp)->w_p_list || wp->w_p_lcs_chars.tab1)) { \
-    const int ts = (int)(buf)->b_p_ts; \
-    return (ts - (int)(col % ts)); \
+    return tabstop_padding(col, (buf)->b_p_ts, (buf)->b_p_vts_array); \
   } else { \
     return ptr2cells(p); \
   }
@@ -1087,8 +1091,6 @@ int win_lbr_chartabsize(win_T *wp, char_u *line, char_u *s, colnr_T col, int *he
     }
 
     if (col == 0 || (col + size + sbrlen > (colnr_T)wp->w_width_inner)) {
-      added = 0;
-
       if (*p_sbr != NUL) {
         if (size + sbrlen + numberwidth > (colnr_T)wp->w_width_inner) {
           // Calculate effective window width.
@@ -1140,8 +1142,9 @@ static int win_nolbr_chartabsize(win_T *wp, char_u *s, colnr_T col, int *headp)
   int n;
 
   if ((*s == TAB) && (!wp->w_p_list || wp->w_p_lcs_chars.tab1)) {
-    n = (int)wp->w_buffer->b_p_ts;
-    return n - (col % n);
+    return tabstop_padding(col,
+                           wp->w_buffer->b_p_ts,
+                           wp->w_buffer->b_p_vts_array);
   }
   n = ptr2cells(s);
 
@@ -1208,6 +1211,7 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor,
   char_u *line;   // start of the line
   int incr;
   int head;
+  long *vts = wp->w_buffer->b_p_vts_array;
   int ts = (int)wp->w_buffer->b_p_ts;
   int c;
 
@@ -1248,7 +1252,7 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor,
 
       // A tab gets expanded, depending on the current column
       if (c == TAB) {
-        incr = ts - (vcol % ts);
+        incr = tabstop_padding(vcol, ts, vts);
       } else {
         // For utf-8, if the byte is >= 0x80, need to look at
         // further bytes to find the cell width.
@@ -1573,6 +1577,7 @@ char_u* skiptohex(char_u *q)
 ///
 /// @return Pointer to the next whitespace or NUL character.
 char_u *skiptowhite(const char_u *p)
+  FUNC_ATTR_NONNULL_ALL
 {
   while (*p != ' ' && *p != '\t' && *p != NUL) {
     p++;
@@ -1743,7 +1748,7 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
         goto vim_str2nr_dec;
       }
       default: {
-        assert(false);
+        abort();
       }
     }
   } else if ((what & (STR2NR_HEX|STR2NR_OCT|STR2NR_BIN))
@@ -1784,7 +1789,7 @@ void vim_str2nr(const char_u *const start, int *const prep, int *const len,
   }
 
   // Do the string-to-numeric conversion "manually" to avoid sscanf quirks.
-  assert(false);  // Should’ve used goto earlier.
+  abort();  // Should’ve used goto earlier.
 #define PARSE_NUMBER(base, cond, conv) \
   do { \
     while (!STRING_ENDED(ptr) && (cond)) { \

@@ -6,6 +6,7 @@ local clear = helpers.clear
 local command = helpers.command
 local insert = helpers.insert
 local write_file = helpers.write_file
+local source = helpers.source
 
 describe('Diff mode screen', function()
   local fname = 'Xtest-functional-diff-screen-1'
@@ -963,7 +964,7 @@ end)
 it('win_update redraws lines properly', function()
   local screen
   clear()
-  screen = Screen.new(30, 10)
+  screen = Screen.new(50, 10)
   screen:attach()
   screen:set_default_attr_ids({
     [1] = {bold = true, foreground = Screen.colors.Blue1},
@@ -993,7 +994,7 @@ it('win_update redraws lines properly', function()
   2
   1a
   ]])
-  command("vnew")
+  command("vnew left")
   insert([[
   2
   2a
@@ -1002,16 +1003,16 @@ it('win_update redraws lines properly', function()
   command("windo diffthis")
   command("windo 1")
   screen:expect{grid=[[
-    {13:  }{16:-------}{14:│}{13:  }{15:^1                 }|
-    {13:  }{16:-------}{14:│}{13:  }{15:                  }|
-    {13:  }{16:-------}{14:│}{13:  }{15:                  }|
-    {13:  }2      {14:│}{13:  }2                 |
-    {13:  }{17:2}{18:a     }{14:│}{13:  }{17:1}{18:a                }|
-    {13:  }{15:2b     }{14:│}{13:  }{16:------------------}|
-    {13:  }       {14:│}{13:  }                  |
-    {1:~        }{14:│}{1:~                   }|
-    {14:<me] [+]  }{12:[No Name] [+]       }|
-                                  |
+    {13:  }{16:-----------------------}{14:│}{13:  }{15:^1                     }|
+    {13:  }{16:-----------------------}{14:│}{13:  }{15:                      }|
+    {13:  }{16:-----------------------}{14:│}{13:  }{15:                      }|
+    {13:  }2                      {14:│}{13:  }2                     |
+    {13:  }{17:2}{18:a                     }{14:│}{13:  }{17:1}{18:a                    }|
+    {13:  }{15:2b                     }{14:│}{13:  }{16:----------------------}|
+    {13:  }                       {14:│}{13:  }                      |
+    {1:~                        }{14:│}{1:~                       }|
+    {14:left [+]                  }{12:[No Name] [+]           }|
+                                                      |
   ]]}
   feed('<C-e>')
   feed('<C-e>')
@@ -1019,15 +1020,111 @@ it('win_update redraws lines properly', function()
   feed('<C-y>')
   feed('<C-y>')
   screen:expect{grid=[[
-    {13:  }{16:-------}{14:│}{13:  }{15:1                 }|
-    {13:  }{16:-------}{14:│}{13:  }{15:                  }|
-    {13:  }{16:-------}{14:│}{13:  }{15:^                  }|
-    {13:  }2      {14:│}{13:  }2                 |
-    {13:  }{17:2}{18:a     }{14:│}{13:  }{17:1}{18:a                }|
-    {13:  }{15:2b     }{14:│}{13:  }{16:------------------}|
-    {13:  }       {14:│}{13:  }                  |
-    {1:~        }{14:│}{1:~                   }|
-    {14:<me] [+]  }{12:[No Name] [+]       }|
-                                  |
+    {13:  }{16:-----------------------}{14:│}{13:  }{15:1                     }|
+    {13:  }{16:-----------------------}{14:│}{13:  }{15:                      }|
+    {13:  }{16:-----------------------}{14:│}{13:  }{15:^                      }|
+    {13:  }2                      {14:│}{13:  }2                     |
+    {13:  }{17:2}{18:a                     }{14:│}{13:  }{17:1}{18:a                    }|
+    {13:  }{15:2b                     }{14:│}{13:  }{16:----------------------}|
+    {13:  }                       {14:│}{13:  }                      |
+    {1:~                        }{14:│}{1:~                       }|
+    {14:left [+]                  }{12:[No Name] [+]           }|
+                                                      |
+  ]]}
+end)
+
+it('diff updates line numbers below filler lines', function()
+  clear()
+  local screen = Screen.new(40, 14)
+  screen:attach()
+  screen:set_default_attr_ids({
+    [1] = {foreground = Screen.colors.DarkBlue, background = Screen.colors.WebGray},
+    [2] = {background = Screen.colors.LightCyan1, bold = true, foreground = Screen.colors.Blue1},
+    [3] = {reverse = true},
+    [4] = {background = Screen.colors.LightBlue},
+    [5] = {foreground = Screen.colors.DarkBlue, background = Screen.colors.LightGrey},
+    [6] = {bold = true, foreground = Screen.colors.Blue1},
+    [7] = {bold = true, reverse = true},
+    [8] = {bold = true, background = Screen.colors.Red},
+    [9] = {background = Screen.colors.LightMagenta},
+    [10] = {bold = true, foreground = Screen.colors.Brown},
+    [11] = {foreground = Screen.colors.Brown},
+    [12] = {foreground = Screen.colors.Brown, bold = true, background = Screen.colors.Red};
+    [13] = {background = Screen.colors.Gray90};
+  })
+  source([[
+    call setline(1, ['a', 'a', 'a', 'y', 'b', 'b', 'b', 'b', 'b'])
+    vnew
+    call setline(1, ['a', 'a', 'a', 'x', 'x', 'x', 'b', 'b', 'b', 'b', 'b'])
+    windo diffthis
+    setlocal number rnu foldcolumn=0
+  ]])
+  screen:expect([[
+    {1:  }a                {3:│}{10:1   }^a               |
+    {1:  }a                {3:│}{11:  1 }a               |
+    {1:  }a                {3:│}{11:  2 }a               |
+    {1:  }{8:x}{9:                }{3:│}{11:  3 }{8:y}{9:               }|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }b                {3:│}{11:  4 }b               |
+    {1:  }b                {3:│}{11:  5 }b               |
+    {1:  }b                {3:│}{11:  6 }b               |
+    {1:  }b                {3:│}{11:  7 }b               |
+    {1:  }b                {3:│}{11:  8 }b               |
+    {6:~                  }{3:│}{6:~                   }|
+    {3:[No Name] [+]       }{7:[No Name] [+]       }|
+                                            |
+  ]])
+  feed('j')
+  screen:expect([[
+    {1:  }a                {3:│}{11:  1 }a               |
+    {1:  }a                {3:│}{10:2   }^a               |
+    {1:  }a                {3:│}{11:  1 }a               |
+    {1:  }{8:x}{9:                }{3:│}{11:  2 }{8:y}{9:               }|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }b                {3:│}{11:  3 }b               |
+    {1:  }b                {3:│}{11:  4 }b               |
+    {1:  }b                {3:│}{11:  5 }b               |
+    {1:  }b                {3:│}{11:  6 }b               |
+    {1:  }b                {3:│}{11:  7 }b               |
+    {6:~                  }{3:│}{6:~                   }|
+    {3:[No Name] [+]       }{7:[No Name] [+]       }|
+                                            |
+  ]])
+  feed('j')
+  screen:expect([[
+    {1:  }a                {3:│}{11:  2 }a               |
+    {1:  }a                {3:│}{11:  1 }a               |
+    {1:  }a                {3:│}{10:3   }^a               |
+    {1:  }{8:x}{9:                }{3:│}{11:  1 }{8:y}{9:               }|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }b                {3:│}{11:  2 }b               |
+    {1:  }b                {3:│}{11:  3 }b               |
+    {1:  }b                {3:│}{11:  4 }b               |
+    {1:  }b                {3:│}{11:  5 }b               |
+    {1:  }b                {3:│}{11:  6 }b               |
+    {6:~                  }{3:│}{6:~                   }|
+    {3:[No Name] [+]       }{7:[No Name] [+]       }|
+                                            |
+  ]])
+  command("set signcolumn number tgc cursorline")
+  command("hi CursorLineNr guibg=red")
+  screen:expect{grid=[[
+    {1:  }a                {3:│}{11:  2 }a               |
+    {1:  }a                {3:│}{11:  1 }a               |
+    {1:  }a                {3:│}{12:3   }{13:^a               }|
+    {1:  }{8:x}{9:                }{3:│}{11:  1 }{8:y}{9:               }|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }{4:x                }{3:│}{11:    }{2:----------------}|
+    {1:  }b                {3:│}{11:  2 }b               |
+    {1:  }b                {3:│}{11:  3 }b               |
+    {1:  }b                {3:│}{11:  4 }b               |
+    {1:  }b                {3:│}{11:  5 }b               |
+    {1:  }b                {3:│}{11:  6 }b               |
+    {6:~                  }{3:│}{6:~                   }|
+    {3:[No Name] [+]       }{7:[No Name] [+]       }|
+      signcolumn=auto                       |
   ]]}
 end)

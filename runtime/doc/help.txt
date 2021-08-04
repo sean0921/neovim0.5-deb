@@ -30,7 +30,7 @@ Get specific help:  It is possible to go directly to whatever you want help
 		    help entries for "word".
 		    Or use ":helpgrep word". |:helpgrep|
 
-  Getting started:  Do the Vim tutor, a 20 minute interactive training for the
+  Getting started:  Do the Vim tutor, a 30-minute interactive course for the
 		    basic commands, see |vimtutor|.
 		    Read the user manual from start to end: |usr_01.txt|
 
@@ -40,7 +40,7 @@ through the help of many others.  See |credits|.
 						*doc-file-list* *Q_ct*
 BASIC:
 |quickref|	Overview of the most common commands you will use
-|tutor|		20 minutes training course for beginners
+|tutor|		30-minute interactive course for beginners
 |copying|	About copyrights
 |iccf|		Helping poor children in Uganda
 |sponsor|	Sponsor Vim development, become a registered Vim user
@@ -129,13 +129,16 @@ Advanced editing ~
 |autocmd.txt|	automatically executing commands on an event
 |eval.txt|	expression evaluation, conditional commands
 |fold.txt|	hide (fold) ranges of lines
+|lua.txt|	Lua API
 
 Special issues ~
+|testing.txt|	testing Vim and Vim scripts
 |print.txt|	printing
 |remote.txt|	using Vim as a server or client
 
 Programming language support ~
 |indent.txt|	automatic indenting for C and other languages
+|lsp.txt|	Language Server Protocol (LSP)
 |syntax.txt|	syntax highlighting
 |filetype.txt|	settings done specifically for a type of file
 |quickfix.txt|	commands for a quick edit-compile-fix cycle
@@ -145,7 +148,7 @@ Programming language support ~
 
 Language support ~
 |digraph.txt|	list of available digraphs
-|mbyte.txt|	multi-byte text support
+|mbyte.txt|	multibyte text support
 |mlang.txt|	non-English language support
 |rileft.txt|	right-to-left editing mode
 |arabic.txt|	Arabic language support and editing
@@ -157,7 +160,6 @@ GUI ~
 
 Interfaces ~
 |if_cscop.txt|	using Cscope with Vim
-|if_lua.txt|	Lua interface
 |if_pyth.txt|	Python interface
 |if_ruby.txt|	Ruby interface
 |sign.txt|	debugging signs
@@ -167,9 +169,9 @@ Versions ~
 |vi_diff.txt|	Main differences between Vim and Vi
 						*standard-plugin-list*
 Standard plugins ~
+|matchit.txt|      Extended |%| matching
 |pi_gzip.txt|      Reading and writing compressed files
 |pi_health.txt|    Healthcheck framework
-|pi_matchit.txt|   Extended "%" matching
 |pi_msgpack.txt|   msgpack utilities
 |pi_netrw.txt|     Reading and writing files over a network
 |pi_paren.txt|     Highlight matching parens

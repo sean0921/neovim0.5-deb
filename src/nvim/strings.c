@@ -94,8 +94,8 @@ char_u *vim_strsave_escaped_ext(const char_u *string, const char_u *esc_chars,
    */
   size_t length = 1;                    // count the trailing NUL
   for (const char_u *p = string; *p; p++) {
-    size_t l;
-    if (has_mbyte && (l = (size_t)(*mb_ptr2len)(p)) > 1) {
+    const size_t l = (size_t)(utfc_ptr2len(p));
+    if (l > 1) {
       length += l;                      // count a multibyte char
       p += l - 1;
       continue;
@@ -108,8 +108,8 @@ char_u *vim_strsave_escaped_ext(const char_u *string, const char_u *esc_chars,
   char_u *escaped_string = xmalloc(length);
   char_u *p2 = escaped_string;
   for (const char_u *p = string; *p; p++) {
-    size_t l;
-    if (has_mbyte && (l = (size_t)(*mb_ptr2len)(p)) > 1) {
+    const size_t l = (size_t)(utfc_ptr2len(p));
+    if (l > 1) {
       memcpy(p2, p, l);
       p2 += l;
       p += l - 1;                     /* skip multibyte char  */
@@ -349,7 +349,7 @@ char *strcase_save(const char *const orig, bool upper)
     // thus it's OK to do another malloc()/free().
     int newl = utf_char2len(uc);
     if (newl != l) {
-      // TODO(philix): use xrealloc() in strup_save()
+      // TODO(philix): use xrealloc() in strcase_save()
       char *s = xmalloc(STRLEN(res) + (size_t)(1 + newl - l));
       memcpy(s, res, (size_t)(p - res));
       STRCPY(s + (p - res) + newl, p + l);
@@ -900,6 +900,7 @@ int vim_vsnprintf_typval(
       }
 
       switch (fmt_spec) {
+        case 'b': case 'B':
         case 'd': case 'u': case 'o': case 'x': case 'X':
           if (tvs && length_modifier == '\0') {
             length_modifier = '2';
@@ -953,11 +954,17 @@ int vim_vsnprintf_typval(
                                       - mb_string2cells((char_u *)str_arg));
                 }
                 if (precision) {
-                  const char *p1 = str_arg;
-                  for (size_t i = 0; i < precision && *p1; i++) {
-                    p1 += mb_ptr2len((const char_u *)p1);
+                  char_u  *p1;
+                  size_t  i = 0;
+
+                  for (p1 = (char_u *)str_arg; *p1;
+                       p1 += mb_ptr2len(p1)) {
+                    i += (size_t)utf_ptr2cells(p1);
+                    if (i > precision) {
+                      break;
+                    }
                   }
-                  str_arg_l = precision = (size_t)(p1 - str_arg);
+                  str_arg_l = precision = (size_t)(p1 - (char_u *)str_arg);
                 }
               }
               break;

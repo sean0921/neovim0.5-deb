@@ -3,7 +3,7 @@ local clear, nvim, curbuf, curbuf_contents, window, curwin, eq, neq,
   ok, feed, insert, eval = helpers.clear, helpers.nvim, helpers.curbuf,
   helpers.curbuf_contents, helpers.window, helpers.curwin, helpers.eq,
   helpers.neq, helpers.ok, helpers.feed, helpers.insert, helpers.eval
-local wait = helpers.wait
+local poke_eventloop = helpers.poke_eventloop
 local curwinmeths = helpers.curwinmeths
 local funcs = helpers.funcs
 local request = helpers.request
@@ -55,8 +55,8 @@ describe('API/win', function()
     end)
 
     it('validates args', function()
-      eq('Invalid buffer id', pcall_err(window, 'set_buf', nvim('get_current_win'), 23))
-      eq('Invalid window id', pcall_err(window, 'set_buf', 23, nvim('get_current_buf')))
+      eq('Invalid buffer id: 23', pcall_err(window, 'set_buf', nvim('get_current_win'), 23))
+      eq('Invalid window id: 23', pcall_err(window, 'set_buf', 23, nvim('get_current_buf')))
     end)
   end)
 
@@ -73,7 +73,7 @@ describe('API/win', function()
 
     it('does not leak memory when using invalid window ID with invalid pos',
     function()
-      eq('Invalid window id', pcall_err(meths.win_set_cursor, 1, {"b\na"}))
+      eq('Invalid window id: 1', pcall_err(meths.win_set_cursor, 1, {"b\na"}))
     end)
 
     it('updates the screen, and also when the window is unfocused', function()
@@ -82,7 +82,7 @@ describe('API/win', function()
       insert("epilogue")
       local win = curwin()
       feed('gg')
-      wait() -- let nvim process the 'gg' command
+      poke_eventloop() -- let nvim process the 'gg' command
 
       -- cursor position is at beginning
       eq({1, 0}, window('get_cursor', win))
@@ -128,7 +128,7 @@ describe('API/win', function()
       insert("second line")
 
       feed('gg')
-      wait() -- let nvim process the 'gg' command
+      poke_eventloop() -- let nvim process the 'gg' command
 
       -- cursor position is at beginning
       local win = curwin()
@@ -139,7 +139,7 @@ describe('API/win', function()
 
       -- move down a line
       feed('j')
-      wait() -- let nvim process the 'j' command
+      poke_eventloop() -- let nvim process the 'j' command
 
       -- cursor is still in column 5
       eq({2, 5}, window('get_cursor', win))
@@ -345,6 +345,92 @@ describe('API/win', function()
       meths.win_close(0,true)
       eq(2, #meths.list_wins())
       eq('', funcs.getcmdwintype())
+    end)
+  end)
+
+  describe('hide', function()
+    it('can hide current window', function()
+      local oldwin = meths.get_current_win()
+      command('split')
+      local newwin = meths.get_current_win()
+      meths.win_hide(newwin)
+      eq({oldwin}, meths.list_wins())
+    end)
+    it('can hide noncurrent window', function()
+      local oldwin = meths.get_current_win()
+      command('split')
+      local newwin = meths.get_current_win()
+      meths.win_hide(oldwin)
+      eq({newwin}, meths.list_wins())
+    end)
+    it('does not close the buffer', function()
+      local oldwin = meths.get_current_win()
+      local oldbuf = meths.get_current_buf()
+      local buf = meths.create_buf(true, false)
+      local newwin = meths.open_win(buf, true, {
+        relative='win', row=3, col=3, width=12, height=3
+      })
+      meths.win_hide(newwin)
+      eq({oldwin}, meths.list_wins())
+      eq({oldbuf, buf}, meths.list_bufs())
+    end)
+    it('deletes the buffer when bufhidden=wipe', function()
+      local oldwin = meths.get_current_win()
+      local oldbuf = meths.get_current_buf()
+      local buf = meths.create_buf(true, false)
+      local newwin = meths.open_win(buf, true, {
+        relative='win', row=3, col=3, width=12, height=3
+      })
+      meths.buf_set_option(buf, 'bufhidden', 'wipe')
+      meths.win_hide(newwin)
+      eq({oldwin}, meths.list_wins())
+      eq({oldbuf}, meths.list_bufs())
+    end)
+  end)
+
+  describe('open_win', function()
+    it('noautocmd option works', function()
+      command('autocmd BufEnter,BufLeave,BufWinEnter * let g:fired = 1')
+      meths.open_win(meths.create_buf(true, true), true, {
+        relative='win', row=3, col=3, width=12, height=3, noautocmd=true
+      })
+      eq(0, funcs.exists('g:fired'))
+      meths.open_win(meths.create_buf(true, true), true, {
+        relative='win', row=3, col=3, width=12, height=3
+      })
+      eq(1, funcs.exists('g:fired'))
+    end)
+  end)
+
+  describe('get_config', function()
+    it('includes border', function()
+      local b = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' }
+      local win = meths.open_win(0, true, {
+         relative='win', row=3, col=3, width=12, height=3,
+         border = b,
+      })
+
+      local cfg = meths.win_get_config(win)
+      eq(b, cfg.border)
+    end)
+    it('includes border with highlight group', function()
+      local b = {
+        {'a', 'Normal'},
+        {'b', 'Special'},
+        {'c', 'String'},
+        {'d', 'Comment'},
+        {'e', 'Visual'},
+        {'f', 'Error'},
+        {'g', 'Constant'},
+        {'h', 'PreProc'},
+      }
+      local win = meths.open_win(0, true, {
+         relative='win', row=3, col=3, width=12, height=3,
+         border = b,
+      })
+
+      local cfg = meths.win_get_config(win)
+      eq(b, cfg.border)
     end)
   end)
 end)

@@ -156,6 +156,7 @@ static const struct key_name_entry {
   { K_BS,              "BS" },
   { K_BS,              "BackSpace" },   // Alternative name
   { ESC,               "Esc" },
+  { ESC,               "Escape" },      // Alternative name
   { CSI,               "CSI" },
   { K_CSI,             "xCSI" },
   { '|',               "Bar" },
@@ -287,6 +288,7 @@ static const struct key_name_entry {
   { K_LEFTDRAG,        "LeftDrag" },
   { K_LEFTRELEASE,     "LeftRelease" },
   { K_LEFTRELEASE_NM,  "LeftReleaseNM" },
+  { K_MOUSEMOVE,       "MouseMove" },
   { K_MIDDLEMOUSE,     "MiddleMouse" },
   { K_MIDDLEDRAG,      "MiddleDrag" },
   { K_MIDDLERELEASE,   "MiddleRelease" },
@@ -309,38 +311,39 @@ static const struct key_name_entry {
   { K_ZERO,            "Nul" },
   { K_SNR,             "SNR" },
   { K_PLUG,            "Plug" },
+  { K_IGNORE,          "Ignore" },
   { K_COMMAND,         "Cmd" },
   { 0,                 NULL }
   // NOTE: When adding a long name update MAX_KEY_NAME_LEN.
 };
 
 static struct mousetable {
-  int pseudo_code;              /* Code for pseudo mouse event */
-  int button;                   /* Which mouse button is it? */
-  int is_click;                 /* Is it a mouse button click event? */
-  int is_drag;                  /* Is it a mouse drag event? */
+  int pseudo_code;            // Code for pseudo mouse event
+  int button;                 // Which mouse button is it?
+  bool is_click;              // Is it a mouse button click event?
+  bool is_drag;               // Is it a mouse drag event?
 } mouse_table[] =
 {
-  {(int)KE_LEFTMOUSE,         MOUSE_LEFT,     TRUE,   FALSE},
-  {(int)KE_LEFTDRAG,          MOUSE_LEFT,     FALSE,  TRUE},
-  {(int)KE_LEFTRELEASE,       MOUSE_LEFT,     FALSE,  FALSE},
-  {(int)KE_MIDDLEMOUSE,       MOUSE_MIDDLE,   TRUE,   FALSE},
-  {(int)KE_MIDDLEDRAG,        MOUSE_MIDDLE,   FALSE,  TRUE},
-  {(int)KE_MIDDLERELEASE,     MOUSE_MIDDLE,   FALSE,  FALSE},
-  {(int)KE_RIGHTMOUSE,        MOUSE_RIGHT,    TRUE,   FALSE},
-  {(int)KE_RIGHTDRAG,         MOUSE_RIGHT,    FALSE,  TRUE},
-  {(int)KE_RIGHTRELEASE,      MOUSE_RIGHT,    FALSE,  FALSE},
-  {(int)KE_X1MOUSE,           MOUSE_X1,       TRUE,   FALSE},
-  {(int)KE_X1DRAG,            MOUSE_X1,       FALSE,  TRUE},
-  {(int)KE_X1RELEASE,         MOUSE_X1,       FALSE,  FALSE},
-  {(int)KE_X2MOUSE,           MOUSE_X2,       TRUE,   FALSE},
-  {(int)KE_X2DRAG,            MOUSE_X2,       FALSE,  TRUE},
-  {(int)KE_X2RELEASE,         MOUSE_X2,       FALSE,  FALSE},
-  /* DRAG without CLICK */
-  {(int)KE_IGNORE,            MOUSE_RELEASE,  FALSE,  TRUE},
-  /* RELEASE without CLICK */
-  {(int)KE_IGNORE,            MOUSE_RELEASE,  FALSE,  FALSE},
-  {0,                         0,              0,      0},
+  { (int)KE_LEFTMOUSE,        MOUSE_LEFT,     true,   false },
+  { (int)KE_LEFTDRAG,         MOUSE_LEFT,     false,  true },
+  { (int)KE_LEFTRELEASE,      MOUSE_LEFT,     false,  false },
+  { (int)KE_MIDDLEMOUSE,      MOUSE_MIDDLE,   true,   false },
+  { (int)KE_MIDDLEDRAG,       MOUSE_MIDDLE,   false,  true },
+  { (int)KE_MIDDLERELEASE,    MOUSE_MIDDLE,   false,  false },
+  { (int)KE_RIGHTMOUSE,       MOUSE_RIGHT,    true,   false },
+  { (int)KE_RIGHTDRAG,        MOUSE_RIGHT,    false,  true },
+  { (int)KE_RIGHTRELEASE,     MOUSE_RIGHT,    false,  false },
+  { (int)KE_X1MOUSE,          MOUSE_X1,       true,   false },
+  { (int)KE_X1DRAG,           MOUSE_X1,       false,  true },
+  { (int)KE_X1RELEASE,        MOUSE_X1,       false,  false },
+  { (int)KE_X2MOUSE,          MOUSE_X2,       true,   false },
+  { (int)KE_X2DRAG,           MOUSE_X2,       false,  true },
+  { (int)KE_X2RELEASE,        MOUSE_X2,       false,  false },
+  // DRAG without CLICK
+  { (int)K_MOUSEMOVE,         MOUSE_RELEASE,  false,  true },
+  // RELEASE without CLICK
+  { (int)KE_IGNORE,           MOUSE_RELEASE,  false,  false },
+  { 0,                        0,              0,      0 },
 };
 
 /// Return the modifier mask bit (#MOD_MASK_*) corresponding to mod name
@@ -516,8 +519,8 @@ char_u *get_special_key_name(int c, int modifiers)
 /// @param[in,out]  srcp  Source from which <> are translated. Is advanced to
 ///                       after the <> name if there is a match.
 /// @param[in]  src_len  Length of the srcp.
-/// @param[out]  dst  Location where translation result will be kept. Must have
-///                   at least six bytes.
+/// @param[out]  dst  Location where translation result will be kept. It must
+//                    be at least 19 bytes per "<x>" form.
 /// @param[in]  keycode  Prefer key code, e.g. K_DEL in place of DEL.
 /// @param[in]  in_string  Inside a double quoted string
 ///
@@ -529,12 +532,23 @@ unsigned int trans_special(const char_u **srcp, const size_t src_len,
 {
   int modifiers = 0;
   int key;
-  unsigned int dlen = 0;
 
   key = find_special_key(srcp, src_len, &modifiers, keycode, false, in_string);
   if (key == 0) {
     return 0;
   }
+
+  return special_to_buf(key, modifiers, keycode, dst);
+}
+
+/// Put the character sequence for "key" with "modifiers" into "dst" and return
+/// the resulting length.
+/// When "keycode" is TRUE prefer key code, e.g. K_DEL instead of DEL.
+/// The sequence is not NUL terminated.
+/// This is how characters in a string are encoded.
+unsigned int special_to_buf(int key, int modifiers, bool keycode, char_u *dst)
+{
+  unsigned int dlen = 0;
 
   // Put the appropriate modifier in a string.
   if (modifiers != 0) {
@@ -699,7 +713,8 @@ static int extract_modifiers(int key, int *modp)
 {
   int modifiers = *modp;
 
-  if (!(modifiers & MOD_MASK_CMD)) {  // Command-key is special
+  // Command-key and ctrl are special
+  if (!(modifiers & MOD_MASK_CMD) && !(modifiers & MOD_MASK_CTRL)) {
     if ((modifiers & MOD_MASK_SHIFT) && ASCII_ISALPHA(key)) {
       key = TOUPPER_ASC(key);
       modifiers &= ~MOD_MASK_SHIFT;

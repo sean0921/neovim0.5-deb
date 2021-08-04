@@ -4,6 +4,7 @@
 #include <time.h>  // for time_t
 
 #include "nvim/pos.h"
+#include "nvim/extmark_defs.h"
 #include "nvim/mark_defs.h"
 
 typedef struct u_header u_header_T;
@@ -56,20 +57,22 @@ struct u_header {
   u_entry_T   *uh_getbot_entry;   /* pointer to where ue_bot must be set */
   pos_T uh_cursor;              /* cursor position before saving */
   long uh_cursor_vcol;
-  int uh_flags;                 /* see below */
-  fmark_T uh_namedm[NMARKS];    /* marks before undo/after redo */
-  visualinfo_T uh_visual;       /* Visual areas before undo/after redo */
-  time_t uh_time;               /* timestamp when the change was made */
-  long uh_save_nr;              /* set when the file was saved after the
-                                   changes in this block */
+  int uh_flags;                 // see below
+  fmark_T uh_namedm[NMARKS];    // marks before undo/after redo
+  extmark_undo_vec_t uh_extmark;  // info to move extmarks
+  visualinfo_T uh_visual;       // Visual areas before undo/after redo
+  time_t uh_time;               // timestamp when the change was made
+  long uh_save_nr;              // set when the file was saved after the
+                                // changes in this block
 #ifdef U_DEBUG
-  int uh_magic;                 /* magic number to check allocation */
+  int uh_magic;                 // magic number to check allocation
 #endif
 };
 
-/* values for uh_flags */
-#define UH_CHANGED  0x01        /* b_changed flag before undo/after redo */
-#define UH_EMPTYBUF 0x02        /* buffer was empty */
+// values for uh_flags
+#define UH_CHANGED  0x01        // b_changed flag before undo/after redo
+#define UH_EMPTYBUF 0x02        // buffer was empty
+#define UH_RELOAD   0x04        // buffer was reloaded
 
 /// Structure passed around between undofile functions.
 typedef struct {

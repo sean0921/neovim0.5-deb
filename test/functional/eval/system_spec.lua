@@ -8,6 +8,7 @@ local command = helpers.command
 local exc_exec = helpers.exc_exec
 local iswin = helpers.iswin
 local os_kill = helpers.os_kill
+local pcall_err = helpers.pcall_err
 
 local Screen = require('test.functional.ui.screen')
 
@@ -32,8 +33,9 @@ describe('system()', function()
       return nvim_dir..'/printargs-test' .. (iswin() and '.exe' or '')
     end
 
-    it('sets v:shell_error if cmd[0] is not executable', function()
-      call('system', { 'this-should-not-exist' })
+    it('throws error if cmd[0] is not executable', function()
+      eq("Vim:E475: Invalid value for argument cmd: 'this-should-not-exist' is not executable",
+        pcall_err(call, 'system', { 'this-should-not-exist' }))
       eq(-1, eval('v:shell_error'))
     end)
 
@@ -48,7 +50,8 @@ describe('system()', function()
       eq(0, eval('v:shell_error'))
 
       -- Provoke a non-zero v:shell_error.
-      call('system', { 'this-should-not-exist' })
+      eq("Vim:E475: Invalid value for argument cmd: 'this-should-not-exist' is not executable",
+        pcall_err(call, 'system', { 'this-should-not-exist' }))
       local old_val = eval('v:shell_error')
       eq(-1, old_val)
 
@@ -84,7 +87,7 @@ describe('system()', function()
 
     it('does NOT run in shell', function()
       if iswin() then
-        eq("%PATH%\n", eval("system(['powershell', '-NoProfile', '-NoLogo', '-ExecutionPolicy', 'RemoteSigned', '-Command', 'echo', '%PATH%'])"))
+        eq("%PATH%\n", eval("system(['powershell', '-NoProfile', '-NoLogo', '-ExecutionPolicy', 'RemoteSigned', '-Command', 'Write-Output', '%PATH%'])"))
       else
         eq("* $PATH %PATH%\n", eval("system(['echo', '*', '$PATH', '%PATH%'])"))
       end
@@ -121,10 +124,6 @@ describe('system()', function()
       screen:attach()
     end)
 
-    after_each(function()
-      screen:detach()
-    end)
-
     if iswin() then
       local function test_more()
         eq('root = true', eval([[get(split(system('"more" ".editorconfig"'), "\n"), 0, '')]]))
@@ -133,7 +132,7 @@ describe('system()', function()
         eval([[system('"ping" "-n" "1" "127.0.0.1"')]])
         eq(0, eval('v:shell_error'))
         eq('"a b"\n', eval([[system('cmd /s/c "cmd /s/c "cmd /s/c "echo "a b""""')]]))
-        eq('"a b"\n', eval([[system('powershell -NoProfile -NoLogo -ExecutionPolicy RemoteSigned -Command echo ''\^"a b\^"''')]]))
+        eq('"a b"\n', eval([[system('powershell -NoProfile -NoLogo -ExecutionPolicy RemoteSigned -Command Write-Output ''\^"a b\^"''')]]))
       end
 
       it('with shell=cmd.exe', function()
@@ -169,11 +168,26 @@ describe('system()', function()
 
       it('works with powershell', function()
         helpers.set_shell_powershell()
-        eq('a\nb\n', eval([[system('echo a b')]]))
+        eq('a\nb\n', eval([[system('Write-Output a b')]]))
         eq('C:\\\n', eval([[system('cd c:\; (Get-Location).Path')]]))
-        eq('a b\n', eval([[system('echo "a b"')]]))
+        eq('a b\n', eval([[system('Write-Output "a b"')]]))
       end)
     end
+
+    it('works with powershell w/ UTF-8 text (#13713)', function()
+      if not helpers.has_powershell() then
+        pending("not tested; powershell was not found", function() end)
+        return
+      end
+      -- Should work with recommended config used in helper
+      helpers.set_shell_powershell()
+      eq('ああ\n', eval([[system('Write-Output "ああ"')]]))
+      -- Sanity test w/ default encoding
+      -- * on Windows, expected to default to Western European enc
+      -- * on Linux, expected to default to UTF8
+      command([[let &shellcmdflag = '-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command ']])
+      eq(iswin() and '??\n' or 'ああ\n', eval([[system('Write-Output "ああ"')]]))
+    end)
 
     it('`echo` and waits for its return', function()
       feed(':call system("echo")<cr>')
@@ -555,4 +569,20 @@ describe('systemlist()', function()
     assert(out[1]:sub(0, 5) == 'pid: ', out)
     os_kill(out[1]:match("%d+"))
   end)
+
+  it('works with powershell w/ UTF-8 text (#13713)', function()
+    if not helpers.has_powershell() then
+      pending("not tested; powershell was not found", function() end)
+      return
+    end
+    -- Should work with recommended config used in helper
+    helpers.set_shell_powershell()
+    eq({iswin() and 'あ\r' or 'あ'}, eval([[systemlist('Write-Output あ')]]))
+    -- Sanity test w/ default encoding
+    -- * on Windows, expected to default to Western European enc
+    -- * on Linux, expected to default to UTF8
+    command([[let &shellcmdflag = '-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command ']])
+    eq({iswin() and '?\r' or 'あ'}, eval([[systemlist('Write-Output あ')]]))
+  end)
+
 end)

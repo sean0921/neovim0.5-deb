@@ -59,7 +59,9 @@ struct hl_group {
   bool sg_cleared;              ///< "hi clear" was used
   int sg_attr;                  ///< Screen attr @see ATTR_ENTRY
   int sg_link;                  ///< link to this highlight group ID
+  int sg_deflink;               ///< default link; restored in highlight_clear()
   int sg_set;                   ///< combination of flags in \ref SG_SET
+  sctx_T sg_deflink_sctx;       ///< script where the default link was set
   sctx_T sg_script_ctx;         ///< script in which the group was last set
   // for terminal UIs
   int sg_cterm;                 ///< "cterm=" highlighting attr
@@ -73,9 +75,9 @@ struct hl_group {
   RgbValue sg_rgb_fg;           ///< RGB foreground color
   RgbValue sg_rgb_bg;           ///< RGB background color
   RgbValue sg_rgb_sp;           ///< RGB special color
-  uint8_t *sg_rgb_fg_name;      ///< RGB foreground color name
-  uint8_t *sg_rgb_bg_name;      ///< RGB background color name
-  uint8_t *sg_rgb_sp_name;      ///< RGB special color name
+  char *sg_rgb_fg_name;         ///< RGB foreground color name
+  char *sg_rgb_bg_name;         ///< RGB background color name
+  char *sg_rgb_sp_name;         ///< RGB special color name
 
   int sg_blend;                 ///< blend level (0-100 inclusive), -1 if unset
 };
@@ -116,10 +118,12 @@ static int include_link = 0;    /* when 2 include "nvim/link" and "clear" */
 /// following names, separated by commas (but no spaces!).
 static char *(hl_name_table[]) =
 { "bold", "standout", "underline", "undercurl",
-  "italic", "reverse", "inverse", "strikethrough", "NONE" };
+  "italic", "reverse", "inverse", "strikethrough", "nocombine", "NONE" };
 static int hl_attr_table[] =
 { HL_BOLD, HL_STANDOUT, HL_UNDERLINE, HL_UNDERCURL, HL_ITALIC, HL_INVERSE,
-  HL_INVERSE, HL_STRIKETHROUGH, 0 };
+  HL_INVERSE, HL_STRIKETHROUGH, HL_NOCOMBINE, 0 };
+
+static char e_illegal_arg[] = N_("E390: Illegal argument: %s");
 
 // The patterns that are being searched for are stored in a syn_pattern.
 // A match item consists of one pattern.
@@ -2460,11 +2464,8 @@ update_si_end(
     int force                  /* when TRUE overrule a previous end */
 )
 {
-  lpos_T startpos;
-  lpos_T endpos;
   lpos_T hl_endpos;
   lpos_T end_endpos;
-  int end_idx;
 
   /* return quickly for a keyword */
   if (sip->si_idx < 0)
@@ -2480,9 +2481,12 @@ update_si_end(
    * We need to find the end of the region.  It may continue in the next
    * line.
    */
-  end_idx = 0;
-  startpos.lnum = current_lnum;
-  startpos.col = startcol;
+  int end_idx = 0;
+  lpos_T startpos = {
+    .lnum = current_lnum,
+    .col = startcol,
+  };
+  lpos_T endpos = { 0 };
   find_endpos(sip->si_idx, &startpos, &endpos, &hl_endpos,
       &(sip->si_flags), &end_endpos, &end_idx, sip->si_extmatch);
 
@@ -2958,11 +2962,7 @@ static int check_keyword_id(
   char_u *const kwp = line + startcol;
   int kwlen = 0;
   do {
-    if (has_mbyte) {
-      kwlen += (*mb_ptr2len)(kwp + kwlen);
-    } else {
-      kwlen++;
-    }
+    kwlen += utfc_ptr2len(kwp + kwlen);
   } while (vim_iswordp_buf(kwp + kwlen, syn_buf));
 
   if (kwlen > MAXKEYWLEN) {
@@ -3045,7 +3045,7 @@ static void syn_cmd_conceal(exarg_T *eap, int syncing)
   } else if (STRNICMP(arg, "off", 3) == 0 && next - arg == 3) {
     curwin->w_s->b_syn_conceal = false;
   } else {
-    EMSG2(_("E390: Illegal argument: %s"), arg);
+    EMSG2(_(e_illegal_arg), arg);
   }
 }
 
@@ -3073,7 +3073,42 @@ static void syn_cmd_case(exarg_T *eap, int syncing)
   } else if (STRNICMP(arg, "ignore", 6) == 0 && next - arg == 6) {
     curwin->w_s->b_syn_ic = true;
   } else {
-    EMSG2(_("E390: Illegal argument: %s"), arg);
+    EMSG2(_(e_illegal_arg), arg);
+  }
+}
+
+/// Handle ":syntax foldlevel" command.
+static void syn_cmd_foldlevel(exarg_T *eap, int syncing)
+{
+  char_u *arg = eap->arg;
+  char_u *arg_end;
+
+  eap->nextcmd = find_nextcmd(arg);
+  if (eap->skip)
+    return;
+
+  if (*arg == NUL) {
+    switch (curwin->w_s->b_syn_foldlevel) {
+    case SYNFLD_START:   MSG(_("syntax foldlevel start"));   break;
+    case SYNFLD_MINIMUM: MSG(_("syntax foldlevel minimum")); break;
+    default: break;
+    }
+    return;
+  }
+
+  arg_end = skiptowhite(arg);
+  if (STRNICMP(arg, "start", 5) == 0 && arg_end - arg == 5) {
+    curwin->w_s->b_syn_foldlevel = SYNFLD_START;
+  } else if (STRNICMP(arg, "minimum", 7) == 0 && arg_end - arg == 7) {
+    curwin->w_s->b_syn_foldlevel = SYNFLD_MINIMUM;
+  } else {
+    EMSG2(_(e_illegal_arg), arg);
+    return;
+  }
+
+  arg = skipwhite(arg_end);
+  if (*arg != NUL) {
+    EMSG2(_(e_illegal_arg), arg);
   }
 }
 
@@ -3105,12 +3140,12 @@ static void syn_cmd_spell(exarg_T *eap, int syncing)
   } else if (STRNICMP(arg, "default", 7) == 0 && next - arg == 7) {
     curwin->w_s->b_syn_spell = SYNSPL_DEFAULT;
   } else {
-    EMSG2(_("E390: Illegal argument: %s"), arg);
+    EMSG2(_(e_illegal_arg), arg);
     return;
   }
 
   // assume spell checking changed, force a redraw
-  redraw_win_later(curwin, NOT_VALID);
+  redraw_later(curwin, NOT_VALID);
 }
 
 /// Handle ":syntax iskeyword" command.
@@ -3150,7 +3185,7 @@ static void syn_cmd_iskeyword(exarg_T *eap, int syncing)
       curbuf->b_p_isk = save_isk;
     }
   }
-  redraw_win_later(curwin, NOT_VALID);
+  redraw_later(curwin, NOT_VALID);
 }
 
 /*
@@ -3161,6 +3196,7 @@ void syntax_clear(synblock_T *block)
   block->b_syn_error = false;           // clear previous error
   block->b_syn_slow = false;            // clear previous timeout
   block->b_syn_ic = false;              // Use case, by default
+  block->b_syn_foldlevel = SYNFLD_START;
   block->b_syn_spell = SYNSPL_DEFAULT;  // default spell checking
   block->b_syn_containedin = false;
   block->b_syn_conceal = false;
@@ -3385,7 +3421,7 @@ static void syn_cmd_on(exarg_T *eap, int syncing)
  */
 static void syn_cmd_enable(exarg_T *eap, int syncing)
 {
-  set_internal_string_var((char_u *)"syntax_cmd", (char_u *)"enable");
+  set_internal_string_var("syntax_cmd", (char_u *)"enable");
   syn_cmd_onoff(eap, "syntax");
   do_unlet(S_LEN("g:syntax_cmd"), true);
 }
@@ -3398,7 +3434,7 @@ static void syn_cmd_reset(exarg_T *eap, int syncing)
 {
   eap->nextcmd = check_nextcmd(eap->arg);
   if (!eap->skip) {
-    set_internal_string_var((char_u *)"syntax_cmd", (char_u *)"reset");
+    set_internal_string_var("syntax_cmd", (char_u *)"reset");
     do_cmdline_cmd("runtime! syntax/syncolor.vim");
     do_unlet(S_LEN("g:syntax_cmd"), true);
   }
@@ -3433,13 +3469,13 @@ static void syn_cmd_onoff(exarg_T *eap, char *name)
   }
 }
 
-void syn_maybe_on(void)
+void syn_maybe_enable(void)
 {
   if (!did_syntax_onoff) {
     exarg_T ea;
     ea.arg = (char_u *)"";
     ea.skip = false;
-    syn_cmd_onoff(&ea, "syntax");
+    syn_cmd_enable(&ea, false);
   }
 }
 
@@ -3471,12 +3507,16 @@ syn_cmd_list(
       syn_match_msg();
       return;
     } else if (!(curwin->w_s->b_syn_sync_flags & SF_MATCH))   {
-      if (curwin->w_s->b_syn_sync_minlines == 0)
+      if (curwin->w_s->b_syn_sync_minlines == 0) {
         MSG_PUTS(_("no syncing"));
-      else {
-        MSG_PUTS(_("syncing starts "));
-        msg_outnum(curwin->w_s->b_syn_sync_minlines);
-        MSG_PUTS(_(" lines before top line"));
+      } else {
+        if (curwin->w_s->b_syn_sync_minlines == MAXLNUM) {
+          MSG_PUTS(_("syncing starts at the first line"));
+        } else {
+          MSG_PUTS(_("syncing starts "));
+          msg_outnum(curwin->w_s->b_syn_sync_minlines);
+          MSG_PUTS(_(" lines before top line"));
+        }
         syn_match_msg();
       }
       return;
@@ -3532,17 +3572,22 @@ static void syn_lines_msg(void)
   if (curwin->w_s->b_syn_sync_maxlines > 0
       || curwin->w_s->b_syn_sync_minlines > 0) {
     MSG_PUTS("; ");
-    if (curwin->w_s->b_syn_sync_minlines > 0) {
-      MSG_PUTS(_("minimal "));
-      msg_outnum(curwin->w_s->b_syn_sync_minlines);
-      if (curwin->w_s->b_syn_sync_maxlines)
-        MSG_PUTS(", ");
+    if (curwin->w_s->b_syn_sync_minlines == MAXLNUM) {
+      MSG_PUTS(_("from the first line"));
+    } else {
+      if (curwin->w_s->b_syn_sync_minlines > 0) {
+        MSG_PUTS(_("minimal "));
+        msg_outnum(curwin->w_s->b_syn_sync_minlines);
+        if (curwin->w_s->b_syn_sync_maxlines) {
+          MSG_PUTS(", ");
+        }
+      }
+      if (curwin->w_s->b_syn_sync_maxlines > 0) {
+        MSG_PUTS(_("maximal "));
+        msg_outnum(curwin->w_s->b_syn_sync_maxlines);
+      }
+      MSG_PUTS(_(" lines before top line"));
     }
-    if (curwin->w_s->b_syn_sync_maxlines > 0) {
-      MSG_PUTS(_("maximal "));
-      msg_outnum(curwin->w_s->b_syn_sync_maxlines);
-    }
-    MSG_PUTS(_(" lines before top line"));
   }
 }
 
@@ -3981,7 +4026,7 @@ static void add_keyword(char_u *const name,
                                      STRLEN(kp->keyword), hash);
 
   // even though it looks like only the kp->keyword member is
-  // being used here, vim uses some pointer trickery to get the orignal
+  // being used here, vim uses some pointer trickery to get the original
   // struct again later by using knowledge of the offset of the keyword
   // field in the struct. See the definition of the HI2KE macro.
   if (HASHITEM_EMPTY(hi)) {
@@ -4143,10 +4188,10 @@ get_syn_options(
         arg = skiptowhite(arg);
         if (gname_start == arg)
           return NULL;
-        gname = vim_strnsave(gname_start, (int)(arg - gname_start));
-        if (STRCMP(gname, "NONE") == 0)
+        gname = vim_strnsave(gname_start, arg - gname_start);
+        if (STRCMP(gname, "NONE") == 0) {
           *opt->sync_idx = NONE_IDX;
-        else {
+        } else {
           syn_id = syn_name2id(gname);
           int i;
           for (i = curwin->w_s->b_syn_patterns.ga_len; --i >= 0; )
@@ -4232,7 +4277,7 @@ static void syn_cmd_include(exarg_T *eap, int syncing)
    * Everything that's left, up to the next command, should be the
    * filename to include.
    */
-  eap->argt |= (XFILE | NOSPC);
+  eap->argt |= (EX_XFILE | EX_NOSPC);
   separate_nextcmd(eap);
   if (*eap->arg == '<' || *eap->arg == '$' || path_is_absolute(eap->arg)) {
     // For an absolute path, "$VIM/..." or "<sfile>.." we ":source" the
@@ -4258,8 +4303,9 @@ static void syn_cmd_include(exarg_T *eap, int syncing)
   current_syn_inc_tag = ++running_syn_inc_tag;
   prev_toplvl_grp = curwin->w_s->b_syn_topgrp;
   curwin->w_s->b_syn_topgrp = sgl_id;
-  if (source ? do_source(eap->arg, false, DOSO_NONE) == FAIL
-             : source_runtime(eap->arg, DIP_ALL) == FAIL) {
+  if (source
+      ? do_source(eap->arg, false, DOSO_NONE) == FAIL
+      : source_in_path(p_rtp, eap->arg, DIP_ALL) == FAIL) {
     EMSG2(_(e_notopen), eap->arg);
   }
   curwin->w_s->b_syn_topgrp = prev_toplvl_grp;
@@ -4543,7 +4589,7 @@ syn_cmd_region(
     while (*key_end && !ascii_iswhite(*key_end) && *key_end != '=')
       ++key_end;
     xfree(key);
-    key = vim_strnsave_up(rest, (int)(key_end - rest));
+    key = vim_strnsave_up(rest, key_end - rest);
     if (STRCMP(key, "MATCHGROUP") == 0) {
       item = ITEM_MATCHGROUP;
     } else if (STRCMP(key, "START") == 0) {
@@ -5003,8 +5049,8 @@ static char_u *get_syn_pattern(char_u *arg, synpat_T *ci)
     EMSG2(_("E401: Pattern delimiter not found: %s"), arg);
     return NULL;
   }
-  /* store the pattern and compiled regexp program */
-  ci->sp_pattern = vim_strnsave(arg + 1, (int)(end - arg - 1));
+  // store the pattern and compiled regexp program
+  ci->sp_pattern = vim_strnsave(arg + 1, end - arg - 1);
 
   /* Make 'cpoptions' empty, to avoid the 'l' flag */
   cpo_save = p_cpo;
@@ -5092,7 +5138,7 @@ static void syn_cmd_sync(exarg_T *eap, int syncing)
     arg_end = skiptowhite(arg_start);
     next_arg = skipwhite(arg_end);
     xfree(key);
-    key = vim_strnsave_up(arg_start, (int)(arg_end - arg_start));
+    key = vim_strnsave_up(arg_start, arg_end - arg_start);
     if (STRCMP(key, "CCOMMENT") == 0) {
       if (!eap->skip)
         curwin->w_s->b_syn_sync_flags |= SF_CCOMMENT;
@@ -5151,7 +5197,7 @@ static void syn_cmd_sync(exarg_T *eap, int syncing)
       if (!eap->skip) {
         /* store the pattern and compiled regexp program */
         curwin->w_s->b_syn_linecont_pat =
-          vim_strnsave(next_arg + 1, (int)(arg_end - next_arg - 1));
+          vim_strnsave(next_arg + 1, arg_end - next_arg - 1);
         curwin->w_s->b_syn_linecont_ic = curwin->w_s->b_syn_ic;
 
         /* Make 'cpoptions' empty, to avoid the 'l' flag */
@@ -5260,13 +5306,17 @@ get_id_list(
           xfree(name);
           break;
         }
-        if (name[1] == 'A')
-          id = SYNID_ALLBUT;
-        else if (name[1] == 'T')
-          id = SYNID_TOP;
-        else
-          id = SYNID_CONTAINED;
-        id += current_syn_inc_tag;
+        if (name[1] == 'A') {
+          id = SYNID_ALLBUT + current_syn_inc_tag;
+        } else if (name[1] == 'T') {
+          if (curwin->w_s->b_syn_topgrp >= SYNID_CLUSTER) {
+            id = curwin->w_s->b_syn_topgrp;
+          } else {
+            id = SYNID_TOP + current_syn_inc_tag;
+          }
+        } else {
+          id = SYNID_CONTAINED + current_syn_inc_tag;
+        }
       } else if (name[1] == '@')   {
         if (skip) {
           id = -1;
@@ -5485,6 +5535,7 @@ static struct subcommand subcommands[] =
   { "cluster",   syn_cmd_cluster },
   { "conceal",   syn_cmd_conceal },
   { "enable",    syn_cmd_enable },
+  { "foldlevel", syn_cmd_foldlevel },
   { "include",   syn_cmd_include },
   { "iskeyword", syn_cmd_iskeyword },
   { "keyword",   syn_cmd_keyword },
@@ -5510,18 +5561,17 @@ void ex_syntax(exarg_T *eap)
 {
   char_u      *arg = eap->arg;
   char_u      *subcmd_end;
-  char_u      *subcmd_name;
-  int i;
 
   syn_cmdlinep = eap->cmdlinep;
 
-  /* isolate subcommand name */
-  for (subcmd_end = arg; ASCII_ISALPHA(*subcmd_end); ++subcmd_end)
-    ;
-  subcmd_name = vim_strnsave(arg, (int)(subcmd_end - arg));
-  if (eap->skip)              /* skip error messages for all subcommands */
-    ++emsg_skip;
-  for (i = 0;; ++i) {
+  // isolate subcommand name
+  for (subcmd_end = arg; ASCII_ISALPHA(*subcmd_end); subcmd_end++) {
+  }
+  char_u *const subcmd_name = vim_strnsave(arg, subcmd_end - arg);
+  if (eap->skip) {  // skip error messages for all subcommands
+    emsg_skip++;
+  }
+  for (int i = 0;; i++) {
     if (subcommands[i].name == NULL) {
       EMSG2(_("E410: Invalid :syntax subcommand: %s"), subcmd_name);
       break;
@@ -5549,9 +5599,11 @@ void ex_ownsyntax(exarg_T *eap)
     hash_init(&curwin->w_s->b_keywtab_ic);
     // TODO: Keep the spell checking as it was. NOLINT(readability/todo)
     curwin->w_p_spell = false;  // No spell checking
+    // make sure option values are "empty_option" instead of NULL
     clear_string_option(&curwin->w_s->b_p_spc);
     clear_string_option(&curwin->w_s->b_p_spf);
     clear_string_option(&curwin->w_s->b_p_spl);
+    clear_string_option(&curwin->w_s->b_p_spo);
     clear_string_option(&curwin->w_s->b_syn_isk);
   }
 
@@ -5568,14 +5620,14 @@ void ex_ownsyntax(exarg_T *eap)
   // Move value of b:current_syntax to w:current_syntax.
   new_value = get_var_value("b:current_syntax");
   if (new_value != NULL) {
-    set_internal_string_var((char_u *)"w:current_syntax", new_value);
+    set_internal_string_var("w:current_syntax", new_value);
   }
 
   // Restore value of b:current_syntax.
   if (old_value == NULL) {
     do_unlet(S_LEN("b:current_syntax"), true);
   } else {
-    set_internal_string_var((char_u *)"b:current_syntax", old_value);
+    set_internal_string_var("b:current_syntax", old_value);
     xfree(old_value);
   }
 }
@@ -5763,6 +5815,17 @@ int syn_get_stack_item(int i)
   return CUR_STATE(i).si_id;
 }
 
+static int syn_cur_foldlevel(void)
+{
+  int level = 0;
+  for (int i = 0; i < current_state.ga_len; i++) {
+    if (CUR_STATE(i).si_flags & HL_FOLD) {
+      level++;
+    }
+  }
+  return level;
+}
+
 /*
  * Function called to get folding level for line "lnum" in window "wp".
  */
@@ -5776,9 +5839,22 @@ int syn_get_foldlevel(win_T *wp, long lnum)
       && !wp->w_s->b_syn_slow) {
     syntax_start(wp, lnum);
 
-    for (int i = 0; i < current_state.ga_len; ++i) {
-      if (CUR_STATE(i).si_flags & HL_FOLD) {
-        ++level;
+    // Start with the fold level at the start of the line.
+    level = syn_cur_foldlevel();
+
+    if (wp->w_s->b_syn_foldlevel == SYNFLD_MINIMUM) {
+      // Find the lowest fold level that is followed by a higher one.
+      int cur_level = level;
+      int low_level = cur_level;
+      while (!current_finished) {
+        (void)syn_current_attr(false, false, NULL, false);
+        cur_level = syn_cur_foldlevel();
+        if (cur_level < low_level) {
+          low_level = cur_level;
+        } else if (cur_level > low_level) {
+          level = low_level;
+        }
+        current_col++;
       }
     }
   }
@@ -5959,6 +6035,7 @@ static const char *highlight_init_both[] = {
   "IncSearch    cterm=reverse gui=reverse",
   "ModeMsg      cterm=bold gui=bold",
   "NonText      ctermfg=Blue gui=bold guifg=Blue",
+  "Normal       cterm=NONE gui=NONE",
   "PmenuSbar    ctermbg=Grey guibg=Grey",
   "StatusLine   cterm=reverse,bold gui=reverse,bold",
   "StatusLineNC cterm=reverse gui=reverse",
@@ -5973,6 +6050,9 @@ static const char *highlight_init_both[] = {
   "default link Whitespace NonText",
   "default link MsgSeparator StatusLine",
   "default link NormalFloat Pmenu",
+  "default link FloatBorder VertSplit",
+  "default FloatShadow blend=80 guibg=Black",
+  "default FloatShadowThrough blend=100 guibg=Black",
   "RedrawDebugNormal cterm=reverse gui=reverse",
   "RedrawDebugClear ctermbg=Yellow guibg=Yellow",
   "RedrawDebugComposed ctermbg=Green guibg=Green",
@@ -6010,7 +6090,6 @@ static const char *highlight_init_light[] = {
   "Title        ctermfg=DarkMagenta gui=bold guifg=Magenta",
   "Visual       guibg=LightGrey",
   "WarningMsg   ctermfg=DarkRed guifg=Red",
-  "Normal       gui=NONE",
   NULL
 };
 
@@ -6044,7 +6123,6 @@ static const char *highlight_init_dark[] = {
   "Title        ctermfg=LightMagenta gui=bold guifg=Magenta",
   "Visual       guibg=DarkGrey",
   "WarningMsg   ctermfg=LightRed guifg=Red",
-  "Normal       gui=NONE",
   NULL
 };
 
@@ -6360,6 +6438,10 @@ int load_colors(char_u *name)
   apply_autocmds(EVENT_COLORSCHEMEPRE, name, curbuf->b_fname, false, curbuf);
   snprintf((char *)buf, buflen, "colors/%s.vim", name);
   retval = source_runtime(buf, DIP_START + DIP_OPT);
+  if (retval == FAIL) {
+    snprintf((char *)buf, buflen, "colors/%s.lua", name);
+    retval = source_runtime(buf, DIP_START + DIP_OPT);
+  }
   xfree(buf);
   apply_autocmds(EVENT_COLORSCHEME, name, curbuf->b_fname, FALSE, curbuf);
 
@@ -6401,7 +6483,7 @@ static int color_numbers_88[28] = { 0, 4, 2, 6,
   75, 11, 78, 15, -1 };
 // for xterm with 256 colors...
 static int color_numbers_256[28] = { 0, 4, 2, 6,
-  1, 5, 130, 130,
+  1, 5, 130, 3,
   248, 248, 7, 7,
   242, 242,
   12, 81, 10, 121,
@@ -6532,6 +6614,7 @@ void do_highlight(const char *line, const bool forceit, const bool init)
     const char *to_end;
     int from_id;
     int to_id;
+    struct hl_group *hlgroup = NULL;
 
     from_end = (const char *)skiptowhite((const char_u *)from_start);
     to_start = (const char *)skipwhite((const char_u *)from_end);
@@ -6558,7 +6641,16 @@ void do_highlight(const char *line, const bool forceit, const bool init)
                               (int)(to_end - to_start));
     }
 
-    if (from_id > 0 && (!init || HL_TABLE()[from_id - 1].sg_set == 0)) {
+    if (from_id > 0) {
+      hlgroup = &HL_TABLE()[from_id - 1];
+      if (dodefault && (forceit || hlgroup->sg_deflink == 0)) {
+        hlgroup->sg_deflink = to_id;
+        hlgroup->sg_deflink_sctx = current_sctx;
+        hlgroup->sg_deflink_sctx.sc_lnum += sourcing_lnum;
+      }
+    }
+
+    if (from_id > 0 && (!init || hlgroup->sg_set == 0)) {
       // Don't allow a link when there already is some highlighting
       // for the group, unless '!' is used
       if (to_id > 0 && !forceit && !init
@@ -6566,17 +6658,16 @@ void do_highlight(const char *line, const bool forceit, const bool init)
         if (sourcing_name == NULL && !dodefault) {
           EMSG(_("E414: group has settings, highlight link ignored"));
         }
-      } else if (HL_TABLE()[from_id - 1].sg_link != to_id
-                 || HL_TABLE()[from_id - 1].sg_script_ctx.sc_sid
-                 != current_sctx.sc_sid
-                 || HL_TABLE()[from_id - 1].sg_cleared) {
+      } else if (hlgroup->sg_link != to_id
+                 || hlgroup->sg_script_ctx.sc_sid != current_sctx.sc_sid
+                 || hlgroup->sg_cleared) {
         if (!init) {
-          HL_TABLE()[from_id - 1].sg_set |= SG_LINK;
+          hlgroup->sg_set |= SG_LINK;
         }
-        HL_TABLE()[from_id - 1].sg_link = to_id;
-        HL_TABLE()[from_id - 1].sg_script_ctx = current_sctx;
-        HL_TABLE()[from_id - 1].sg_script_ctx.sc_lnum += sourcing_lnum;
-        HL_TABLE()[from_id - 1].sg_cleared = false;
+        hlgroup->sg_link = to_id;
+        hlgroup->sg_script_ctx = current_sctx;
+        hlgroup->sg_script_ctx.sc_lnum += sourcing_lnum;
+        hlgroup->sg_cleared = false;
         redraw_all_later(SOME_VALID);
 
         // Only call highlight changed() once after multiple changes
@@ -6649,7 +6740,7 @@ void do_highlight(const char *line, const bool forceit, const bool init)
       }
       xfree(key);
       key = (char *)vim_strnsave_up((const char_u *)key_start,
-                                    (int)(linep - key_start));
+                                    linep - key_start);
       linep = (const char *)skipwhite((const char_u *)linep);
 
       if (strcmp(key, "NONE") == 0) {
@@ -6835,7 +6926,7 @@ void do_highlight(const char *line, const bool forceit, const bool init)
           }
         }
       } else if (strcmp(key, "GUIFG") == 0)   {
-        char_u **const namep = &HL_TABLE()[idx].sg_rgb_fg_name;
+        char **namep = &HL_TABLE()[idx].sg_rgb_fg_name;
 
         if (!init || !(HL_TABLE()[idx].sg_set & SG_GUI)) {
           if (!init) {
@@ -6845,8 +6936,8 @@ void do_highlight(const char *line, const bool forceit, const bool init)
           if (*namep == NULL || STRCMP(*namep, arg) != 0) {
             xfree(*namep);
             if (strcmp(arg, "NONE") != 0) {
-              *namep = (char_u *)xstrdup(arg);
-              HL_TABLE()[idx].sg_rgb_fg = name_to_color((char_u *)arg);
+              *namep = xstrdup(arg);
+              HL_TABLE()[idx].sg_rgb_fg = name_to_color(arg);
             } else {
               *namep = NULL;
               HL_TABLE()[idx].sg_rgb_fg = -1;
@@ -6859,7 +6950,7 @@ void do_highlight(const char *line, const bool forceit, const bool init)
           normal_fg = HL_TABLE()[idx].sg_rgb_fg;
         }
       } else if (STRCMP(key, "GUIBG") == 0)   {
-        char_u **const namep = &HL_TABLE()[idx].sg_rgb_bg_name;
+        char **const namep = &HL_TABLE()[idx].sg_rgb_bg_name;
 
         if (!init || !(HL_TABLE()[idx].sg_set & SG_GUI)) {
           if (!init) {
@@ -6869,8 +6960,8 @@ void do_highlight(const char *line, const bool forceit, const bool init)
           if (*namep == NULL || STRCMP(*namep, arg) != 0) {
             xfree(*namep);
             if (STRCMP(arg, "NONE") != 0) {
-              *namep = (char_u *)xstrdup(arg);
-              HL_TABLE()[idx].sg_rgb_bg = name_to_color((char_u *)arg);
+              *namep = xstrdup(arg);
+              HL_TABLE()[idx].sg_rgb_bg = name_to_color(arg);
             } else {
               *namep = NULL;
               HL_TABLE()[idx].sg_rgb_bg = -1;
@@ -6883,7 +6974,7 @@ void do_highlight(const char *line, const bool forceit, const bool init)
           normal_bg = HL_TABLE()[idx].sg_rgb_bg;
         }
       } else if (strcmp(key, "GUISP") == 0)   {
-        char_u **const namep = &HL_TABLE()[idx].sg_rgb_sp_name;
+        char **const namep = &HL_TABLE()[idx].sg_rgb_sp_name;
 
         if (!init || !(HL_TABLE()[idx].sg_set & SG_GUI)) {
           if (!init) {
@@ -6893,8 +6984,8 @@ void do_highlight(const char *line, const bool forceit, const bool init)
           if (*namep == NULL || STRCMP(*namep, arg) != 0) {
             xfree(*namep);
             if (strcmp(arg, "NONE") != 0) {
-              *namep = (char_u *)xstrdup(arg);
-              HL_TABLE()[idx].sg_rgb_sp = name_to_color((char_u *)arg);
+              *namep = xstrdup(arg);
+              HL_TABLE()[idx].sg_rgb_sp = name_to_color(arg);
             } else {
               *namep = NULL;
               HL_TABLE()[idx].sg_rgb_sp = -1;
@@ -7007,13 +7098,14 @@ void restore_cterm_colors(void)
  */
 static int hl_has_settings(int idx, int check_link)
 {
-  return HL_TABLE()[idx].sg_attr != 0
-         || HL_TABLE()[idx].sg_cterm_fg != 0
-         || HL_TABLE()[idx].sg_cterm_bg != 0
-         || HL_TABLE()[idx].sg_rgb_fg_name != NULL
-         || HL_TABLE()[idx].sg_rgb_bg_name != NULL
-         || HL_TABLE()[idx].sg_rgb_sp_name != NULL
-         || (check_link && (HL_TABLE()[idx].sg_set & SG_LINK));
+  return HL_TABLE()[idx].sg_cleared == 0
+    && (HL_TABLE()[idx].sg_attr != 0
+        || HL_TABLE()[idx].sg_cterm_fg != 0
+        || HL_TABLE()[idx].sg_cterm_bg != 0
+        || HL_TABLE()[idx].sg_rgb_fg_name != NULL
+        || HL_TABLE()[idx].sg_rgb_bg_name != NULL
+        || HL_TABLE()[idx].sg_rgb_sp_name != NULL
+        || (check_link && (HL_TABLE()[idx].sg_set & SG_LINK)));
 }
 
 /*
@@ -7036,12 +7128,11 @@ static void highlight_clear(int idx)
   XFREE_CLEAR(HL_TABLE()[idx].sg_rgb_bg_name);
   XFREE_CLEAR(HL_TABLE()[idx].sg_rgb_sp_name);
   HL_TABLE()[idx].sg_blend = -1;
-  // Clear the script ID only when there is no link, since that is not
-  // cleared.
-  if (HL_TABLE()[idx].sg_link == 0) {
-    HL_TABLE()[idx].sg_script_ctx.sc_sid = 0;
-    HL_TABLE()[idx].sg_script_ctx.sc_lnum = 0;
-  }
+  // Restore default link and context if they exist. Otherwise clears.
+  HL_TABLE()[idx].sg_link = HL_TABLE()[idx].sg_deflink;
+  // Since we set the default link, set the location to where the default
+  // link was set.
+  HL_TABLE()[idx].sg_script_ctx = HL_TABLE()[idx].sg_deflink_sctx;
 }
 
 
@@ -7088,11 +7179,30 @@ static void highlight_list_one(const int id)
     msg_outtrans(HL_TABLE()[HL_TABLE()[id - 1].sg_link - 1].sg_name);
   }
 
-  if (!didh)
-    highlight_list_arg(id, didh, LIST_STRING, 0, (char_u *)"cleared", "");
+  if (!didh) {
+    highlight_list_arg(id, didh, LIST_STRING, 0, "cleared", "");
+  }
   if (p_verbose > 0) {
     last_set_msg(sgp->sg_script_ctx);
   }
+}
+
+Dictionary get_global_hl_defs(void)
+{
+  Dictionary rv = ARRAY_DICT_INIT;
+  for (int i = 1; i <= highlight_ga.ga_len && !got_int; i++) {
+    Dictionary attrs = ARRAY_DICT_INIT;
+    struct hl_group *h = &HL_TABLE()[i - 1];
+    if (h->sg_attr > 0) {
+      attrs = hlattrs2dict(syn_attr2entry(h->sg_attr), true);
+    } else if (h->sg_link > 0) {
+      const char *link = (const char *)HL_TABLE()[h->sg_link - 1].sg_name;
+      PUT(attrs, "link", STRING_OBJ(cstr_to_string(link)));
+    }
+    PUT(rv, (const char *)h->sg_name, DICTIONARY_OBJ(attrs));
+  }
+
+  return rv;
 }
 
 /// Outputs a highlight when doing ":hi MyHighlight"
@@ -7102,15 +7212,15 @@ static void highlight_list_one(const int id)
 /// @param sarg string used if \p type == LIST_STRING
 static bool highlight_list_arg(
     const int id, bool didh, const int type, int iarg,
-    char_u *const sarg, const char *const name)
+    char *const sarg, const char *const name)
 {
-  char_u buf[100];
+  char buf[100];
 
   if (got_int) {
     return false;
   }
   if (type == LIST_STRING ? (sarg != NULL) : (iarg != 0)) {
-    char_u *ts = buf;
+    char *ts = buf;
     if (type == LIST_INT) {
       snprintf((char *)buf, sizeof(buf), "%d", iarg - 1);
     } else if (type == LIST_STRING) {
@@ -7127,15 +7237,15 @@ static bool highlight_list_arg(
       }
     }
 
-    (void)syn_list_header(didh, (int)(vim_strsize(ts) + STRLEN(name) + 1), id,
-                          false);
+    (void)syn_list_header(didh, (int)(vim_strsize((char_u *)ts) + STRLEN(name)
+                                      + 1), id, false);
     didh = true;
     if (!got_int) {
       if (*name != NUL) {
         MSG_PUTS_ATTR(name, HL_ATTR(HLF_D));
         MSG_PUTS_ATTR("=", HL_ATTR(HLF_D));
       }
-      msg_outtrans(ts);
+      msg_outtrans((char_u *)ts);
     }
   }
   return didh;
@@ -7314,9 +7424,9 @@ static void set_hl_attr(int idx)
   at_en.rgb_sp_color = sgp->sg_rgb_sp_name ? sgp->sg_rgb_sp : -1;
   at_en.hl_blend = sgp->sg_blend;
 
-  sgp->sg_attr = hl_get_syn_attr(idx+1, at_en);
+  sgp->sg_attr = hl_get_syn_attr(0, idx+1, at_en);
 
-  // a cursor style uses this syn_id, make sure its atribute is updated.
+  // a cursor style uses this syn_id, make sure its attribute is updated.
   if (cursor_mode_uses_syn_id(idx+1)) {
     ui_mode_info_set();
   }
@@ -7445,6 +7555,8 @@ static int syn_add_group(char_u *name)
     return 0;
   }
 
+  char_u *const name_up = vim_strsave_up(name);
+
   // Append another syntax_highlight entry.
   struct hl_group* hlgp = GA_APPEND_VIA_PTR(struct hl_group, &highlight_ga);
   memset(hlgp, 0, sizeof(*hlgp));
@@ -7453,7 +7565,7 @@ static int syn_add_group(char_u *name)
   hlgp->sg_rgb_fg = -1;
   hlgp->sg_rgb_sp = -1;
   hlgp->sg_blend = -1;
-  hlgp->sg_name_u = vim_strsave_up(name);
+  hlgp->sg_name_u = name_up;
 
   return highlight_ga.ga_len;               /* ID is index plus one */
 }
@@ -7472,12 +7584,17 @@ static void syn_unadd_group(void)
 /// @see syn_attr2entry
 int syn_id2attr(int hl_id)
 {
-  struct hl_group     *sgp;
-
   hl_id = syn_get_final_id(hl_id);
-  sgp = &HL_TABLE()[hl_id - 1];             /* index is ID minus one */
+  struct hl_group *sgp = &HL_TABLE()[hl_id - 1];  // index is ID minus one
+
+  int attr = ns_get_hl(-1, hl_id, false, sgp->sg_set);
+  if (attr >= 0) {
+    return attr;
+  }
   return sgp->sg_attr;
 }
+
+
 
 
 /*
@@ -7486,7 +7603,6 @@ int syn_id2attr(int hl_id)
 int syn_get_final_id(int hl_id)
 {
   int count;
-  struct hl_group     *sgp;
 
   if (hl_id > highlight_ga.ga_len || hl_id < 1)
     return 0;                           /* Can be called from eval!! */
@@ -7496,9 +7612,23 @@ int syn_get_final_id(int hl_id)
    * Look out for loops!  Break after 100 links.
    */
   for (count = 100; --count >= 0; ) {
-    sgp = &HL_TABLE()[hl_id - 1];           /* index is ID minus one */
-    if (sgp->sg_link == 0 || sgp->sg_link > highlight_ga.ga_len)
+    struct hl_group *sgp = &HL_TABLE()[hl_id - 1];  // index is ID minus one
+
+    // ACHTUNG: when using "tmp" attribute (no link) the function might be
+    // called twice. it needs be smart enough to remember attr only to
+    // syn_id2attr time
+    int check = ns_get_hl(-1, hl_id, true, sgp->sg_set);
+    if (check == 0) {
+      return hl_id;  // how dare! it broke the link!
+    } else if (check > 0) {
+      hl_id = check;
+      continue;
+    }
+
+
+    if (sgp->sg_link == 0 || sgp->sg_link > highlight_ga.ga_len) {
       break;
+    }
     hl_id = sgp->sg_link;
   }
 
@@ -7569,8 +7699,8 @@ void highlight_changed(void)
 {
   int id;
   char_u userhl[30];  // use 30 to avoid compiler warning
-  int id_SNC = -1;
   int id_S = -1;
+  int id_SNC = 0;
   int hlcnt;
 
   need_highlight_changed = FALSE;
@@ -8428,7 +8558,7 @@ color_name_table_T color_name_table[] = {
 ///
 /// @param[in] name string value to convert to RGB
 /// return the hex value or -1 if could not find a correct value
-RgbValue name_to_color(const char_u *name)
+RgbValue name_to_color(const char *name)
 {
 
   if (name[0] == '#' && isxdigit(name[1]) && isxdigit(name[2])

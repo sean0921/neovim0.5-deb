@@ -101,6 +101,7 @@ typedef enum {
 #define VAR_TYPE_DICT       4
 #define VAR_TYPE_FLOAT      5
 #define VAR_TYPE_BOOL       6
+#define VAR_TYPE_SPECIAL    7
 
 
 // values for xp_context when doing command line completion
@@ -157,7 +158,9 @@ enum {
   EXPAND_MESSAGES,
   EXPAND_MAPCLEAR,
   EXPAND_ARGLIST,
+  EXPAND_DIFF_BUFFERS,
   EXPAND_CHECKHEALTH,
+  EXPAND_LUA,
 };
 
 
@@ -207,6 +210,7 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 // Size in bytes of the hash used in the undo file.
 #define UNDO_HASH_SIZE 32
 
+#define CLEAR_POINTER(ptr)  memset((ptr), 0, sizeof(*(ptr)))
 
 // defines to avoid typecasts from (char_u *) to (char *) and back
 // (vim_strchr() is now in strings.c)
@@ -248,6 +252,9 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 
 # define vim_strpbrk(s, cs) (char_u *)strpbrk((char *)(s), (char *)(cs))
 
+// Character used as separated in autoload function/variable names.
+#define AUTOLOAD_CHAR '#'
+
 #include "nvim/message.h"
 
 // Prefer using emsgf(), because perror() may send the output to the wrong
@@ -255,7 +262,8 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 #define PERROR(msg) (void) emsgf("%s: %s", msg, strerror(errno))
 
 #define SHOWCMD_COLS 10                 // columns needed by shown command
-#define STL_MAX_ITEM 80                 // max nr of %<flag> in statusline
+
+#include "nvim/path.h"
 
 /// Compare file names
 ///
@@ -305,12 +313,14 @@ enum { FOLD_TEXT_LEN = 51 };  //!< buffer size for get_foldtext()
 #define DIP_NORTP 0x20  // do not use 'runtimepath'
 #define DIP_NOAFTER 0x40  // skip "after" directories
 #define DIP_AFTER   0x80  // only use "after" directories
+#define DIP_LUA  0x100    // also use ".lua" files
 
 // Lowest number used for window ID. Cannot have this many windows per tab.
 #define LOWEST_WIN_ID 1000
 
 // BSD is supposed to cover FreeBSD and similar systems.
-#if (defined(BSD) || defined(__FreeBSD_kernel__)) && defined(S_ISCHR)
+#if (defined(BSD) || defined(__FreeBSD_kernel__)) \
+    && (defined(S_ISCHR) || defined(S_IFCHR))
 # define OPEN_CHR_FILES
 #endif
 
