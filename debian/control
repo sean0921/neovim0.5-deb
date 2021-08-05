@@ -15,6 +15,7 @@ Build-Depends:
  libmsgpack-dev (>= 1.0.0),
  libnss-wrapper <!nocheck>,
  libtermkey-dev,
+ libtree-sitter-dev (>= 0.20.0),
  libunibilium-dev,
  libuv1-dev,
  libvterm-dev (>= 0.1),
