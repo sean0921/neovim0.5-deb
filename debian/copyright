@@ -36,18 +36,15 @@ Files: src/nvim/api/*
        src/nvim/CMakeLists.txt
        src/nvim/context.*
        src/nvim/cursor_shape.*
-       src/nvim/eval.lua
        src/nvim/eval/*
        src/nvim/event/*
        src/nvim/extmark*
        src/nvim/func_attr.h
-       src/nvim/generators/*
        src/nvim/grid_defs.h
        src/nvim/highlight.*
        src/nvim/highlight_defs.h
        src/nvim/lib/ringbuf.h
        src/nvim/log.*
-       src/nvim/lua/*
        src/nvim/map.*
        src/nvim/marktree.*
        src/nvim/math.*
