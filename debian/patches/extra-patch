@@ -1,0 +1,2482 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ neovim (0.5.0-1) experimental; urgency=medium
+ .
+   * New upstream release (Closes: #991155)
+   * rules: Set correct CMAKE_BUILD_TYPE when DEB_BUILD_OPTIONS=noopt
+   * Update debian/copyright
+   * control: Add new dependency libtree-sitter-dev to Build-Depends
+   * Adjust path for nvim.png install
+   * d/copyright: Deduplicate overlapping glob patterns
+   * Add lintian overrides for nvim's help files
+Author: James McCoy <jamessan@debian.org>
+Bug-Debian: https://bugs.debian.org/991155
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: 2021-08-13
+
+--- /dev/null
++++ neovim-0.5.0/.builds/freebsd.yml
+@@ -0,0 +1,44 @@
++image: freebsd/12.x
++
++packages:
++- cmake
++- gmake
++- ninja
++- libtool
++- sha
++- automake
++- pkgconf
++- unzip
++- wget
++- gettext
++- python
++- libffi
++
++sources:
++- https://github.com/neovim/neovim
++
++environment:
++  SOURCEHUT: 1
++  LANG: en_US.UTF-8
++  CMAKE_EXTRA_FLAGS: -DCI_BUILD=ON -DMIN_LOG_LEVEL=3
++
++tasks:
++- build-deps: |
++    cd neovim
++    gmake deps
++- build: |
++    cd neovim
++    gmake CMAKE_BUILD_TYPE=RelWithDebInfo CMAKE_EXTRA_FLAGS="${CMAKE_EXTRA_FLAGS}" nvim
++- functionaltest: |
++    cd neovim
++    gmake functionaltest
++- unittest: |
++    cd neovim
++    gmake unittest
++
++# Unfortunately, oldtest is tanking hard on sourcehut's FreeBSD instance
++# and not producing any logs as a result. So don't do this task for now.
++# Ref: https://github.com/neovim/neovim/pull/11477#discussion_r352095005.
++# - test-oldtest: |
++#     cd neovim
++#     gmake oldtest
+--- /dev/null
++++ neovim-0.5.0/.builds/openbsd.yml
+@@ -0,0 +1,43 @@
++# sourcehut CI: https://builds.sr.ht/~jmk/neovim
++
++image: openbsd/6.9
++
++packages:
++- autoconf-2.71
++- automake-1.16.3
++- cmake
++- gettext-runtime-0.21p1
++- gettext-tools-0.21p1
++- gmake
++- libtool
++- ninja-1.10.2p0
++- unzip-6.0p14
++
++sources:
++- https://github.com/neovim/neovim
++
++environment:
++  SOURCEHUT: 1
++  LC_CTYPE: en_US.UTF-8
++  CMAKE_EXTRA_FLAGS: -DCI_BUILD=ON -DMIN_LOG_LEVEL=3
++
++tasks:
++- build-deps: |
++    export AUTOCONF_VERSION=2.71
++    export AUTOMAKE_VERSION=1.16
++    mkdir neovim/.deps
++    cd neovim/.deps
++    cmake -G Ninja ../third-party/
++    cmake --build . --config RelWithDebInfo
++- build: |
++    mkdir neovim/build
++    cd neovim/build
++    cmake -G Ninja $CMAKE_EXTRA_FLAGS ..
++    cmake --build . --config RelWithDebInfo
++    ./bin/nvim --version
++- functionaltest: |
++    cd neovim/build
++    cmake --build . --config RelWithDebInfo --target functionaltest
++- oldtest: |
++    cd neovim
++    gmake oldtest
+--- /dev/null
++++ neovim-0.5.0/.github/FUNDING.yml
+@@ -0,0 +1,2 @@
++github: neovim
++open_collective: neovim
+--- /dev/null
++++ neovim-0.5.0/.github/ISSUE_TEMPLATE/bug_report.md
+@@ -0,0 +1,34 @@
++---
++name: Bug report
++about: Report a problem in Nvim
++title: ''
++labels: bug
++
++---
++
++<!-- Before reporting: search existing issues and check the FAQ. -->
++
++- `nvim --version`:
++- Operating system/version:
++- Terminal name/version:
++- `$TERM`:
++
++<!--
++If this report is about different behaviour between Nvim and Vim, make sure to
++read `:h vim-differences` first. Otherwise remove the next line.
++-->
++[ ] `vim -u DEFAULTS` (version: ) behaves differently
++
++### Steps to reproduce using `nvim -u NORC`
++
++```
++nvim -u NORC
++# Alternative for shell-related problems:
++# env -i TERM=ansi-256color "$(which nvim)"
++
++```
++
++### Actual behaviour
++
++### Expected behaviour
++
+--- /dev/null
++++ neovim-0.5.0/.github/ISSUE_TEMPLATE/feature_request.md
+@@ -0,0 +1,27 @@
++---
++name: Feature request
++about: Request an enhancement for Nvim
++title: ''
++labels: enhancement
++
++---
++
++<!-- Before reporting: search existing issues and check the FAQ. -->
++
++- `nvim --version`:
++- `vim -u DEFAULTS` (version: ) behaves differently?
++- Operating system/version:
++- Terminal name/version:
++- `$TERM`:
++
++### Steps to reproduce using `nvim -u NORC`
++
++```
++nvim -u NORC
++
++```
++
++### Actual behaviour
++
++### Expected behaviour
++
+--- /dev/null
++++ neovim-0.5.0/.github/ISSUE_TEMPLATE/lsp_bug_report.md
+@@ -0,0 +1,58 @@
++---
++name: Language server client bug report
++about: Report a built-in lsp problem in Nvim
++title: ''
++labels: bug, lsp
++
++---
++
++<!-- 
++Before reporting: search existing issues and check the FAQ. Usage questions
++such as "How do I...?" or "Why isn't X language server/feature working?" belong 
++on the [Neovim Discourse](https://neovim.discourse.group/c/7-category/7) and will
++be closed.
++-->
++
++- `nvim --version`:
++- language server name/version:
++- Operating system/version:
++
++<details>
++<summary>nvim -c ":checkhealth nvim lspconfig"</summary>
++
++<!-- Paste the results from `nvim -c ":checkhealth nvim lspconfig"` here. -->
++
++</details>
++
++<details>
++<summary>lsp.log</summary>
++
++<!--
++Please paste the lsp log before and after the problem.
++
++You can set log level like this.
++`:lua vim.lsp.set_log_level("debug")`
++
++You can find the location of the log with the following command.
++`:lua print(vim.lsp.get_log_path())`
++-->
++
++</details>
++
++### Steps to reproduce using nvim -u minimal_init.lua
++<!-- 
++  Note, if the issue is with an autocompletion or other LSP plugin, please
++  report to the upstream tracker.  Download the minmal config with 
++  wget https://raw.githubusercontent.com/neovim/nvim-lspconfig/master/test/minimal_init.lua
++  and modify it to include any specific commands or servers pertaining to your issues.
++-->
++
++
++```
++nvim -u minimal_init.lua
++```
++
++### Actual behaviour
++
++### Expected behaviour
++
+--- /dev/null
++++ neovim-0.5.0/.github/labeler.yml
+@@ -0,0 +1,49 @@
++"lsp":
++  - runtime/lua/vim/lsp.lua
++  - runtime/lua/vim/lsp/*
++
++"lua":
++  - runtime/lua/**/*
++  - src/nvim/lua
++
++"tui":
++  - src/nvim/tui/tui.*
++
++"treesitter":
++  - src/nvim/lua/treesitter.*
++  - runtime/lua/vim/treesitter.lua
++  - runtime/lua/vim/treesitter/*
++
++"dependencies":
++  - third-party/**/*
++
++"topic: spell":
++  - src/nvim/spell*
++
++"topic: :terminal":
++  - src/nvim/terminal.*
++
++"topic: column":
++  - src/nvim/mark.h
++  - src/nvim/mark.c
++  - src/nvim/sign*
++
++"topic: folds":
++  - src/nvim/fold*
++
++"topic: mouse":
++  - src/nvim/mouse*
++
++"topic: documentation":
++  - runtime/doc/*
++
++"topic: clipboard":
++  - runtime/autoload/provider/clipboard.vim
++
++"topic: diff":
++  - src/nvim/diff.*
++
++"topic: build":
++  - CMakeLists.txt
++  - "**/CMakeLists.txt"
++  - "**/*.cmake"
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/api-docs.yml
+@@ -0,0 +1,51 @@
++name: Autogenerate API docs
++on:
++  push:
++    paths:
++      - 'src/nvim/api/*.[ch]'
++      - 'src/nvim/**.lua'
++      - 'runtime/lua/**.lua'
++    branches:
++      - 'master'
++      - 'release-[0-9]+.[0-9]+'
++  workflow_dispatch:
++
++jobs:
++  regen-api-docs:
++    runs-on: ubuntu-20.04
++    permissions:
++      contents: write
++      pull-requests: write
++    env:
++      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++    steps:
++      - uses: actions/checkout@v2
++        with:
++          fetch-depth: 0
++
++      - name: Install dependencies
++        run: |
++          sudo apt-get update
++          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y doxygen python3 python3-msgpack luajit
++
++      - name: Setup git config
++        run: |
++          git config --global user.name 'marvim'
++          git config --global user.email 'marvim@users.noreply.github.com'
++
++      - run: printf 'DOC_BRANCH=marvim/api-doc-update/%s\n' ${GITHUB_REF#refs/heads/} >> $GITHUB_ENV
++
++      - name: Generate docs
++        id: docs
++        run: |
++          git checkout -b ${DOC_BRANCH}
++          python3 scripts/gen_vimdoc.py
++          printf '::set-output name=UPDATED_DOCS::%s\n' $([ -z "$(git diff)" ]; echo $?)
++
++      - name: Automatic PR
++        if: ${{ steps.docs.outputs.UPDATED_DOCS != 0 }}
++        run: |
++          git add -u
++          git commit -m 'docs: regenerate'
++          git push --force https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY} ${DOC_BRANCH}
++          gh pr create --fill --base ${GITHUB_REF#refs/heads/} --head ${DOC_BRANCH} || true
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/ci.yml
+@@ -0,0 +1,116 @@
++name: CI
++on:
++  push:
++    branches: '**'
++  pull_request:
++    branches:
++      - 'master'
++      - 'release-[0-9]+.[0-9]+'
++
++jobs:
++  unixish:
++    name: ${{ matrix.os }} ${{ matrix.flavor }} (cc=${{ matrix.cc }})
++    strategy:
++      fail-fast: false
++      matrix:
++        include:
++          - flavor: asan
++            cc: clang-12
++            runner: ubuntu-20.04
++            os: linux
++          - flavor: lint
++            cc: gcc
++            runner: ubuntu-20.04
++            os: linux
++          - flavor: tsan
++            cc: clang-12
++            runner: ubuntu-20.04
++            os: linux
++          - cc: clang
++            runner: macos-10.15
++            os: osx
++          - flavor: functionaltest-lua
++            cc: gcc
++            runner: ubuntu-20.04
++            os: linux
++    runs-on: ${{ matrix.runner }}
++    if: github.event.pull_request.draft == false
++    env:
++      CC: ${{ matrix.cc }}
++      CI_OS_NAME: ${{ matrix.os }}
++    steps:
++      - uses: actions/checkout@v2
++
++      - name: Setup commom environment variables
++        run: ./.github/workflows/env.sh ${{ matrix.flavor }}
++
++      - name: Install apt packages
++        if: matrix.os == 'linux'
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y autoconf automake build-essential ccache cmake cpanminus cscope gcc-multilib gdb gettext gperf language-pack-tr libtool-bin locales ninja-build pkg-config python3 python3-pip python3-setuptools unzip valgrind xclip
++
++      - name: Install new clang
++        if: matrix.flavor == 'asan' || matrix.flavor == 'tsan'
++        run: |
++          wget https://apt.llvm.org/llvm.sh
++          chmod a+x llvm.sh
++          sudo ./llvm.sh 12
++          rm llvm.sh
++
++      - name: Install brew packages
++        if: matrix.os == 'osx'
++        run: |
++          # Workaround brew issues
++          rm -f /usr/local/bin/2to3
++          brew update >/dev/null
++          brew upgrade
++          brew install automake ccache perl cpanminus ninja
++
++      - name: Setup interpreter packages
++        run: |
++          ./ci/before_install.sh
++          ./ci/install.sh
++
++      - name: Cache dependencies
++        uses: actions/cache@v2
++        with:
++          path: |
++            ${{ env.CACHE_NVIM_DEPS_DIR }}
++            ~/.ccache
++          key: ${{ runner.os }}-${{ matrix.flavor }}-${{ matrix.cc }}-${{ hashFiles('cmake/*', 'third-party/**', '**/CMakeLists.txt') }}-${{ github.base_ref }}
++
++      - name: Build third-party
++        run: ./ci/before_script.sh
++
++      - name: Build and test
++        run: ./ci/script.sh
++
++      - name: Cache dependencies
++        if: ${{ success() }}
++        run: ./ci/before_cache.sh
++
++  windows:
++    runs-on: windows-2016
++    if: github.event.pull_request.draft == false
++    env:
++      DEPS_BUILD_DIR: ${{ format('{0}/nvim-deps', github.workspace) }}
++      DEPS_PREFIX: ${{ format('{0}/nvim-deps/usr', github.workspace) }}
++
++    strategy:
++      fail-fast: false
++      matrix:
++        config: [ MINGW_64-gcov, MINGW_32, MSVC_64, MSVC_32 ]
++    name: windows (${{ matrix.config }})
++    steps:
++      - uses: actions/checkout@v2
++
++      - uses: actions/cache@v2
++        with:
++          path: ${{ env.DEPS_BUILD_DIR }}
++          key: ${{ matrix.config }}-${{ hashFiles('third-party\**') }}
++
++      - name: Run CI
++        run: powershell ci\build.ps1
++        env:
++          CONFIGURATION: ${{ matrix.config }}
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/coverity-scan.yml
+@@ -0,0 +1,44 @@
++name: Coverity
++on:
++  schedule:
++    - cron: '0 10 * * 1'  # Run every Monday at 00:10
++  workflow_dispatch:
++
++jobs:
++  scan:
++    runs-on: ubuntu-18.04
++    steps:
++      - uses: actions/checkout@v2
++
++      - name: Install dependencies
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y autoconf automake build-essential cmake gettext gperf libtool-bin locales ninja-build pkg-config unzip
++
++      - name: Download Coverity
++        run: |
++          wget -q https://scan.coverity.com/download/cxx/linux64 --post-data "token=$TOKEN&project=neovim%2Fneovim" -O coverity_tool.tgz
++          mkdir cov-scan
++          tar ax -f coverity_tool.tgz --strip-components=1 -C cov-scan
++        env:
++          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
++
++      - name: Build dependencies
++        run: make deps
++
++      - name: Build/scan neovim
++        run: |
++          env PATH=$(pwd)/cov-scan/bin:$PATH cov-build --dir cov-int make
++
++      - name: Submit results
++        run: |
++          tar zcf cov-scan.tgz cov-int
++          curl --form token=$TOKEN \
++            --form email=$EMAIL \
++            --form file=@cov-scan.tgz \
++            --form version="$(git rev-parse HEAD)" \
++            --form description="Weekly GHA scan" \
++            'https://scan.coverity.com/builds?project=neovim%2Fneovim'
++        env:
++          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
++          EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/env.sh
+@@ -0,0 +1,65 @@
++#!/bin/bash
++set -e -u
++
++FLAVOR=${1:-}
++
++cat <<EOF >> "$GITHUB_PATH"
++$HOME/.local/bin
++EOF
++
++cat <<EOF >> "$GITHUB_ENV"
++CACHE_ENABLE=true
++CI_TARGET=tests
++CI_BUILD_DIR=$GITHUB_WORKSPACE
++BUILD_DIR=$GITHUB_WORKSPACE/build
++DEPS_BUILD_DIR=$HOME/nvim-deps
++INSTALL_PREFIX=$HOME/nvim-install
++LOG_DIR=$GITHUB_WORKSPACE/build/log
++NVIM_LOG_FILE=$GITHUB_WORKSPACE/build/.nvimlog
++VALGRIND_LOG=$GITHUB_WORKSPACE/build/log/valgrind-%p.log
++CACHE_NVIM_DEPS_DIR=$HOME/.cache/nvim-deps
++CACHE_MARKER=$HOME/.cache/nvim-deps/.ci_cache_marker
++CCACHE_BASEDIR=$GITHUB_WORKSPACE
++CCACHE_COMPRESS=1
++CCACHE_SLOPPINESS=time_macros,file_macro
++CCACHE_DIR=$HOME/.ccache
++EOF
++
++DEPS_CMAKE_FLAGS=-DUSE_BUNDLED_GPERF=OFF
++FUNCTIONALTEST=functionaltest
++BUILD_FLAGS="CMAKE_FLAGS=-DCI_BUILD=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX:PATH=$HOME/nvim-install -DBUSTED_OUTPUT_TYPE=nvim -DDEPS_PREFIX=$HOME/nvim-deps/usr -DMIN_LOG_LEVEL=3"
++
++case "$FLAVOR" in
++  asan)
++    BUILD_FLAGS="$BUILD_FLAGS -DPREFER_LUA=ON"
++    cat <<EOF >> "$GITHUB_ENV"
++CLANG_SANITIZER=ASAN_UBSAN
++SYMBOLIZER=asan_symbolize-12
++ASAN_OPTIONS=detect_leaks=1:check_initialization_order=1:log_path=$GITHUB_WORKSPACE/build/log/asan
++UBSAN_OPTIONS=print_stacktrace=1 log_path=$GITHUB_WORKSPACE/build/log/ubsan
++EOF
++    ;;
++  tsan)
++    cat <<EOF >> "$GITHUB_ENV"
++TSAN_OPTIONS=log_path=$GITHUB_WORKSPACE/build/log/tsan
++EOF
++    ;;
++  lint)
++    cat <<EOF >> "$GITHUB_ENV"
++CI_TARGET=lint
++EOF
++    ;;
++  functionaltest-lua)
++    BUILD_FLAGS="$BUILD_FLAGS -DPREFER_LUA=ON"
++    FUNCTIONALTEST=functionaltest-lua
++    DEPS_CMAKE_FLAGS="$DEPS_CMAKE_FLAGS -DUSE_BUNDLED_LUAJIT=OFF"
++    ;;
++  *)
++    ;;
++esac
++
++cat <<EOF >> "$GITHUB_ENV"
++$BUILD_FLAGS
++DEPS_CMAKE_FLAGS=$DEPS_CMAKE_FLAGS
++FUNCTIONALTEST=$FUNCTIONALTEST
++EOF
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/labeler.yml
+@@ -0,0 +1,13 @@
++name: "Pull Request Labeler"
++on:
++- pull_request_target
++jobs:
++  triage:
++    runs-on: ubuntu-latest
++    permissions:
++      contents: read
++      pull-requests: write
++    steps:
++    - uses: actions/labeler@main
++      with:
++        repo-token: "${{ secrets.GITHUB_TOKEN }}"
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/release.yml
+@@ -0,0 +1,258 @@
++name: Release
++on:
++  schedule:
++    - cron: '5 5 * * *'
++  workflow_dispatch:
++    inputs:
++      tag_name:
++        description: 'Tag name for release'
++        required: false
++        default: nightly
++  push:
++    tags:
++      - v[0-9]+.[0-9]+.[0-9]+
++
++# Build on the oldest supported images, so we have broader compatibility
++# Upgrade to gcc-11 to prevent it from using its builtins (#14150)
++jobs:
++  linux:
++    runs-on: ubuntu-18.04
++    outputs:
++      version: ${{ steps.build.outputs.version }}
++      release: ${{ steps.build.outputs.release }}
++    steps:
++      - uses: actions/checkout@v2
++        with:
++          fetch-depth: 0
++      - name: Install dependencies
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y autoconf automake build-essential cmake gcc-11 gettext gperf libtool-bin locales ninja-build pkg-config unzip
++      - name: Build release
++        id: build
++        run: |
++          CC=gcc-11 make CMAKE_BUILD_TYPE=RelWithDebInfo CMAKE_EXTRA_FLAGS="-DCMAKE_INSTALL_PREFIX:PATH="
++          printf '::set-output name=version::%s\n' "$(./build/bin/nvim --version | head -n 3 | sed -z 's/\n/%0A/g')"
++          printf '::set-output name=release::%s\n' "$(./build/bin/nvim --version | head -n 1)"
++          make DESTDIR="$GITHUB_WORKSPACE/build/release/nvim-linux64" install
++          cd "$GITHUB_WORKSPACE/build/release"
++          tar cfz nvim-linux64.tar.gz nvim-linux64
++      - uses: actions/upload-artifact@v2
++        with:
++          name: nvim-linux64
++          path: build/release/nvim-linux64.tar.gz
++          retention-days: 1
++
++  appimage:
++    runs-on: ubuntu-18.04
++    steps:
++      - uses: actions/checkout@v2
++        with:
++          fetch-depth: 0
++      - name: Install dependencies
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y autoconf automake build-essential cmake gcc-11 gettext gperf libtool-bin locales ninja-build pkg-config unzip
++      - if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != 'nightly')
++        run: CC=gcc-11 make appimage-latest
++      - if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name == 'nightly')
++        run: CC=gcc-11 make appimage-nightly
++      - uses: actions/upload-artifact@v2
++        with:
++          name: appimage
++          path: build/bin/nvim.appimage
++          retention-days: 1
++      - uses: actions/upload-artifact@v2
++        with:
++          name: appimage
++          path: build/bin/nvim.appimage.zsync
++          retention-days: 1
++
++  macOS:
++    runs-on: macos-10.15
++    steps:
++      - uses: actions/checkout@v2
++        with:
++          fetch-depth: 0
++      - name: Install brew packages
++        run: |
++          rm -f /usr/local/bin/2to3
++          brew update >/dev/null
++          brew upgrade
++          brew install automake ninja
++      - name: Build release
++        run: |
++          make CMAKE_BUILD_TYPE=Release CMAKE_EXTRA_FLAGS="-DCMAKE_INSTALL_PREFIX:PATH= -DCMAKE_OSX_DEPLOYMENT_TARGET=10.11"
++          make DESTDIR="$GITHUB_WORKSPACE/build/release/nvim-osx64" install
++      - name: Create package
++        run: |
++          cd "$GITHUB_WORKSPACE/build/release"
++          mkdir -p nvim-osx64/libs
++          libs=($(otool -L nvim-osx64/bin/nvim | sed 1d | sed -E -e 's|^[[:space:]]*||' -e 's| .*||'))
++          echo "libs:"
++          for lib in "${libs[@]}"; do
++            if echo "$lib" | grep -q -E 'libSystem|CoreFoundation' 2>/dev/null; then
++              echo "  [skipped] $lib"
++            else
++              echo "  $lib"
++              relname="libs/${lib##*/}"
++              cp -L "$lib" "nvim-osx64/$relname"
++              install_name_tool -change "$lib" "@executable_path/../$relname" nvim-osx64/bin/nvim
++            fi
++          done
++          tar cfz nvim-macos.tar.gz nvim-osx64
++      - uses: actions/upload-artifact@v2
++        with:
++          name: nvim-macos
++          path: build/release/nvim-macos.tar.gz
++          retention-days: 1
++
++  windows:
++    runs-on: windows-2016
++    env:
++      DEPS_BUILD_DIR: ${{ format('{0}/nvim-deps', github.workspace) }}
++      DEPS_PREFIX: ${{ format('{0}/nvim-deps/usr', github.workspace) }}
++    strategy:
++      matrix:
++        include:
++          - config: MSVC_64
++            archive: nvim-win64
++          - config: MSVC_32
++            archive: nvim-win32
++    name: windows (${{ matrix.config }})
++    steps:
++      - uses: actions/checkout@v2
++        with:
++          fetch-depth: 0
++      - run: powershell ci\build.ps1 -NoTests
++        env:
++          CONFIGURATION: ${{ matrix.config }}
++      - run: move build\Neovim.zip build\${{ matrix.archive }}.zip
++      - uses: actions/upload-artifact@v2
++        with:
++          name: ${{ matrix.archive }}
++          path: build/${{ matrix.archive }}.zip
++          retention-days: 1
++
++  publish:
++    needs: [linux, appimage, macOS, windows]
++    runs-on: ubuntu-20.04
++    permissions:
++      contents: write
++    steps:
++      - uses: actions/download-artifact@v2
++      - if: github.event_name == 'workflow_dispatch'
++        run: echo "TAG_NAME=${{ github.event.inputs.tag_name }}" >> $GITHUB_ENV
++      - if: github.event_name == 'schedule'
++        run: echo 'TAG_NAME=nightly' >> $GITHUB_ENV
++      - if: github.event_name == 'push'
++        run: |
++          TAG_NAME=${{ github.ref }}
++          echo "TAG_NAME=${TAG_NAME#refs/tags/}" >> $GITHUB_ENV
++      - if: env.TAG_NAME == 'nightly'
++        run: echo 'SUBJECT=Nvim development (prerelease) build' >> $GITHUB_ENV
++      - if: env.TAG_NAME != 'nightly'
++        run: echo 'SUBJECT=Nvim release build' >> $GITHUB_ENV
++      - if: env.TAG_NAME == 'nightly'
++        uses: dev-drprasad/delete-tag-and-release@v0.1.2
++        env:
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        with:
++          delete_release: true
++          tag_name: nightly
++      # `sha256sum` outputs <sha> <path>, so we cd into each dir to drop the
++      # containing folder from the output.
++      - name: Generate Linux64 SHA256 checksums
++        run: |
++          cd ./nvim-linux64
++          sha256sum nvim-linux64.tar.gz > nvim-linux64.tar.gz.sha256sum
++          echo "SHA_LINUX_64=$(cat nvim-linux64.tar.gz.sha256sum)" >> $GITHUB_ENV
++      - name: Generate App Image SHA256 checksums
++        run: |
++          cd ./appimage
++          sha256sum nvim.appimage > nvim.appimage.sha256sum
++          echo "SHA_APP_IMAGE=$(cat nvim.appimage.sha256sum)" >> $GITHUB_ENV
++      - name: Generate App Image Zsync SHA256 checksums
++        run: |
++          cd ./appimage
++          sha256sum nvim.appimage.zsync > nvim.appimage.zsync.sha256sum
++          echo "SHA_APP_IMAGE_ZSYNC=$(cat nvim.appimage.zsync.sha256sum)" >> $GITHUB_ENV
++      - name: Generate macOS SHA256 checksums
++        run: |
++          cd ./nvim-macos
++          sha256sum nvim-macos.tar.gz > nvim-macos.tar.gz.sha256sum
++          echo "SHA_MACOS=$(cat nvim-macos.tar.gz.sha256sum)" >> $GITHUB_ENV
++      - name: Generate Win32 SHA256 checksums
++        run: |
++          cd ./nvim-win32
++          sha256sum nvim-win32.zip > nvim-win32.zip.sha256sum
++          echo "SHA_WIN_32=$(cat nvim-win32.zip.sha256sum)" >> $GITHUB_ENV
++      - name: Generate Win64 SHA256 checksums
++        run: |
++          cd ./nvim-win64
++          sha256sum nvim-win64.zip > nvim-win64.zip.sha256sum
++          echo "SHA_WIN_64=$(cat nvim-win64.zip.sha256sum)" >> $GITHUB_ENV
++      - uses: meeDamian/github-release@2.0
++        with:
++          token: ${{ secrets.GITHUB_TOKEN }}
++          tag: ${{ env.TAG_NAME }}
++          name: ${{ needs.linux.outputs.release }}
++          prerelease: ${{ env.TAG_NAME == 'nightly' }}
++          commitish: ${{ github.sha }}
++          gzip: false
++          allow_override: ${{ env.TAG_NAME == 'nightly' }}
++          files: |
++            nvim-macos.tar.gz:./nvim-macos/nvim-macos.tar.gz
++            nvim-macos.tar.gz.sha256sum:./nvim-macos/nvim-macos.tar.gz.sha256sum
++            nvim-linux64.tar.gz:./nvim-linux64/nvim-linux64.tar.gz
++            nvim-linux64.tar.gz.sha256sum:./nvim-linux64/nvim-linux64.tar.gz.sha256sum
++            nvim.appimage:./appimage/nvim.appimage
++            nvim.appimage.sha256sum:./appimage/nvim.appimage.sha256sum
++            nvim.appimage.zsync:./appimage/nvim.appimage.zsync
++            nvim.appimage.zsync.sha256sum:./appimage/nvim.appimage.zsync.sha256sum
++            nvim-win32.zip:./nvim-win32/nvim-win32.zip
++            nvim-win32.zip.sha256sum:./nvim-win32/nvim-win32.zip.sha256sum
++            nvim-win64.zip:./nvim-win64/nvim-win64.zip
++            nvim-win64.zip.sha256sum:./nvim-win64/nvim-win64.zip.sha256sum
++          body: |
++            ${{ env.SUBJECT }}
++            ```
++            ${{ needs.linux.outputs.version }}```
++
++            ## Install
++
++            ### Windows
++
++            1. Extract **nvim-win64.zip** (or **nvim-win32.zip**)
++            2. Run `nvim-qt.exe`
++
++            ### macOS
++
++            1. Download **nvim-macos.tar.gz**
++            2. Extract: `tar xzvf nvim-macos.tar.gz`
++            3. Run `./nvim-osx64/bin/nvim`
++
++            ### Linux (x64)
++
++            1. Download **nvim.appimage**
++            2. Run `chmod u+x nvim.appimage && ./nvim.appimage`
++               - If your system does not have FUSE you can [extract the appimage](https://github.com/AppImage/AppImageKit/wiki/FUSE#type-2-appimage):
++                 ```
++                 ./nvim.appimage --appimage-extract
++                 ./squashfs-root/usr/bin/nvim
++                 ```
++
++            ### Other
++
++            - Install by [package manager](https://github.com/neovim/neovim/wiki/Installing-Neovim)
++
++            ## SHA256 Checksums
++
++            ```
++            ${{ env.SHA_LINUX_64 }}
++            ${{ env.SHA_APP_IMAGE }}
++            ${{ env.SHA_APP_IMAGE_ZSYNC }}
++            ${{ env.SHA_MACOS }}
++            ${{ env.SHA_WIN_64 }}
++            ${{ env.SHA_WIN_32 }}
++            ```
+--- /dev/null
++++ neovim-0.5.0/.github/workflows/vim-patches.yml
+@@ -0,0 +1,52 @@
++name: vim-patches
++on:
++  schedule:
++    - cron: '3 3 * * *'
++
++jobs:
++  update-vim-patches:
++    runs-on: ubuntu-20.04
++    permissions:
++      contents: write
++      pull-requests: write
++    env:
++      VIM_SOURCE_DIR: ${{ format('{0}/vim-src', github.workspace) }}
++      VERSION_BRANCH: marvim/ci-version-update
++      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++    steps:
++      - uses: actions/checkout@v2
++        with:
++          fetch-depth: 0
++
++      - uses: actions/checkout@v2
++        with:
++          repository: vim/vim
++          path: ${{ env.VIM_SOURCE_DIR }}
++          fetch-depth: 0
++
++      - run: |
++          gh release download -R neovim/neovim -p nvim.appimage
++          chmod a+x nvim.appimage
++          mkdir -p $HOME/.local/bin
++          mv nvim.appimage $HOME/.local/bin/nvim
++          printf '%s\n' "$HOME/.local/bin" >> $GITHUB_PATH
++
++      - name: Setup git config
++        run: |
++          git config --global user.name 'marvim'
++          git config --global user.email 'marvim@users.noreply.github.com'
++
++      - name: Update src/version.c
++        id: update-version
++        run: |
++          git checkout -b ${VERSION_BRANCH}
++          nvim -i NONE -u NONE --headless +'luafile scripts/vimpatch.lua' +q
++          printf '::set-output name=NEW_PATCHES::%s\n' $([ -z "$(git diff)" ]; echo $?)
++
++      - name: Automatic PR
++        if: ${{ steps.update-version.outputs.NEW_PATCHES != 0 }}
++        run: |
++          git add -u
++          git commit -m 'version.c: update [skip ci]'
++          git push --force https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY} ${VERSION_BRANCH}
++          gh pr create --fill --label vim-patch --base ${GITHUB_REF#refs/heads/} --head ${VERSION_BRANCH} || true
+--- /dev/null
++++ neovim-0.5.0/.travis.yml
+@@ -0,0 +1,222 @@
++dist: bionic
++
++language: c
++
++env:
++  global:
++    # Encrypted environment variables, see
++    # http://docs.travis-ci.com/user/encryption-keys/
++    #
++    # SNAP_SECRET_KEY: generated by:
++    #   travis encrypt SNAP_SECRET_KEY=xx --add
++    # https://github.com/neovim/neovim/pull/11428
++    # snapcraft key expires after 1 year. Steps to refresh it:
++    #   1. snapcraft enable-ci travis --refresh
++    #   2. mv .snapcraft/travis_snapcraft.cfg ci/snap/travis_snapcraft.cfg
++    #   3. Copy after_success command to ci/snap/deploy.sh from .travis.yml
++    #   4. Undo changes to .travis.yml
++    - secure: hd0qn2u8ABbJg5Bx4pBRcUQbKYFmcSHoecyHIPTCnGJT+NI41Bvm/IkN/N5DhBF+LbD3Q2nmR/dzI5H/dqS7RxMFvEx1DuFLendFHHX3MYf0AuKpXYY3gwgMTmqx8p/v6srlU7RBGWNGzHCWqksAem+EIWCe3I7WvfdKo1/DV/Y=
++
++    - PATH="$HOME/.local/bin:$PATH"
++    # Set "false" to force rebuild of third-party dependencies.
++    - CACHE_ENABLE=true
++    # Build directory for Neovim.
++    - BUILD_DIR="$TRAVIS_BUILD_DIR/build"
++    # Build directory for third-party dependencies.
++    - DEPS_BUILD_DIR="$HOME/nvim-deps"
++    # Install directory for Neovim.
++    - INSTALL_PREFIX="$HOME/nvim-install"
++    # Log directory for Clang sanitizers and Valgrind.
++    - LOG_DIR="$BUILD_DIR/log"
++    # Nvim log file.
++    - NVIM_LOG_FILE="$BUILD_DIR/.nvimlog"
++    # Default CMake flags.
++    - CMAKE_FLAGS="-DCI_BUILD=ON
++                   -DCMAKE_BUILD_TYPE=Debug
++                   -DCMAKE_INSTALL_PREFIX:PATH=$INSTALL_PREFIX
++                   -DBUSTED_OUTPUT_TYPE=nvim
++                   -DDEPS_PREFIX=$DEPS_BUILD_DIR/usr
++                   -DMIN_LOG_LEVEL=3"
++    - DEPS_CMAKE_FLAGS="-DUSE_BUNDLED_GPERF=OFF"
++    # Environment variables for Clang sanitizers.
++    - ASAN_OPTIONS="detect_leaks=1:check_initialization_order=1:log_path=$LOG_DIR/asan"
++    - TSAN_OPTIONS="log_path=$LOG_DIR/tsan"
++    - UBSAN_OPTIONS="print_stacktrace=1 log_path=$LOG_DIR/ubsan"
++    # Environment variables for Valgrind.
++    - VALGRIND_LOG="$LOG_DIR/valgrind-%p.log"
++    - CACHE_NVIM_DEPS_DIR="$HOME/.cache/nvim-deps"
++    # If this file exists, the cache is valid (compile was successful).
++    - CACHE_MARKER="$CACHE_NVIM_DEPS_DIR/.ci_cache_marker"
++    # default target name for functional tests
++    - FUNCTIONALTEST=functionaltest
++    - CI_TARGET=tests
++    # Environment variables for ccache
++    - CCACHE_COMPRESS=1
++    - CCACHE_SLOPPINESS=time_macros,file_macro
++    - CCACHE_BASEDIR="$TRAVIS_BUILD_DIR"
++    - CI_OS_NAME="$TRAVIS_OS_NAME"
++
++anchors:
++  envs: &common-job-env
++    # Do not fall back to cache for "master" for PR on "release" branch:
++    # adds the target branch to the cache key.
++    FOR_TRAVIS_CACHE=v1-$TRAVIS_BRANCH
++
++addons:
++  apt:
++    packages: &common-apt-packages
++      - apport
++      - autoconf
++      - automake
++      - build-essential
++      - clang
++      - cmake
++      - cpanminus
++      - cscope
++      - gcc-multilib
++      - gdb
++      - gperf
++      - language-pack-tr
++      - libtool-bin
++      - locales
++      - ninja-build
++      - pkg-config
++      - unzip
++      - valgrind
++      - xclip
++  homebrew:
++    update: true
++    casks:
++      - powershell
++    packages:
++      - ccache
++      - cpanminus
++      - ninja
++      - perl
++
++jobs:
++  include:
++    - name: gcc-coverage (gcc 9)
++      os: linux
++      compiler: gcc-9
++      env:
++        - GCOV=gcov-9
++        - CMAKE_FLAGS="$CMAKE_FLAGS -DUSE_GCOV=ON"
++        - GCOV_ERROR_FILE="/tmp/libgcov-errors.log"
++        - USE_LUACOV=1
++        - BUSTED_ARGS="--coverage"
++        - *common-job-env
++      addons:
++        snaps:
++          - name: powershell
++            confinement: classic
++        apt:
++          sources:
++            - sourceline: 'ppa:ubuntu-toolchain-r/test'
++          packages:
++            - *common-apt-packages
++            - gcc-9
++    - name: gcc-functionaltest-lua
++      os: linux
++      compiler: gcc
++      env:
++        - FUNCTIONALTEST=functionaltest-lua
++        - CMAKE_FLAGS="$CMAKE_FLAGS -DPREFER_LUA=ON"
++        - DEPS_CMAKE_FLAGS="$DEPS_CMAKE_FLAGS -DUSE_BUNDLED_LUAJIT=OFF"
++        - *common-job-env
++    - name: gcc-32bit
++      os: linux
++      # Travis creates a cache per compiler. Set a different value here to
++      # store 32-bit dependencies in a separate cache.
++      compiler: gcc
++      env:
++        - BUILD_32BIT=ON
++        - CMAKE_FLAGS="$CMAKE_FLAGS -m32 -DCMAKE_TOOLCHAIN_FILE=$TRAVIS_BUILD_DIR/cmake/i386-linux-gnu.toolchain.cmake"
++        - DEPS_CMAKE_FLAGS="$DEPS_CMAKE_FLAGS -m32 -DCMAKE_TOOLCHAIN_FILE=$TRAVIS_BUILD_DIR/cmake/i386-linux-gnu.toolchain.cmake"
++        # Minimum required CMake.
++        - CMAKE_URL=https://cmake.org/files/v2.8/cmake-2.8.12-Linux-i386.sh
++        - *common-job-env
++    - name: big-endian
++      os: linux
++      arch: s390x
++      compiler: gcc
++      env:
++        - FUNCTIONALTEST=functionaltest-lua
++        - CMAKE_FLAGS="$CMAKE_FLAGS -DPREFER_LUA=ON"
++        - DEPS_CMAKE_FLAGS="$DEPS_CMAKE_FLAGS -DUSE_BUNDLED_LUAJIT=OFF"
++        - *common-job-env
++      addons:
++        apt:
++          packages:
++            - *common-apt-packages
++            - gettext
++            - python-pip
++            - python3-pip
++            - python-setuptools
++            - python3-setuptools
++            - python-dev
++            - python3-dev
++    - if: type != pull_request
++      name: snap
++      os: linux
++      env:
++        - LC_ALL: C.UTF-8
++        - LANG: C.UTF-8
++        - SNAPCRAFT_ENABLE_SILENT_REPORT: y
++        - SNAPCRAFT_ENABLE_DEVELOPER_DEBUG: y
++        - SNAPCRAFT_BUILD_ENVIRONMENT: lxd
++      addons:
++        snaps:
++          - name: snapcraft
++            channel: stable
++            classic: true
++          - name: http
++          - name: transfer
++          - name: lxd
++            channel: stable
++      # Override default before_install, before_cache.
++      before_install: /bin/true
++      before_cache: /bin/true
++      install: ci/snap/install.sh
++      before_script: echo "Building snap..."
++      script: ci/snap/script.sh
++      after_success: ci/snap/after_success.sh
++      deploy:
++        skip_cleanup: true
++        provider: script
++        script: ci/snap/deploy.sh
++        on:
++          branch: master
++  allow_failures:
++    - env:
++      - LC_ALL: C.UTF-8
++      - LANG: C.UTF-8
++      - SNAPCRAFT_ENABLE_SILENT_REPORT: y
++      - SNAPCRAFT_ENABLE_DEVELOPER_DEBUG: y
++      - SNAPCRAFT_BUILD_ENVIRONMENT: lxd
++  fast_finish: true
++
++before_install: ci/before_install.sh
++install:        ci/install.sh
++before_script:  ci/before_script.sh
++script:         ci/script.sh
++before_cache:   ci/before_cache.sh
++
++branches:
++  only:
++    - master
++    - /^release-\d+\.\d+$/
++
++cache:
++  apt: true
++  ccache: true
++  directories:
++    - "$CACHE_NVIM_DEPS_DIR"
++
++git:
++  quiet: true
++
++notifications:
++  webhooks:
++    urls:
++      - https://webhooks.gitter.im/e/b5c38c99f9677aa3d031
+--- /dev/null
++++ neovim-0.5.0/ci/before_cache.sh
+@@ -0,0 +1,27 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++source "${CI_DIR}/common/build.sh"
++source "${CI_DIR}/common/suite.sh"
++
++echo "before_cache.sh: cache size"
++du -chd 1 "${HOME}/.cache" | sort -rh | head -20
++
++echo "before_cache.sh: ccache stats"
++ccache -s 2>/dev/null || true
++# Do not keep ccache stats (uploaded to cache otherwise; reset initially anyway).
++find "${HOME}/.ccache" -name stats -delete
++
++# Update the third-party dependency cache only if the build was successful.
++if ended_successfully; then
++  # Do not cache downloads.  They should not be needed with up-to-date deps.
++  rm -rf "${DEPS_BUILD_DIR}/build/downloads"
++  rm -rf "${CACHE_NVIM_DEPS_DIR}"
++  mv "${DEPS_BUILD_DIR}" "${CACHE_NVIM_DEPS_DIR}"
++
++  touch "${CACHE_MARKER}"
++  echo "Updated third-party dependencies (timestamp: $(_stat "${CACHE_MARKER}"))."
++fi
+--- /dev/null
++++ neovim-0.5.0/ci/before_install.sh
+@@ -0,0 +1,59 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++echo 'Python info:'
++(
++  set -x
++  python3 --version
++  python2 --version
++  python --version
++  pip3 --version
++  pip2 --version
++  pip --version
++
++  pyenv --version
++  pyenv versions
++) 2>&1 | sed 's/^/  /' || true
++
++# Use pyenv, but not for OSX on Travis, where it only has the "system" version.
++if [[ "${TRAVIS_OS_NAME}" != osx ]] && command -v pyenv; then
++  echo 'Setting Python versions via pyenv'
++
++  # Prefer Python 2 over 3 (more conservative).
++  pyenv global 2.7:3.8
++
++  echo 'Updated Python info:'
++  (
++    set -x
++    python3 --version
++    python2 --version
++    python --version
++
++    python3 -m pip --version
++    python2 -m pip --version
++  ) 2>&1 | sed 's/^/  /'
++fi
++
++echo "Install node (LTS)"
++
++if [[ "${TRAVIS_OS_NAME}" == osx ]] || [ ! -f ~/.nvm/nvm.sh ]; then
++  curl -o ~/.nvm/nvm.sh https://raw.githubusercontent.com/creationix/nvm/master/nvm.sh
++fi
++
++source ~/.nvm/nvm.sh
++nvm install 10
++
++if [[ -n "$CMAKE_URL" ]]; then
++  echo "Installing custom CMake: $CMAKE_URL"
++  curl --retry 5 --silent --show-error --fail -o /tmp/cmake-installer.sh "$CMAKE_URL"
++  mkdir -p "$HOME/.local/bin" /opt/cmake-custom
++  bash /tmp/cmake-installer.sh --prefix=/opt/cmake-custom --skip-license
++  ln -sfn /opt/cmake-custom/bin/cmake "$HOME/.local/bin/cmake"
++  cmake_version="$(cmake --version)"
++  echo "$cmake_version" | grep -qF '2.8.12' || {
++    echo "Unexpected CMake version: $cmake_version"
++    exit 1
++  }
++fi
+--- /dev/null
++++ neovim-0.5.0/ci/before_script.sh
+@@ -0,0 +1,46 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++source "${CI_DIR}/common/build.sh"
++
++# Enable ipv6 on Travis. ref: a39c8b7ce30d
++if test -n "${TRAVIS_OS_NAME}" && ! test "${TRAVIS_OS_NAME}" = osx ; then
++  echo "before_script.sh: enable ipv6"
++  sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=0
++fi
++
++# Test some of the configuration variables.
++if [[ -n "${GCOV}" ]] && [[ ! $(type -P "${GCOV}") ]]; then
++  echo "\$GCOV: '${GCOV}' is not executable."
++  exit 1
++fi
++if [[ -n "${LLVM_SYMBOLIZER}" ]] && [[ ! $(type -P "${LLVM_SYMBOLIZER}") ]]; then
++  echo "\$LLVM_SYMBOLIZER: '${LLVM_SYMBOLIZER}' is not executable."
++  exit 1
++fi
++
++echo "before_script.sh: ccache stats (will be cleared)"
++ccache -s
++# Reset ccache stats for real results in before_cache.
++ccache --zero-stats
++
++if [[ "${TRAVIS_OS_NAME}" == osx ]]; then
++  # Adds user to a dummy group.
++  # That allows to test changing the group of the file by `os_fchown`.
++  sudo dscl . -create /Groups/chown_test
++  sudo dscl . -append /Groups/chown_test GroupMembership "${USER}"
++fi
++
++# Compile dependencies.
++build_deps
++
++# Install cluacov for Lua coverage.
++if [[ "$USE_LUACOV" == 1 ]]; then
++  "${DEPS_BUILD_DIR}/usr/bin/luarocks" install cluacov
++fi
++
++rm -rf "${LOG_DIR}"
++mkdir -p "${LOG_DIR}"
+--- /dev/null
++++ neovim-0.5.0/ci/build.ps1
+@@ -0,0 +1,177 @@
++param([switch]$NoTests)
++Set-StrictMode -Version Latest
++$ErrorActionPreference = 'Stop'
++$ProgressPreference = 'SilentlyContinue'
++
++$env:CONFIGURATION -match '^(?<compiler>\w+)_(?<bits>32|64)(?:-(?<option>\w+))?$'
++$compiler = $Matches.compiler
++$compileOption = if ($Matches -contains 'option') {$Matches.option} else {''}
++$bits = $Matches.bits
++$cmakeBuildType = $(if ($env:CMAKE_BUILD_TYPE -ne $null) {$env:CMAKE_BUILD_TYPE} else {'RelWithDebInfo'});
++$buildDir = [System.IO.Path]::GetFullPath("$(pwd)")
++$depsCmakeVars = @{
++  CMAKE_BUILD_TYPE = $cmakeBuildType;
++}
++$nvimCmakeVars = @{
++  CMAKE_BUILD_TYPE = $cmakeBuildType;
++  BUSTED_OUTPUT_TYPE = 'nvim';
++  DEPS_PREFIX=$(if ($env:DEPS_PREFIX -ne $null) {$env:DEPS_PREFIX} else {".deps/usr"});
++}
++if ($env:DEPS_BUILD_DIR -eq $null) {
++  $env:DEPS_BUILD_DIR = ".deps";
++}
++$uploadToCodeCov = $false
++
++function exitIfFailed() {
++  if ($LastExitCode -ne 0) {
++    exit $LastExitCode
++  }
++}
++
++if (-not $NoTests) {
++  node --version
++  npm.cmd --version
++}
++
++if (-Not (Test-Path -PathType container $env:DEPS_BUILD_DIR)) {
++  write-host "cache dir not found: $($env:DEPS_BUILD_DIR)"
++  mkdir $env:DEPS_BUILD_DIR
++} else {
++  write-host "cache dir $($env:DEPS_BUILD_DIR) size: $(Get-ChildItem $env:DEPS_BUILD_DIR -recurse | Measure-Object -property length -sum | Select -expand sum)"
++}
++
++if ($compiler -eq 'MINGW') {
++  if ($bits -eq 32) {
++    $arch = 'i686'
++  }
++  elseif ($bits -eq 64) {
++    $arch = 'x86_64'
++  }
++  if ($compileOption -eq 'gcov') {
++    $nvimCmakeVars['USE_GCOV'] = 'ON'
++    $uploadToCodecov = $true
++    $env:GCOV = "C:\msys64\mingw$bits\bin\gcov"
++
++    # Setup/build Lua coverage.
++    $env:USE_LUACOV = 1
++    $env:BUSTED_ARGS = "--coverage"
++  }
++  # These are native MinGW builds, but they use the toolchain inside
++  # MSYS2, this allows using all the dependencies and tools available
++  # in MSYS2, but we cannot build inside the MSYS2 shell.
++  $cmakeGenerator = 'Ninja'
++  $cmakeGeneratorArgs = '-v'
++  $mingwPackages = @('ninja', 'cmake', 'diffutils').ForEach({
++    "mingw-w64-$arch-$_"
++  })
++
++  # Add MinGW to the PATH
++  $env:PATH = "C:\msys64\mingw$bits\bin;$env:PATH"
++
++  # Avoid pacman "warning" which causes non-zero return code. https://github.com/open62541/open62541/issues/2068
++  & C:\msys64\usr\bin\mkdir -p /var/cache/pacman/pkg
++
++  # Build third-party dependencies
++  C:\msys64\usr\bin\bash -lc "pacman --verbose --noconfirm -Su" ; exitIfFailed
++  C:\msys64\usr\bin\bash -lc "pacman --verbose --noconfirm --needed -S $mingwPackages" ; exitIfFailed
++}
++elseif ($compiler -eq 'MSVC') {
++  $cmakeGeneratorArgs = '/verbosity:normal'
++  if ($bits -eq 32) {
++    $cmakeGenerator = 'Visual Studio 15 2017'
++  }
++  elseif ($bits -eq 64) {
++    $cmakeGenerator = 'Visual Studio 15 2017 Win64'
++  }
++}
++
++if (-not $NoTests) {
++  # Setup python (use AppVeyor system python)
++
++  # Disambiguate python3, if needed
++  if (-not (Test-Path -Path C:\hostedtoolcache\windows\Python\3.5.4\x64\python3.exe) ) {
++    move C:\hostedtoolcache\windows\Python\3.5.4\x64\python.exe C:\hostedtoolcache\windows\Python\3.5.4\x64\python3.exe
++  }
++  $env:PATH = "C:\hostedtoolcache\windows\Python\2.7.18\x64;C:\hostedtoolcache\windows\Python\3.5.4\x64;$env:PATH"
++
++  python -m pip install pynvim ; exitIfFailed
++  python3 -m pip install pynvim ; exitIfFailed
++  # Sanity check
++  python  -c "import pynvim; print(str(pynvim))" ; exitIfFailed
++  python3 -c "import pynvim; print(str(pynvim))" ; exitIfFailed
++
++  gem.cmd install --pre neovim
++  Get-Command -CommandType Application neovim-ruby-host.bat
++
++  npm.cmd install -g neovim
++  Get-Command -CommandType Application neovim-node-host.cmd
++  npm.cmd link neovim
++}
++
++if ($compiler -eq 'MSVC') {
++  # Required for LuaRocks (https://github.com/luarocks/luarocks/issues/1039#issuecomment-507296940).
++  $env:VCINSTALLDIR = "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Tools/MSVC/14.16.27023/"
++}
++
++function convertToCmakeArgs($vars) {
++  return $vars.GetEnumerator() | foreach { "-D$($_.Key)=$($_.Value)" }
++}
++
++cd $env:DEPS_BUILD_DIR
++cmake -G $cmakeGenerator $(convertToCmakeArgs($depsCmakeVars)) "$buildDir/third-party/" ; exitIfFailed
++cmake --build . --config $cmakeBuildType -- $cmakeGeneratorArgs ; exitIfFailed
++cd $buildDir
++
++# Build Neovim
++mkdir build
++cd build
++cmake -G $cmakeGenerator $(convertToCmakeArgs($nvimCmakeVars)) .. ; exitIfFailed
++cmake --build . --config $cmakeBuildType -- $cmakeGeneratorArgs ; exitIfFailed
++.\bin\nvim --version ; exitIfFailed
++
++# Ensure that the "win32" feature is set.
++.\bin\nvim -u NONE --headless -c 'exe !has(\"win32\").\"cq\"' ; exitIfFailed
++
++if ($env:USE_LUACOV -eq 1) {
++  & $env:DEPS_PREFIX\luarocks\luarocks.bat install cluacov
++}
++
++if (-not $NoTests) {
++  # Functional tests
++  # The $LastExitCode from MSBuild can't be trusted
++  $failed = $false
++
++  # Run only this test file:
++  # $env:TEST_FILE = "test\functional\foo.lua"
++  cmake --build . --config $cmakeBuildType --target functionaltest -- $cmakeGeneratorArgs 2>&1 |
++    foreach { $failed = $failed -or
++      $_ -match 'functional tests failed with error'; $_ }
++
++  if ($uploadToCodecov) {
++    if ($env:USE_LUACOV -eq 1) {
++      & $env:DEPS_PREFIX\bin\luacov.bat
++    }
++    bash -l /c/projects/neovim/ci/common/submit_coverage.sh functionaltest
++  }
++  if ($failed) {
++    exit $LastExitCode
++  }
++
++  # Old tests
++  # Add MSYS to path, required for e.g. `find` used in test scripts.
++  # But would break functionaltests, where its `more` would be used then.
++  $OldPath = $env:PATH
++  $env:PATH = "C:\msys64\usr\bin;$env:PATH"
++  & "C:\msys64\mingw$bits\bin\mingw32-make.exe" -C $(Convert-Path ..\src\nvim\testdir) VERBOSE=1 ; exitIfFailed
++  $env:PATH = $OldPath
++
++  if ($uploadToCodecov) {
++    bash -l /c/projects/neovim/ci/common/submit_coverage.sh oldtest
++  }
++}
++
++# Build artifacts
++cpack -G ZIP -C RelWithDebInfo
++if ($env:APPVEYOR_REPO_TAG_NAME -ne $null) {
++  cpack -G NSIS -C RelWithDebInfo
++}
+--- /dev/null
++++ neovim-0.5.0/ci/common/build.sh
+@@ -0,0 +1,88 @@
++_stat() {
++  if test "${CI_OS_NAME}" = osx ; then
++    stat -f %Sm "${@}"
++  else
++    stat -c %y "${@}"
++  fi
++}
++
++top_make() {
++  printf '%78s\n' | tr ' ' '='
++  # Travis has 1.5 virtual cores according to:
++  # http://docs.travis-ci.com/user/speeding-up-the-build/#Paralellizing-your-build-on-one-VM
++  ninja "$@"
++}
++
++build_make() {
++  top_make -C "${BUILD_DIR}" "$@"
++}
++
++build_deps() {
++  if test "${FUNCTIONALTEST}" = "functionaltest-lua" \
++     || test "${CLANG_SANITIZER}" = "ASAN_UBSAN" ; then
++    DEPS_CMAKE_FLAGS="${DEPS_CMAKE_FLAGS} -DUSE_BUNDLED_LUA=ON"
++  fi
++
++  mkdir -p "${DEPS_BUILD_DIR}"
++
++  # Use cached dependencies if $CACHE_MARKER exists.
++  if test "${CACHE_ENABLE}" = "false" ; then
++    export CCACHE_RECACHE=1
++  elif test -f "${CACHE_MARKER}" ; then
++    echo "Using third-party dependencies from cache (last update: $(_stat "${CACHE_MARKER}"))."
++    cp -a "${CACHE_NVIM_DEPS_DIR}"/. "${DEPS_BUILD_DIR}"
++  fi
++
++  # Even if we're using cached dependencies, run CMake and make to
++  # update CMake configuration and update to newer deps versions.
++  cd "${DEPS_BUILD_DIR}"
++  echo "Configuring with '${DEPS_CMAKE_FLAGS}'."
++  CC= cmake -G Ninja ${DEPS_CMAKE_FLAGS} "${CI_BUILD_DIR}/third-party/"
++
++  if ! top_make; then
++    exit 1
++  fi
++
++  cd "${CI_BUILD_DIR}"
++}
++
++prepare_build() {
++  if test -n "${CLANG_SANITIZER}" ; then
++    CMAKE_FLAGS="${CMAKE_FLAGS} -DCLANG_${CLANG_SANITIZER}=ON"
++  fi
++
++  mkdir -p "${BUILD_DIR}"
++  cd "${BUILD_DIR}"
++  echo "Configuring with '${CMAKE_FLAGS} $@'."
++  cmake -G Ninja ${CMAKE_FLAGS} "$@" "${CI_BUILD_DIR}"
++}
++
++build_nvim() {
++  echo "Building nvim."
++  if ! top_make nvim ; then
++    exit 1
++  fi
++
++  if test "$CLANG_SANITIZER" != "TSAN" ; then
++    echo "Building libnvim."
++    if ! top_make libnvim ; then
++      exit 1
++    fi
++
++    if test "${FUNCTIONALTEST}" != "functionaltest-lua"; then
++      echo "Building nvim-test."
++      if ! top_make nvim-test ; then
++        exit 1
++      fi
++    fi
++  fi
++
++  # Invoke nvim to trigger *San early.
++  if ! (bin/nvim --version && bin/nvim -u NONE -e -cq | cat -vet) ; then
++    check_sanitizer "${LOG_DIR}"
++    exit 1
++  fi
++  check_sanitizer "${LOG_DIR}"
++
++  cd "${CI_BUILD_DIR}"
++}
+--- /dev/null
++++ neovim-0.5.0/ci/common/submit_coverage.sh
+@@ -0,0 +1,56 @@
++#!/bin/sh
++# Collect and submit coverage reports.
++#
++# Args:
++# $1: Flag(s) for codecov, separated by comma.
++
++set -ex
++
++# Change to grandparent dir (POSIXly).
++CDPATH='' cd -P -- "$(dirname -- "$0")/../.." || exit
++
++echo "=== running submit_coverage in $PWD: $* ==="
++"$GCOV" --version
++
++# Download/install codecov-bash and gcovr once.
++codecov_sh="${TEMP:-/tmp}/codecov.bash"
++if ! [ -f "$codecov_sh" ]; then
++  curl --retry 5 --silent --fail -o "$codecov_sh" https://codecov.io/bash
++  chmod +x "$codecov_sh"
++
++  python3 -m pip install --quiet --user gcovr
++fi
++
++(
++  cd build
++  python3 -m gcovr --branches --exclude-unreachable-branches --print-summary -j 2 --exclude '.*/auto/.*' --root .. --delete -o ../coverage.xml --xml
++)
++
++# Upload to codecov.
++# -X gcov: disable gcov, done manually above.
++# -X fix: disable fixing of reports (not necessary, rather slow)
++# -Z: exit non-zero on failure
++# -F: flag(s)
++# NOTE: ignoring flags for now, since this causes timeouts on codecov.io then,
++#       which they know about for about a year already...
++# Flags must match pattern ^[\w\,]+$ ("," as separator).
++codecov_flags="$(uname -s),${1}"
++codecov_flags=$(echo "$codecov_flags" | sed 's/[^,_a-zA-Z0-9]/_/g')
++if ! "$codecov_sh" -f coverage.xml -X gcov -X fix -Z -F "${codecov_flags}"; then
++  echo "codecov upload failed."
++fi
++
++# Cleanup always, especially collected data.
++find . \( -name '*.gcov' -o -name '*.gcda' \) -ls -delete | wc -l
++rm -f coverage.xml
++
++# Upload Lua coverage  (generated manually on AppVeyor/Windows).
++if [ "$USE_LUACOV" = 1 ] && [ "$1" != "oldtest" ]; then
++  if [ -x "${DEPS_BUILD_DIR}/usr/bin/luacov" ]; then
++    "${DEPS_BUILD_DIR}/usr/bin/luacov"
++  fi
++  if ! "$codecov_sh" -f luacov.report.out -X gcov -X fix -Z -F "lua,${codecov_flags}"; then
++    echo "codecov upload failed."
++  fi
++  rm luacov.stats.out
++fi
+--- /dev/null
++++ neovim-0.5.0/ci/common/suite.sh
+@@ -0,0 +1,210 @@
++# HACK: get newline for use in strings given that "\n" and $'' do not work.
++NL="$(printf '\nE')"
++NL="${NL%E}"
++
++FAIL_SUMMARY=""
++
++# Test success marker. If END_MARKER file exists, we know that all tests 
++# finished. If FAIL_SUMMARY_FILE exists we know that some tests failed, this 
++# file will contain information about failed tests. Build is considered 
++# successful if tests ended without any of them failing.
++END_MARKER="$BUILD_DIR/.tests_finished"
++FAIL_SUMMARY_FILE="$BUILD_DIR/.test_errors"
++
++ANSI_CLEAR="\033[0K"
++
++if test "$TRAVIS" = "true"; then
++  ci_fold() {
++    local action="$1"
++    local name="$2"
++    name="$(echo -n "$name" | tr '\n\0' '--' | sed 's/[^A-Za-z0-9]\{1,\}/-/g')"
++    name="$(echo -n "$name" | sed 's/-$//')"
++    echo -en "travis_fold:${action}:${name}\r${ANSI_CLEAR}"
++  }
++elif test "$GITHUB_ACTIONS" = "true"; then
++  ci_fold() {
++    local action="$1"
++    local name="$2"
++    name="$(echo -n "$name" | tr '\n\0' '--' | sed 's/[^A-Za-z0-9]\{1,\}/-/g')"
++    name="$(echo -n "$name" | sed 's/-$//')"
++    case "$action" in
++      start)
++        echo "::group::${name}"
++        ;;
++      end)
++        echo "::endgroup::"
++        ;;
++      *)
++        :;;
++    esac
++  }
++else
++  ci_fold() {
++    return 0
++  }
++fi
++
++enter_suite() {
++  set +x
++  FAILED=0
++  rm -f "${END_MARKER}"
++  local suite_name="$1"
++  export NVIM_TEST_CURRENT_SUITE="${NVIM_TEST_CURRENT_SUITE}/$suite_name"
++  ci_fold start "${NVIM_TEST_CURRENT_SUITE}"
++  set -x
++}
++
++exit_suite() {
++  set +x
++  if test $FAILED -ne 0 ; then
++    echo "Suite ${NVIM_TEST_CURRENT_SUITE} failed, summary:"
++    echo "${FAIL_SUMMARY}"
++  else
++    ci_fold end "${NVIM_TEST_CURRENT_SUITE}"
++  fi
++  export NVIM_TEST_CURRENT_SUITE="${NVIM_TEST_CURRENT_SUITE%/*}"
++  if test "$1" != "--continue" ; then
++    exit $FAILED
++  else
++    local saved_failed=$FAILED
++    FAILED=0
++    return $saved_failed
++  fi
++}
++
++fail() {
++  local test_name="$1"
++  local fail_char="$2"
++  local message="$3"
++
++  : ${fail_char:=F}
++  : ${message:=Test $test_name failed}
++
++  local full_msg="$fail_char $NVIM_TEST_CURRENT_SUITE|$test_name :: $message"
++  FAIL_SUMMARY="${FAIL_SUMMARY}${NL}${full_msg}"
++  echo "${full_msg}" >> "${FAIL_SUMMARY_FILE}"
++  echo "Failed: $full_msg"
++  FAILED=1
++}
++
++run_test() {
++  local cmd="$1"
++  test $# -gt 0 && shift
++  local test_name="$1"
++  : ${test_name:=$cmd}
++  test $# -gt 0 && shift
++  if ! eval "$cmd" ; then
++    fail "${test_name}" "$@"
++  fi
++}
++
++run_test_wd() {
++  local hang_ok=
++  if test "$1" = "--allow-hang" ; then
++    hang_ok=1
++    shift
++  fi
++
++  local timeout="$1"
++  test $# -gt 0 && shift
++
++  local cmd="$1"
++  test $# -gt 0 && shift
++
++  local restart_cmd="$1"
++  : ${restart_cmd:=true}
++  test $# -gt 0 && shift
++
++  local test_name="$1"
++  : ${test_name:=$cmd}
++  test $# -gt 0 && shift
++
++  local output_file="$(mktemp)"
++  local status_file="$(mktemp)"
++  local sid_file="$(mktemp)"
++
++  local restarts=5
++  local prev_tmpsize=-1
++  while test $restarts -gt 0 ; do
++    : > "$status_file"
++    : > "$sid_file"
++    setsid \
++      env \
++        output_file="$output_file" \
++        status_file="$status_file" \
++        sid_file="$sid_file" \
++        cmd="$cmd" \
++        CI_DIR="$CI_DIR" \
++        sh -c '
++          . "${CI_DIR}/common/test.sh"
++          ps -o sid= > "$sid_file"
++          (
++            ret=0
++            if ! eval "$cmd" 2>&1 ; then
++              ret=1
++            fi
++            echo "$ret" > "$status_file"
++          ) | tee -a "$output_file"
++        '
++    while test "$(stat -c "%s" "$status_file")" -eq 0 ; do
++      prev_tmpsize=$tmpsize
++      sleep $timeout
++      tmpsize="$(stat -c "%s" "$output_file")"
++      if test $tempsize -eq $prev_temsize ; then
++        # no output, assuming either hang or exit
++        break
++      fi
++    done
++    restarts=$(( restarts - 1 ))
++    if test "$(stat -c "%s" "$status_file")" -eq 0 ; then
++      # Status file not updated, assuming hang
++
++      # SID not known, this should not ever happen
++      if test "$(stat -c "%s" "$sid_file")" -eq 0 ; then
++        fail "$test_name" E "Shell did not run"
++        break
++      fi
++
++      # Kill all processes which belong to one session: should get rid of test
++      # processes as well as sh itself.
++      pkill -KILL -s$(cat "$sid_file")
++
++      if test $restarts -eq 0 ; then
++        if test -z "$hang_ok" ; then
++          fail "$test_name" E "Test hang up"
++        fi
++      else
++        echo "Test ${test_name} hang up, restarting"
++        eval "$restart_cmd"
++      fi
++    else
++      local new_failed="$(cat "$status_file")"
++      if test "$new_failed" != "0" ; then
++        fail "$test_name" F "Test failed in run_test_wd"
++      fi
++      break
++    fi
++  done
++
++  rm -f "$output_file"
++  rm -f "$status_file"
++  rm -f "$sid_file"
++}
++
++ended_successfully() {
++  if test -f "${FAIL_SUMMARY_FILE}" ; then
++    echo 'Test failed, complete summary:'
++    cat "${FAIL_SUMMARY_FILE}"
++    return 1
++  fi
++  if ! test -f "${END_MARKER}" ; then
++    echo 'ended_successfully called before end marker was touched'
++    return 1
++  fi
++  return 0
++}
++
++end_tests() {
++  touch "${END_MARKER}"
++  ended_successfully
++}
+--- /dev/null
++++ neovim-0.5.0/ci/common/test.sh
+@@ -0,0 +1,189 @@
++. "${CI_DIR}/common/build.sh"
++. "${CI_DIR}/common/suite.sh"
++
++submit_coverage() {
++  if [ -n "${GCOV}" ]; then
++    "${CI_DIR}/common/submit_coverage.sh" "$@" || echo 'codecov upload failed.'
++  fi
++}
++
++print_core() {
++  local app="$1"
++  local core="$2"
++  if test "$app" = quiet ; then
++    echo "Found core $core"
++    return 0
++  fi
++  echo "======= Core file $core ======="
++  if test "${CI_OS_NAME}" = osx ; then
++    lldb -Q -o "bt all" -f "${app}" -c "${core}"
++  else
++    gdb -n -batch -ex 'thread apply all bt full' "${app}" -c "${core}"
++  fi
++}
++
++check_core_dumps() {
++  local del=
++  if test "$1" = "--delete" ; then
++    del=1
++    shift
++  fi
++  local app="${1:-${BUILD_DIR}/bin/nvim}"
++  local cores
++  if test "${CI_OS_NAME}" = osx ; then
++    cores="$(find /cores/ -type f -print)"
++    local _sudo='sudo'
++  else
++    cores="$(find ./ -type f \( -name 'core.*' -o -name core -o -name nvim.core \) -print)"
++    local _sudo=
++  fi
++
++  if test -z "${cores}" ; then
++    return
++  fi
++  local core
++  for core in $cores; do
++    if test "$del" = "1" ; then
++      print_core "$app" "$core" >&2
++      "$_sudo" rm "$core"
++    else
++      print_core "$app" "$core"
++    fi
++  done
++  if test "$app" != quiet ; then
++    fail 'cores' E 'Core dumps found'
++  fi
++}
++
++check_logs() {
++  # Iterate through each log to remove an useless warning.
++  for log in $(find "${1}" -type f -name "${2}"); do
++    sed -i "${log}" \
++      -e '/Warning: noted but unhandled ioctl/d' \
++      -e '/could cause spurious value errors to appear/d' \
++      -e '/See README_MISSING_SYSCALL_OR_IOCTL for guidance/d'
++  done
++
++  # Now do it again, but only consider files with size > 0.
++  local err=""
++  for log in $(find "${1}" -type f -name "${2}" -size +0); do
++    cat "${log}"
++    err=1
++    rm "${log}"
++  done
++  if test -n "${err}" ; then
++    fail 'logs' E 'Runtime errors detected.'
++  fi
++}
++
++valgrind_check() {
++  check_logs "${1}" "valgrind-*"
++}
++
++check_sanitizer() {
++  if test -n "${CLANG_SANITIZER}"; then
++    check_logs "${1}" "*san.*" | ${SYMBOLIZER:-cat}
++  fi
++}
++
++run_unittests() {(
++  enter_suite unittests
++  ulimit -c unlimited || true
++  if ! build_make unittest ; then
++    fail 'unittests' F 'Unit tests failed'
++  fi
++  submit_coverage unittest
++  check_core_dumps "$(command -v luajit)"
++  exit_suite
++)}
++
++run_functionaltests() {(
++  enter_suite functionaltests
++  ulimit -c unlimited || true
++  if ! build_make ${FUNCTIONALTEST}; then
++    fail 'functionaltests' F 'Functional tests failed'
++  fi
++  submit_coverage functionaltest
++  check_sanitizer "${LOG_DIR}"
++  valgrind_check "${LOG_DIR}"
++  check_core_dumps
++  exit_suite
++)}
++
++run_oldtests() {(
++  enter_suite oldtests
++  ulimit -c unlimited || true
++  if ! make oldtest; then
++    reset
++    fail 'oldtests' F 'Legacy tests failed'
++  fi
++  submit_coverage oldtest
++  check_sanitizer "${LOG_DIR}"
++  valgrind_check "${LOG_DIR}"
++  check_core_dumps
++  exit_suite
++)}
++
++check_runtime_files() {(
++  set +x
++  local test_name="$1" ; shift
++  local message="$1" ; shift
++  local tst="$1" ; shift
++
++  cd runtime
++  for file in $(git ls-files "$@") ; do
++    # Check that test is not trying to work with files with spaces/etc
++    # Prefer failing the build over using more robust construct because files
++    # with IFS are not welcome.
++    if ! test -e "$file" ; then
++      fail "$test_name" E \
++        "It appears that $file is only a part of the file name"
++    fi
++    if ! test "$tst" "$INSTALL_PREFIX/share/nvim/runtime/$file" ; then
++      fail "$test_name" F "$(printf "$message" "$file")"
++    fi
++  done
++)}
++
++install_nvim() {(
++  enter_suite 'install_nvim'
++  if ! build_make install ; then
++    fail 'install' E 'make install failed'
++    exit_suite
++  fi
++
++  "${INSTALL_PREFIX}/bin/nvim" --version
++  if ! "${INSTALL_PREFIX}/bin/nvim" -u NONE -e -c ':help' -c ':qall' ; then
++    echo "Running ':help' in the installed nvim failed."
++    echo "Maybe the helptags have not been generated properly."
++    fail 'help' F 'Failed running :help'
++  fi
++
++  # Check that all runtime files were installed
++  check_runtime_files \
++    'runtime-install' \
++    'It appears that %s is not installed.' \
++    -e \
++    '*.vim' '*.ps' '*.dict' '*.py' '*.tutor'
++
++  # Check that some runtime files are installed and are executables
++  check_runtime_files \
++    'not-exe' \
++    'It appears that %s is not installed or is not executable.' \
++    -x \
++    '*.awk' '*.sh' '*.bat'
++
++  # Check that generated syntax file has function names, #5060.
++  local genvimsynf=syntax/vim/generated.vim
++  local gpat='syn keyword vimFuncName .*eval'
++  if ! grep -q "$gpat" "${INSTALL_PREFIX}/share/nvim/runtime/$genvimsynf" ; then
++    fail 'funcnames' F "It appears that $genvimsynf does not contain $gpat."
++  fi
++
++  exit_suite
++)}
++
++csi_clean() {
++  find "${BUILD_DIR}/bin" -name 'test-includes-*' -delete
++  find "${BUILD_DIR}" -name '*test-include*.o' -delete
++}
+--- /dev/null
++++ neovim-0.5.0/ci/install.sh
+@@ -0,0 +1,33 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++if [[ "${CI_TARGET}" == lint ]]; then
++  python3 -m pip -q install --user --upgrade flake8
++  exit
++fi
++
++if [[ "${TRAVIS_OS_NAME}" == osx ]]; then
++  export PATH="/usr/local/opt/ccache/libexec:$PATH"
++fi
++
++# Use default CC to avoid compilation problems when installing Python modules.
++echo "Install neovim module for Python 3."
++CC=cc python3 -m pip -q install --user --upgrade pynvim
++if python2 -m pip -c True 2>&1; then
++  echo "Install neovim module for Python 2."
++  CC=cc python2 -m pip -q install --user --upgrade pynvim
++fi
++
++echo "Install neovim RubyGem."
++gem install --no-document --bindir "$HOME/.local/bin" --user-install --pre neovim
++
++echo "Install neovim npm package"
++source ~/.nvm/nvm.sh
++nvm use 10
++npm install -g neovim
++npm link neovim
++
++sudo cpanm -n Neovim::Ext || cat "$HOME/.cpanm/build.log"
++perl -W -e 'use Neovim::Ext; print $Neovim::Ext::VERSION'
+--- /dev/null
++++ neovim-0.5.0/ci/run_lint.sh
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++
++source "${CI_DIR}/common/build.sh"
++source "${CI_DIR}/common/suite.sh"
++
++enter_suite 'clint'
++run_test 'make clint-full' clint
++exit_suite --continue
++
++enter_suite 'lualint'
++run_test 'make lualint' lualint
++exit_suite --continue
++
++enter_suite 'pylint'
++run_test 'make pylint' pylint
++exit_suite --continue
++
++enter_suite 'shlint'
++run_test 'make shlint' shlint
++exit_suite --continue
++
++enter_suite single-includes
++CLICOLOR_FORCE=1 run_test_wd \
++  --allow-hang \
++  10s \
++  'make check-single-includes' \
++  'csi_clean' \
++  single-includes
++exit_suite --continue
++
++end_tests
+--- /dev/null
++++ neovim-0.5.0/ci/run_tests.sh
+@@ -0,0 +1,40 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++source "${CI_DIR}/common/build.sh"
++source "${CI_DIR}/common/test.sh"
++source "${CI_DIR}/common/suite.sh"
++
++enter_suite build
++
++check_core_dumps --delete quiet
++
++prepare_build
++build_nvim
++
++exit_suite --continue
++
++source ~/.nvm/nvm.sh
++nvm use 10
++
++
++enter_suite tests
++
++if test "$CLANG_SANITIZER" != "TSAN" ; then
++  # Additional threads are only created when the builtin UI starts, which
++  # doesn't happen in the unit/functional tests
++  if test "${FUNCTIONALTEST}" != "functionaltest-lua"; then
++    run_test run_unittests
++  fi
++  run_test run_functionaltests
++fi
++run_test run_oldtests
++
++run_test install_nvim
++
++exit_suite --continue
++
++end_tests
+--- /dev/null
++++ neovim-0.5.0/ci/script.sh
+@@ -0,0 +1,19 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++# This will pass the environment variables down to a bash process which runs
++# as $USER, while retaining the environment variables defined and belonging
++# to secondary groups given above in usermod.
++if [[ "${TRAVIS_OS_NAME}" == osx ]]; then
++  sudo -E su "${USER}" -c "ci/run_${CI_TARGET}.sh"
++else
++  ci/run_${CI_TARGET}.sh
++fi
++
++if [[ -s "${GCOV_ERROR_FILE}" ]]; then
++  echo '=== Unexpected gcov errors: ==='
++  cat "${GCOV_ERROR_FILE}"
++  exit 1
++fi
+--- /dev/null
++++ neovim-0.5.0/ci/snap/.snapcraft_payload
+@@ -0,0 +1,194 @@
++{
++  "ref": "refs/heads/master",
++  "before": "66b136c43c12df3dcf8f19ff48f206ad2e4f43fc",
++  "after": "1bf69c32217cc455603ce8aa2b5415d9717f0fa2",
++  "repository": {
++    "id": 292861950,
++    "node_id": "MDEwOlJlcG9zaXRvcnkyOTI4NjE5NTA=",
++    "name": "neovim-snap",
++    "full_name": "hurricanehrndz/neovim-snap",
++    "private": false,
++    "owner": {
++      "name": "hurricanehrndz",
++      "email": "hurricanehrndz@users.noreply.github.com",
++      "login": "hurricanehrndz",
++      "id": 5804237,
++      "node_id": "MDQ6VXNlcjU4MDQyMzc=",
++      "avatar_url": "https://avatars0.githubusercontent.com/u/5804237?v=4",
++      "gravatar_id": "",
++      "url": "https://api.github.com/users/hurricanehrndz",
++      "html_url": "https://github.com/hurricanehrndz",
++      "followers_url": "https://api.github.com/users/hurricanehrndz/followers",
++      "following_url": "https://api.github.com/users/hurricanehrndz/following{/other_user}",
++      "gists_url": "https://api.github.com/users/hurricanehrndz/gists{/gist_id}",
++      "starred_url": "https://api.github.com/users/hurricanehrndz/starred{/owner}{/repo}",
++      "subscriptions_url": "https://api.github.com/users/hurricanehrndz/subscriptions",
++      "organizations_url": "https://api.github.com/users/hurricanehrndz/orgs",
++      "repos_url": "https://api.github.com/users/hurricanehrndz/repos",
++      "events_url": "https://api.github.com/users/hurricanehrndz/events{/privacy}",
++      "received_events_url": "https://api.github.com/users/hurricanehrndz/received_events",
++      "type": "User",
++      "site_admin": false
++    },
++    "html_url": "https://github.com/hurricanehrndz/neovim-snap",
++    "description": "snap build for neovim",
++    "fork": false,
++    "url": "https://github.com/hurricanehrndz/neovim-snap",
++    "forks_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/forks",
++    "keys_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/keys{/key_id}",
++    "collaborators_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/collaborators{/collaborator}",
++    "teams_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/teams",
++    "hooks_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/hooks",
++    "issue_events_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/issues/events{/number}",
++    "events_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/events",
++    "assignees_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/assignees{/user}",
++    "branches_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/branches{/branch}",
++    "tags_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/tags",
++    "blobs_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/git/blobs{/sha}",
++    "git_tags_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/git/tags{/sha}",
++    "git_refs_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/git/refs{/sha}",
++    "trees_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/git/trees{/sha}",
++    "statuses_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/statuses/{sha}",
++    "languages_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/languages",
++    "stargazers_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/stargazers",
++    "contributors_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/contributors",
++    "subscribers_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/subscribers",
++    "subscription_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/subscription",
++    "commits_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/commits{/sha}",
++    "git_commits_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/git/commits{/sha}",
++    "comments_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/comments{/number}",
++    "issue_comment_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/issues/comments{/number}",
++    "contents_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/contents/{+path}",
++    "compare_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/compare/{base}...{head}",
++    "merges_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/merges",
++    "archive_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/{archive_format}{/ref}",
++    "downloads_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/downloads",
++    "issues_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/issues{/number}",
++    "pulls_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/pulls{/number}",
++    "milestones_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/milestones{/number}",
++    "notifications_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/notifications{?since,all,participating}",
++    "labels_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/labels{/name}",
++    "releases_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/releases{/id}",
++    "deployments_url": "https://api.github.com/repos/hurricanehrndz/neovim-snap/deployments",
++    "created_at": 1599227980,
++    "updated_at": "2020-09-04T14:02:38Z",
++    "pushed_at": 1599228352,
++    "git_url": "git://github.com/hurricanehrndz/neovim-snap.git",
++    "ssh_url": "git@github.com:hurricanehrndz/neovim-snap.git",
++    "clone_url": "https://github.com/hurricanehrndz/neovim-snap.git",
++    "svn_url": "https://github.com/hurricanehrndz/neovim-snap",
++    "homepage": null,
++    "size": 0,
++    "stargazers_count": 0,
++    "watchers_count": 0,
++    "language": null,
++    "has_issues": true,
++    "has_projects": true,
++    "has_downloads": true,
++    "has_wiki": true,
++    "has_pages": false,
++    "forks_count": 0,
++    "mirror_url": null,
++    "archived": false,
++    "disabled": false,
++    "open_issues_count": 0,
++    "license": {
++      "key": "mit",
++      "name": "MIT License",
++      "spdx_id": "MIT",
++      "url": "https://api.github.com/licenses/mit",
++      "node_id": "MDc6TGljZW5zZTEz"
++    },
++    "forks": 0,
++    "open_issues": 0,
++    "watchers": 0,
++    "default_branch": "master",
++    "stargazers": 0,
++    "master_branch": "master"
++  },
++  "pusher": {
++    "name": "hurricanehrndz",
++    "email": "hurricanehrndz@users.noreply.github.com"
++  },
++  "sender": {
++    "login": "hurricanehrndz",
++    "id": 5804237,
++    "node_id": "MDQ6VXNlcjU4MDQyMzc=",
++    "avatar_url": "https://avatars0.githubusercontent.com/u/5804237?v=4",
++    "gravatar_id": "",
++    "url": "https://api.github.com/users/hurricanehrndz",
++    "html_url": "https://github.com/hurricanehrndz",
++    "followers_url": "https://api.github.com/users/hurricanehrndz/followers",
++    "following_url": "https://api.github.com/users/hurricanehrndz/following{/other_user}",
++    "gists_url": "https://api.github.com/users/hurricanehrndz/gists{/gist_id}",
++    "starred_url": "https://api.github.com/users/hurricanehrndz/starred{/owner}{/repo}",
++    "subscriptions_url": "https://api.github.com/users/hurricanehrndz/subscriptions",
++    "organizations_url": "https://api.github.com/users/hurricanehrndz/orgs",
++    "repos_url": "https://api.github.com/users/hurricanehrndz/repos",
++    "events_url": "https://api.github.com/users/hurricanehrndz/events{/privacy}",
++    "received_events_url": "https://api.github.com/users/hurricanehrndz/received_events",
++    "type": "User",
++    "site_admin": false
++  },
++  "created": false,
++  "deleted": false,
++  "forced": false,
++  "base_ref": null,
++  "compare": "https://github.com/hurricanehrndz/neovim-snap/compare/66b136c43c12...1bf69c32217c",
++  "commits": [
++    {
++      "id": "1bf69c32217cc455603ce8aa2b5415d9717f0fa2",
++      "tree_id": "62ea83a2349be8c930c45fdc199f71b08bf5927e",
++      "distinct": true,
++      "message": "Build of latest tag",
++      "timestamp": "2020-09-04T14:05:40Z",
++      "url": "https://github.com/hurricanehrndz/neovim-snap/commit/1bf69c32217cc455603ce8aa2b5415d9717f0fa2",
++      "author": {
++        "name": "Carlos Hernandez",
++        "email": "carlos@techbyte.ca",
++        "username": "hurricanehrndz"
++      },
++      "committer": {
++        "name": "Carlos Hernandez",
++        "email": "carlos@techbyte.ca",
++        "username": "hurricanehrndz"
++      },
++      "added": [
++
++      ],
++      "removed": [
++
++      ],
++      "modified": [
++        "snap/snapcraft.yaml"
++      ]
++    }
++  ],
++  "head_commit": {
++    "id": "1bf69c32217cc455603ce8aa2b5415d9717f0fa2",
++    "tree_id": "62ea83a2349be8c930c45fdc199f71b08bf5927e",
++    "distinct": true,
++    "message": "Build of latest tag",
++    "timestamp": "2020-09-04T14:05:40Z",
++    "url": "https://github.com/hurricanehrndz/neovim-snap/commit/1bf69c32217cc455603ce8aa2b5415d9717f0fa2",
++    "author": {
++      "name": "Carlos Hernandez",
++      "email": "carlos@techbyte.ca",
++      "username": "hurricanehrndz"
++    },
++    "committer": {
++      "name": "Carlos Hernandez",
++      "email": "carlos@techbyte.ca",
++      "username": "hurricanehrndz"
++    },
++    "added": [
++
++    ],
++    "removed": [
++
++    ],
++    "modified": [
++      "snap/snapcraft.yaml"
++    ]
++  }
++}
+--- /dev/null
++++ neovim-0.5.0/ci/snap/after_success.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++
++RESULT_SNAP=$(find ./ -name "*.snap")
++
++sudo snap install "$RESULT_SNAP" --dangerous --classic
++
++/snap/bin/nvim --version
++
++SHA256=$(sha256sum "$RESULT_SNAP")
++echo "SHA256: ${SHA256} ."
+--- /dev/null
++++ neovim-0.5.0/ci/snap/deploy.sh
+@@ -0,0 +1,39 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++SNAP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++WEBHOOK_PAYLOAD="$(cat "${SNAP_DIR}/.snapcraft_payload")"
++PAYLOAD_SIG="${SECRET_SNAP_SIG}"
++
++
++snap_realease_needed() {
++  last_committed_tag="$(git tag -l --sort=refname|head -1)"
++  last_snap_release="$(snap info nvim | awk '$1 == "latest/edge:" { print $2 }' | perl -lpe 's/v\d.\d.\d-//g')"
++  git fetch -f --tags
++  git checkout "${last_committed_tag}" 2> /dev/null
++  last_git_release="$(git describe --first-parent 2> /dev/null | perl -lpe 's/v\d.\d.\d-//g')"
++
++  if [[ -z "$(echo $last_snap_release | perl -ne "print if /${last_git_release}.*/")" ]]; then
++    return 0
++  fi
++  return 1
++}
++
++
++trigger_snapcraft_webhook() {
++  [[ -n "${PAYLOAD_SIG}" ]] || exit
++  echo "Triggering new snap relase via webhook..."
++  curl -X POST \
++    -H "Content-Type: application/json" \
++    -H "X-Hub-Signature: sha1=${PAYLOAD_SIG}" \
++    --data "${WEBHOOK_PAYLOAD}" \
++    https://snapcraft.io/nvim/webhook/notify
++}
++
++
++if $(snap_realease_needed); then
++  echo "New snap release required"
++  trigger_snapcraft_webhook
++fi
+--- /dev/null
++++ neovim-0.5.0/ci/snap/install.sh
+@@ -0,0 +1,11 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++sudo apt update
++sudo usermod -aG lxd $USER
++sudo /snap/bin/lxd.migrate -yes
++sudo /snap/bin/lxd waitready
++sudo /snap/bin/lxd init --auto
++
+--- /dev/null
++++ neovim-0.5.0/ci/snap/script.sh
+@@ -0,0 +1,8 @@
++#!/usr/bin/env bash
++
++set -e
++set -o pipefail
++
++mkdir -p "$CI_BUILD_DIR/snaps-cache"
++sg lxd -c snapcraft
++
+--- /dev/null
++++ neovim-0.5.0/codecov.yml
+@@ -0,0 +1,27 @@
++# To validate:
++#   cat codecov.yml | curl --data-binary @- https://codecov.io/validate
++
++codecov:
++  notify:
++    require_ci_to_pass: no
++  ci:
++    - appveyor
++    - travis
++    - !neovim-qb.szakmeister.net
++
++coverage:
++  precision: 2
++  round: down
++  range: "70...100"
++
++  status:
++    project:
++      default:
++        threshold: 1
++    patch:
++      default:
++        threshold: 1
++        only_pulls: true
++    changes: no
++
++comment: off
