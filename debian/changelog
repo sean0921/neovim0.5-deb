@@ -1,3 +1,9 @@
+neovim (0.5.0-1~seantest+1) experimental; urgency=medium
+
+  * Refresh un-synced patch
+
+ -- Sean Ho <sean.li.shin.ho@gmail.com>  Fri, 13 Aug 2021 19:43:26 +0800
+
 neovim (0.5.0-1) experimental; urgency=medium
 
   * New upstream release (Closes: #991155)
